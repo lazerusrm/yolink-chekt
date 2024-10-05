@@ -3,6 +3,7 @@
 # Define variables
 REPO_URL="https://github.com/lazerusrm/yolink-chekt/archive/refs/heads/main.zip"
 APP_DIR="/opt/yolink-chekt"
+DOCKER_COMPOSE_VERSION="v2.29.5"
 
 # Update package list
 apt-get update || { echo "apt-get update failed."; exit 1; }
@@ -36,13 +37,13 @@ fi
 if ! [ -x "$(command -v docker-compose)" ]; then
   echo "Docker Compose not found, installing..."
 
-  # Download Docker Compose directly from a stable release URL
-  DOCKER_COMPOSE_URL="https://github.com/docker/compose/releases/download/v2.29.5/docker-compose-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m)"
+  # Download Docker Compose from a stable release URL
+  DOCKER_COMPOSE_URL="https://github.com/docker/compose/releases/download/$DOCKER_COMPOSE_VERSION/docker-compose-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m)"
   curl -L "$DOCKER_COMPOSE_URL" -o /usr/local/bin/docker-compose || { echo "Docker Compose download failed."; exit 1; }
 
   # Verify if the downloaded file is valid
-  if [[ $(head -c 9 /usr/local/bin/docker-compose) == "Not Found" ]]; then
-    echo "Docker Compose download failed (file not found). Exiting."
+  if ! grep -q "ELF" /usr/local/bin/docker-compose; then
+    echo "Docker Compose download failed (invalid file). Exiting."
     rm /usr/local/bin/docker-compose
     exit 1
   fi
