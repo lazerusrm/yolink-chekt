@@ -25,12 +25,16 @@ if ! [ -x "$(command -v docker)" ]; then
   # Update package list and install Docker Engine
   apt-get update || { echo "apt-get update failed."; exit 1; }
   apt-get install -y docker-ce docker-ce-cli containerd.io || { echo "Docker installation failed."; exit 1; }
+else
+  echo "Docker is already installed."
 fi
 
 # Verify Docker installation
 if ! [ -x "$(command -v docker)" ]; then
   echo "Docker installation failed. Exiting."
   exit 1
+else
+  echo "Docker is installed successfully."
 fi
 
 # Install Docker Compose if not already installed
@@ -50,12 +54,16 @@ if ! [ -x "$(command -v docker-compose)" ]; then
 
   # Make Docker Compose executable
   chmod +x /usr/local/bin/docker-compose || { echo "Docker Compose installation failed."; exit 1; }
+else
+  echo "Docker Compose is already installed."
 fi
 
 # Verify Docker Compose installation
 if ! [ -x "$(command -v docker-compose)" ]; then
   echo "Docker Compose installation failed. Exiting."
   exit 1
+else
+  echo "Docker Compose is installed successfully."
 fi
 
 # Download the repository as a ZIP file and extract it
@@ -77,11 +85,14 @@ docker-compose up --build -d || { echo "Docker Compose up failed."; exit 1; }
 # Verify Docker containers are running
 if ! docker-compose ps | grep -q "Up"; then
   echo "Docker containers are not running as expected."; exit 1;
+else
+  echo "Docker containers are running successfully."
 fi
 
 # Optional: Create a self-update script
 SELF_UPDATE_SCRIPT="$APP_DIR/self-update.sh"
 
+echo "Creating self-update script..."
 bash -c "cat <<EOT > $SELF_UPDATE_SCRIPT
 #!/bin/bash
 
