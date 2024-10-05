@@ -37,18 +37,12 @@ else
   echo "Docker is installed successfully."
 fi
 
-# Install Docker Compose if not already installed
-if ! [ -x "$(command -v docker compose)" ]; then
+# Install Docker Compose plugin if not already installed
+if ! docker compose version >/dev/null 2>&1; then
   echo "Docker Compose not found, installing Docker Compose plugin..."
 
   # Install Docker Compose using the Docker plugin
   apt-get install -y docker-compose-plugin || { echo "Docker Compose plugin installation failed."; exit 1; }
-
-  # Remove any incorrect old Docker Compose binary
-  if [ -f /usr/local/bin/docker-compose ]; then
-    echo "Removing old Docker Compose binary..."
-    rm /usr/local/bin/docker-compose || { echo "Failed to remove old Docker Compose binary."; exit 1; }
-  fi
 else
   echo "Docker Compose is already installed."
 fi

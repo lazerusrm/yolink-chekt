@@ -1,13 +1,14 @@
-version: '3'
 services:
   yolink_chekt:
     build: .
     ports:
-      - "5000:5000"
+      - "5000:5000"  # Map port 5000 on the container to port 5000 on the host
     volumes:
       - ./config.yaml:/app/config.yaml
       - ./devices.yaml:/app/devices.yaml
       - ./mappings.yaml:/app/mappings.yaml
+    depends_on:
+      - mqtt_broker
 
   mqtt_broker:
     image: eclipse-mosquitto
