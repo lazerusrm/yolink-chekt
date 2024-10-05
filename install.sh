@@ -98,3 +98,102 @@ chmod +x "$SELF_UPDATE_SCRIPT"
 (crontab -l 2>/dev/null; echo "0 2 * * * $SELF_UPDATE_SCRIPT >> /var/log/yolink-update.log 2>&1") | crontab -
 
 echo "The Yolink CHEKT integration service is now running, and automatic updates have been configured."
+#!/bin/bash
+
+# Define variables
+REPO_URL="https://github.com/lazerusrm/yolink-chekt/archive/refs/heads/main.zip"
+APP_DIR="/opt/yolink-chekt"
+
+# Check if Docker is installed, install if necessary
+if ! [ -x "$(command -v docker)" ]; then
+  echo "Docker not found, installing..."
+  curl -fsSL https://get.docker.com -o get-docker.sh
+  sh get-docker.sh
+fi
+
+# Check if Docker Compose is installed, install if necessary
+if ! [ -x "$(command -v docker-compose)" ]; then
+  echo "Docker Compose not found, installing..."
+  curl -L "https://github.com/docker/compose/releases/download/$(curl -s https://api.github.com/repos/docker/compose/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')" -o /usr/local/bin/docker-compose
+  chmod +x /usr/local/bin/docker-compose
+fi
+
+# Download the repository as a ZIP file and extract it
+echo "Downloading repository from $REPO_URL..."
+mkdir -p "$APP_DIR"
+curl -L "$REPO_URL" -o "$APP_DIR/repo.zip"
+unzip "$APP_DIR/repo.zip" -d "$APP_DIR"
+mv "$APP_DIR/yolink-chekt-main/"* "$APP_DIR/"
+rm -rf "$APP_DIR/yolink-chekt-main"
+rm "$APP_DIR/repo.zip"
+
+# Navigate to the app directory
+cd "$APP_DIR"
+
+# Build and run the app using Docker Compose
+echo "Building and running the Docker containers..."
+docker-compose up --build -d
+
+# Optional: Set up the app to run as a service
+echo "Setting up the app to run as a service..."
+
+SERVICE_FILE="/etc/systemd/system/yolink-chekt.service"
+
+bash -c "cat <<EOT > $SERVICE_FILE
+[Unit]
+Description=Yolink CHEKT Integration Service
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=$APP_DIR
+ExecStart=/usr/local/bin/docker-compose up --build
+ExecStop=/usr/local/bin/docker-compose down
+Restart=always
+User=root
+
+[Install]
+WantedBy=multi-user.target
+EOT"
+
+# Reload systemd and enable the service
+systemctl daemon-reload
+systemctl enable yolink-chekt
+systemctl start yolink-chekt
+
+# Create the self-update script
+SELF_UPDATE_SCRIPT="$APP_DIR/self-update.sh"
+
+bash -c "cat <<EOT > $SELF_UPDATE_SCRIPT
+#!/bin/bash
+
+# Define variables
+REPO_URL='https://github.com/lazerusrm/yolink-chekt/archive/refs/heads/main.zip'
+APP_DIR='/opt/yolink-chekt'
+
+# Navigate to the app directory
+cd \"\$APP_DIR\"
+
+# Download the latest changes as a ZIP file
+echo 'Checking for updates from \$REPO_URL...'
+curl -L \"\$REPO_URL\" -o \"\$APP_DIR/repo.zip\"
+unzip -o \"\$APP_DIR/repo.zip\" -d \"\$APP_DIR\"
+mv \"\$APP_DIR/yolink-chekt-main/\"* \"\$APP_DIR/\"
+rm -rf \"\$APP_DIR/yolink-chekt-main\"
+rm \"\$APP_DIR/repo.zip\"
+
+# Rebuild the Docker containers with the latest code
+echo 'Rebuilding Docker containers...'
+docker-compose down
+docker-compose up --build -d
+
+echo 'Updates applied successfully!'
+EOT"
+
+# Make the self-update script executable
+chmod +x "$SELF_UPDATE_SCRIPT"
+
+# Set up a cron job to run the self-update script daily at 2 AM
+(crontab -l 2>/dev/null; echo "0 2 * * * $SELF_UPDATE_SCRIPT >> /var/log/yolink-update.log 2>&1") | crontab -
+
+echo "The Yolink CHEKT integration service is now running, and automatic updates have been configured."
