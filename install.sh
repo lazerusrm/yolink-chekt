@@ -7,15 +7,37 @@ APP_DIR="/opt/yolink-chekt"
 # Update package list
 apt-get update || { echo "apt-get update failed."; exit 1; }
 
-# Install dependencies needed for Docker Compose and unzip
-apt-get install -y apt-transport-https ca-certificates curl gnupg unzip || { echo "Dependency installation failed."; exit 1; }
+# Install required dependencies
+echo "Installing required dependencies..."
+apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release unzip software-properties-common || { echo "Dependency installation failed."; exit 1; }
 
-# Check if Docker Compose is installed, install if necessary
+# Install Docker if not already installed
+if ! [ -x "$(command -v docker)" ]; then
+  echo "Docker not found, installing Docker..."
+
+  # Add Docker's official GPG key
+  curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg || { echo "Adding Docker GPG key failed."; exit 1; }
+
+  # Set up the stable Docker repository
+  echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/debian $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null || { echo "Adding Docker repository failed."; exit 1; }
+
+  # Update package list and install Docker Engine
+  apt-get update || { echo "apt-get update failed."; exit 1; }
+  apt-get install -y docker-ce docker-ce-cli containerd.io || { echo "Docker installation failed."; exit 1; }
+fi
+
+# Verify Docker installation
+if ! [ -x "$(command -v docker)" ]; then
+  echo "Docker installation failed. Exiting."
+  exit 1
+fi
+
+# Install Docker Compose if not already installed
 if ! [ -x "$(command -v docker-compose)" ]; then
   echo "Docker Compose not found, installing..."
-  
-  # Use a fixed version of Docker Compose
-  DOCKER_COMPOSE_URL="https://github.com/docker/compose/releases/download/v2.20.2/docker-compose-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m)"
+
+  # Download Docker Compose directly from a stable release URL
+  DOCKER_COMPOSE_URL="https://github.com/docker/compose/releases/download/v2.29.5/docker-compose-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m)"
   curl -L "$DOCKER_COMPOSE_URL" -o /usr/local/bin/docker-compose || { echo "Docker Compose download failed."; exit 1; }
 
   # Verify if the downloaded file is valid
@@ -25,6 +47,7 @@ if ! [ -x "$(command -v docker-compose)" ]; then
     exit 1
   fi
 
+  # Make Docker Compose executable
   chmod +x /usr/local/bin/docker-compose || { echo "Docker Compose installation failed."; exit 1; }
 fi
 
