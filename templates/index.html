@@ -75,7 +75,7 @@
                         <td>{{ device['name'] }}</td>
                         <td>{{ device['id'] }}</td>
                         <td>
-                            <input type="text" name="chekt_zone" class="form-control" value="{{ mappings.get(device['id'], '') }}">
+                            <input type="text" name="chekt_zone" class="form-control" value="{{ mappings.get(device['id'], '') }}" required>
                             <input type="hidden" name="device_id" value="{{ device['id'] }}">
                         </td>
                     </tr>
@@ -91,11 +91,22 @@
         $('#mapping-form').on('submit', function (e) {
             e.preventDefault();
             var mappings = {};
+            var allFilled = true;
+
             $('input[name="device_id"]').each(function (index) {
                 var deviceId = $(this).val();
                 var zone = $(this).closest('tr').find('input[name="chekt_zone"]').val();
+                if (!zone.trim()) {
+                    allFilled = false;
+                    alert('Please fill out all CHEKT zone fields before saving.');
+                    return false; // Breaks out of the each() loop
+                }
                 mappings[deviceId] = zone;
             });
+
+            if (!allFilled) {
+                return;
+            }
 
             $.ajax({
                 type: "POST",
@@ -106,7 +117,7 @@
                     alert(response.message);
                 },
                 error: function (xhr, status, error) {
-                    alert('Error: ' + xhr.responseText);
+                    alert('Error: ' + xhr.responseText + '. Please check your network connection or configuration and try again.');
                 }
             });
         });
