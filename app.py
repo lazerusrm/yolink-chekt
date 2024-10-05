@@ -32,9 +32,9 @@ def save_config(data):
         yaml.dump(data, file)
 
 class YoLinkDevice:
-    def __init__(self, url, csid, csseckey, serial_number, friendly_name="Unknown"):
+    def __init__(self, url, uac, csseckey, serial_number, friendly_name="Unknown"):
         self.url = url
-        self.csid = csid
+        self.uac = uac
         self.csseckey = csseckey
         self.serial_number = serial_number
         self.friendly_name = friendly_name
@@ -49,8 +49,7 @@ class YoLinkDevice:
     def enable_device_api(self):
         headers = {
             'Content-Type': 'application/json',
-            'YS-CSID': self.csid,
-            'Authorization': f"Bearer {config_data['yolink']['token']}",
+            'YS-UAC': self.uac,
             'ys-sec': hashlib.md5((json.dumps(self.device_data) + self.csseckey).encode('utf-8')).hexdigest(),
         }
         try:
@@ -73,10 +72,10 @@ class YoLinkDevice:
         return self.device_data.get('type', 'Unknown')
 
 # Query Yolink devices (from the local API)
-def query_yolink_devices(url, csid, csseckey, device_list):
+def query_yolink_devices(url, uac, csseckey, device_list):
     devices = []
     for device_data in device_list:
-        yolink_device = YoLinkDevice(url, csid, csseckey, device_data['serial_number'], "")
+        yolink_device = YoLinkDevice(url, uac, csseckey, device_data['serial_number'], "")
         yolink_device.build_device_api_request_data()
         yolink_device.enable_device_api()
         devices.append({
@@ -102,7 +101,7 @@ def index():
             mappings = yaml.safe_load(mf)
 
     # Query Yolink devices
-    yolink_devices = query_yolink_devices(config['yolink']['url'], config['yolink']['csid'], config['yolink']['csseckey'], devices)
+    yolink_devices = query_yolink_devices(config['yolink']['url'], config['yolink']['uac'], config['yolink']['csseckey'], devices)
 
     return render_template('index.html', devices=yolink_devices, mappings=mappings, config=config)
 
@@ -156,10 +155,14 @@ def on_message(client, userdata, msg):
         print(f"Error processing message: {str(e)}")
 
 def trigger_chekt_event(chekt_zone_id, event_state):
+    """
+    Trigger the CHEKT API based on the event state (e.g., door open or motion detected).
+    """
     config = load_config()
     url = f"http://{config['chekt']['ip']}:{config['chekt']['port']}/api/v1/zones/{chekt_zone_id}/events"
     
     headers = {
+        'Authorization': f"Bearer {config['chekt']['api_token']}",
         'Content-Type': 'application/json'
     }
     
@@ -167,15 +170,6 @@ def trigger_chekt_event(chekt_zone_id, event_state):
         "event": event_state,
         "timestamp": int(time.time())
     }
-    
-    try:
-        response = requests.post(url, headers=headers, json=data)
-        if response.status_code == 200:
-            print(f"CHEKT zone {chekt_zone_id} updated successfully")
-        else:
-            print(f"Failed to update CHEKT zone {chekt_zone_id}. Status code: {response.status_code}")
-    except Exception as e:
-        print(f"Error communicating with CHEKT API: {str(e)}")
     
     try:
         response = requests.post(url, headers=headers, json=data)

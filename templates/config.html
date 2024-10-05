@@ -38,35 +38,52 @@
         button:hover {
             background-color: #0056b3;
         }
+        .navigation {
+            margin-bottom: 20px;
+        }
+        .navigation a {
+            text-decoration: none;
+            color: #007BFF;
+            margin-right: 10px;
+        }
+        .navigation a:hover {
+            text-decoration: underline;
+        }
     </style>
 </head>
 <body>
+    <div class="navigation">
+        <a href="/">Home</a>
+        <a href="/config">Configuration</a>
+    </div>
     <h1>Yolink CHEKT Configuration</h1>
     
     <form id="configForm">
         <h3>Yolink Configuration</h3>
-        <label>URL:</label>
-        <input type="text" id="yolink_url"><br>
-        <label>CSID:</label>
-        <input type="text" id="yolink_csid"><br>
-        <label>CSSECKEY:</label>
-        <input type="text" id="yolink_csseckey"><br>
-        <label>Access Token:</label>
-        <input type="text" id="yolink_token"><br>
+        <label for="yolink_url">URL:</label>
+        <input type="text" id="yolink_url" name="yolink_url" required><br>
+        <label for="yolink_uac">UAC:</label>
+        <input type="text" id="yolink_uac" name="yolink_uac" required><br>
+        <label for="yolink_csseckey">CSSECKEY:</label>
+        <input type="text" id="yolink_csseckey" name="yolink_csseckey" required><br>
+        <label for="yolink_token">Access Token:</label>
+        <input type="text" id="yolink_token" name="yolink_token" required><br>
 
         <h3>CHEKT Configuration</h3>
-        <label>IP Address:</label>
-        <input type="text" id="chekt_ip"><br>
-        <label>Port:</label>
-        <input type="text" id="chekt_port"><br>
+        <label for="chekt_ip">IP Address:</label>
+        <input type="text" id="chekt_ip" name="chekt_ip" required><br>
+        <label for="chekt_port">Port:</label>
+        <input type="text" id="chekt_port" name="chekt_port" required><br>
+        <label for="chekt_token">API Token:</label>
+        <input type="text" id="chekt_token" name="chekt_token" required><br>
 
         <h3>MQTT Configuration</h3>
-        <label>URL:</label>
-        <input type="text" id="mqtt_url"><br>
-        <label>Port:</label>
-        <input type="text" id="mqtt_port"><br>
-        <label>Topic:</label>
-        <input type="text" id="mqtt_topic"><br>
+        <label for="mqtt_url">URL:</label>
+        <input type="text" id="mqtt_url" name="mqtt_url" required><br>
+        <label for="mqtt_port">Port:</label>
+        <input type="number" id="mqtt_port" name="mqtt_port" required><br>
+        <label for="mqtt_topic">Topic:</label>
+        <input type="text" id="mqtt_topic" name="mqtt_topic" required><br>
 
         <button type="button" onclick="saveConfig()">Save Configuration</button>
     </form>
@@ -76,36 +93,36 @@
             fetch('/config')
                 .then(response => response.json())
                 .then(data => {
-                    if (data.yolink) {
-                        document.getElementById('yolink_url').value = data.yolink.url;
-                        document.getElementById('yolink_csid').value = data.yolink.csid;
-                        document.getElementById('yolink_csseckey').value = data.yolink.csseckey;
-                        document.getElementById('yolink_token').value = data.yolink.token;
-                    }
-                    if (data.chekt) {
-                        document.getElementById('chekt_ip').value = data.chekt.ip;
-                        document.getElementById('chekt_port').value = data.chekt.port;
-                    }
-                    if (data.mqtt) {
-                        document.getElementById('mqtt_url').value = data.mqtt.url;
-                        document.getElementById('mqtt_port').value = data.mqtt.port;
-                        document.getElementById('mqtt_topic').value = data.mqtt.topic;
-                    }
+                    document.getElementById('yolink_url').value = data.yolink.url;
+                    document.getElementById('yolink_uac').value = data.yolink.uac;
+                    document.getElementById('yolink_csseckey').value = data.yolink.csseckey;
+                    document.getElementById('yolink_token').value = data.yolink.token;
+                    document.getElementById('chekt_ip').value = data.chekt.ip;
+                    document.getElementById('chekt_port').value = data.chekt.port;
+                    document.getElementById('chekt_token').value = data.chekt.api_token;
+                    document.getElementById('mqtt_url').value = data.mqtt.url;
+                    document.getElementById('mqtt_port').value = data.mqtt.port;
+                    document.getElementById('mqtt_topic').value = data.mqtt.topic;
                 })
                 .catch(error => console.error('Error loading configuration:', error));
         });
 
         function saveConfig() {
+            const saveButton = document.querySelector('button');
+            saveButton.disabled = true;
+            saveButton.innerText = "Saving...";
+            
             const config = {
                 yolink: {
                     url: document.getElementById('yolink_url').value,
-                    csid: document.getElementById('yolink_csid').value,
+                    uac: document.getElementById('yolink_uac').value,
                     csseckey: document.getElementById('yolink_csseckey').value,
                     token: document.getElementById('yolink_token').value
                 },
                 chekt: {
                     ip: document.getElementById('chekt_ip').value,
-                    port: document.getElementById('chekt_port').value
+                    port: document.getElementById('chekt_port').value,
+                    api_token: document.getElementById('chekt_token').value
                 },
                 mqtt: {
                     url: document.getElementById('mqtt_url').value,
@@ -113,6 +130,7 @@
                     topic: document.getElementById('mqtt_topic').value
                 }
             };
+
             fetch('/config', {
                 method: 'POST',
                 headers: {
@@ -121,8 +139,17 @@
                 body: JSON.stringify(config)
             })
             .then(response => response.json())
-            .then(data => alert(data.message))
-            .catch(error => console.error('Error:', error));
+            .then(data => {
+                alert(data.message);
+                saveButton.disabled = false;
+                saveButton.innerText = "Save Configuration";
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Failed to save configuration. Please try again.');
+                saveButton.disabled = false;
+                saveButton.innerText = "Save Configuration";
+            });
         }
     </script>
 </body>
