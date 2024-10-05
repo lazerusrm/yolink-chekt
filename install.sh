@@ -13,8 +13,16 @@ apt-get install -y apt-transport-https ca-certificates curl gnupg unzip || { ech
 # Check if Docker Compose is installed, install if necessary
 if ! [ -x "$(command -v docker-compose)" ]; then
   echo "Docker Compose not found, installing..."
-  curl -L "https://github.com/docker/compose/releases/download/$(curl -s https://api.github.com/repos/docker/compose/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')" -o /usr/local/bin/docker-compose
+  # Download Docker Compose directly from a stable release URL
+  DOCKER_COMPOSE_URL="https://github.com/docker/compose/releases/download/v2.20.2/docker-compose-$(uname -s)-$(uname -m)"
+  curl -L "$DOCKER_COMPOSE_URL" -o /usr/local/bin/docker-compose || { echo "Docker Compose download failed."; exit 1; }
   chmod +x /usr/local/bin/docker-compose || { echo "Docker Compose installation failed."; exit 1; }
+fi
+
+# Verify Docker Compose installation
+if ! [ -x "$(command -v docker-compose)" ]; then
+  echo "Docker Compose installation failed. Exiting."
+  exit 1
 fi
 
 # Download the repository as a ZIP file and extract it
