@@ -13,6 +13,10 @@ curl -L "$REPO_URL" -o "$APP_DIR/repo.zip" || { echo 'Repository download failed
 unzip -o "$APP_DIR/repo.zip" -d "$APP_DIR" || { echo 'Unzip failed.'; exit 1; }
 
 # Move extracted files while preserving the existing structure
+if ! command -v rsync &> /dev/null; then
+  echo 'rsync not found. Please install rsync.'
+  exit 1
+fi
 rsync -a "$APP_DIR/yolink-chekt-main/" "$APP_DIR/" || { echo 'Move extracted files failed.'; exit 1; }
 rm -rf "$APP_DIR/yolink-chekt-main"
 rm "$APP_DIR/repo.zip"

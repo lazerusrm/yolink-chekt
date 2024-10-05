@@ -10,7 +10,7 @@ apt-get update || { echo "apt-get update failed."; exit 1; }
 
 # Install required dependencies
 echo "Installing required dependencies..."
-apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release unzip software-properties-common || { echo "Dependency installation failed."; exit 1; }
+apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release unzip software-properties-common rsync || { echo "Dependency installation failed."; exit 1; }
 
 # Install Docker if not already installed
 if ! [ -x "$(command -v docker)" ]; then
@@ -60,7 +60,7 @@ echo "Downloading repository from $REPO_URL..."
 mkdir -p "$APP_DIR"
 curl -L "$REPO_URL" -o "$APP_DIR/repo.zip" || { echo "Repository download failed."; exit 1; }
 unzip "$APP_DIR/repo.zip" -d "$APP_DIR" || { echo "Unzip failed."; exit 1; }
-mv "$APP_DIR/yolink-chekt-main/"* "$APP_DIR/" || { echo "Move extracted files failed."; exit 1; }
+rsync -a "$APP_DIR/yolink-chekt-main/" "$APP_DIR/" || { echo "Move extracted files failed."; exit 1; }
 rm -rf "$APP_DIR/yolink-chekt-main"
 rm "$APP_DIR/repo.zip"
 
@@ -96,7 +96,7 @@ cd \"\$APP_DIR\" || { echo 'Failed to navigate to app directory.'; exit 1; }
 echo 'Checking for updates from \$REPO_URL...'
 curl -L \"\$REPO_URL\" -o \"\$APP_DIR/repo.zip\" || { echo 'Repository download failed.'; exit 1; }
 unzip -o \"\$APP_DIR/repo.zip\" -d \"\$APP_DIR\" || { echo 'Unzip failed.'; exit 1; }
-mv \"\$APP_DIR/yolink-chekt-main/\"* \"\$APP_DIR/\" || { echo 'Move extracted files failed.'; exit 1; }
+rsync -a \"\$APP_DIR/yolink-chekt-main/\" \"\$APP_DIR/\" || { echo 'Move extracted files failed.'; exit 1; }
 rm -rf \"\$APP_DIR/yolink-chekt-main\"
 rm \"\$APP_DIR/repo.zip\"
 
