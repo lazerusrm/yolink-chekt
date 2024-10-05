@@ -17,6 +17,12 @@ if ! [ -x "$(command -v docker)" ]; then
   apt-get install -y docker-ce docker-ce-cli containerd.io || { echo "Docker installation failed."; exit 1; }
 fi
 
+# Verify Docker is running
+if ! systemctl is-active --quiet docker; then
+  echo "Docker service is not running. Starting Docker..."
+  systemctl start docker || { echo "Failed to start Docker service."; exit 1; }
+fi
+
 # Check if Docker Compose is installed, install if necessary
 if ! [ -x "$(command -v docker-compose)" ]; then
   echo "Docker Compose not found, installing..."
@@ -41,11 +47,16 @@ rm -rf "$APP_DIR/yolink-chekt-main"
 rm "$APP_DIR/repo.zip"
 
 # Navigate to the app directory
-cd "$APP_DIR"
+cd "$APP_DIR" || { echo "Failed to navigate to app directory."; exit 1; }
 
 # Build and run the app using Docker Compose
 echo "Building and running the Docker containers..."
 docker-compose up --build -d || { echo "Docker Compose up failed."; exit 1; }
+
+# Verify Docker containers are running
+if ! docker-compose ps | grep -q "Up"; then
+  echo "Docker containers are not running as expected."; exit 1;
+fi
 
 # Optional: Set up the app to run as a service
 echo "Setting up the app to run as a service..."
@@ -74,6 +85,11 @@ systemctl daemon-reload || { echo "Systemd daemon-reload failed."; exit 1; }
 systemctl enable yolink-chekt || { echo "Systemd enable service failed."; exit 1; }
 systemctl start yolink-chekt || { echo "Systemd start service failed."; exit 1; }
 
+# Verify the service is running
+if ! systemctl is-active --quiet yolink-chekt; then
+  echo "Yolink CHEKT service is not running."; exit 1;
+fi
+
 # Create the self-update script
 SELF_UPDATE_SCRIPT="$APP_DIR/self-update.sh"
 
@@ -85,7 +101,7 @@ REPO_URL='https://github.com/lazerusrm/yolink-chekt/archive/refs/heads/main.zip'
 APP_DIR='/opt/yolink-chekt'
 
 # Navigate to the app directory
-cd \"\$APP_DIR\"
+cd \"\$APP_DIR\" || { echo 'Failed to navigate to app directory.'; exit 1; }
 
 # Download the latest changes as a ZIP file
 echo 'Checking for updates from \$REPO_URL...'
@@ -107,6 +123,11 @@ EOT"
 chmod +x "$SELF_UPDATE_SCRIPT"
 
 # Set up a cron job to run the self-update script daily at 2 AM
-(crontab -l 2>/dev/null; echo "0 2 * * * $SELF_UPDATE_SCRIPT >> /var/log/yolink-update.log 2>&1") | crontab -
+(crontab -l 2>/dev/null; echo "0 2 * * * $SELF_UPDATE_SCRIPT >> /var/log/yolink-update.log 2>&1") | crontab - || { echo "Cron job setup failed."; exit 1; }
+
+# Verify the cron job is configured
+if ! crontab -l | grep -q "$SELF_UPDATE_SCRIPT"; then
+  echo "Cron job was not configured properly."; exit 1;
+fi
 
 echo "The Yolink CHEKT integration service is now running, and automatic updates have been configured."
