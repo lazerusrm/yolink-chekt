@@ -39,21 +39,10 @@ fi
 
 # Install Docker Compose if not already installed
 if ! [ -x "$(command -v docker-compose)" ]; then
-  echo "Docker Compose not found, installing..."
+  echo "Docker Compose not found, installing Docker Compose plugin..."
 
-  # Download Docker Compose from a stable release URL
-  DOCKER_COMPOSE_URL="https://github.com/docker/compose/releases/download/$DOCKER_COMPOSE_VERSION/docker-compose-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m)"
-  curl -L "$DOCKER_COMPOSE_URL" -o /usr/local/bin/docker-compose || { echo "Docker Compose download failed."; exit 1; }
-
-  # Verify if the downloaded file is valid
-  if ! grep -q "ELF" /usr/local/bin/docker-compose; then
-    echo "Docker Compose download failed (invalid file). Exiting."
-    rm /usr/local/bin/docker-compose
-    exit 1
-  fi
-
-  # Make Docker Compose executable
-  chmod +x /usr/local/bin/docker-compose || { echo "Docker Compose installation failed."; exit 1; }
+  # Install Docker Compose using the Docker plugin
+  apt-get install -y docker-compose-plugin || { echo "Docker Compose plugin installation failed."; exit 1; }
 else
   echo "Docker Compose is already installed."
 fi
@@ -80,10 +69,10 @@ cd "$APP_DIR" || { echo "Failed to navigate to app directory."; exit 1; }
 
 # Build and run the app using Docker Compose
 echo "Building and running the Docker containers..."
-docker-compose up --build -d || { echo "Docker Compose up failed."; exit 1; }
+docker compose up --build -d || { echo "Docker Compose up failed."; exit 1; }
 
 # Verify Docker containers are running
-if ! docker-compose ps | grep -q "Up"; then
+if ! docker compose ps | grep -q "Up"; then
   echo "Docker containers are not running as expected."; exit 1;
 else
   echo "Docker containers are running successfully."
@@ -113,8 +102,8 @@ rm \"\$APP_DIR/repo.zip\"
 
 # Rebuild the Docker containers with the latest code
 echo 'Rebuilding Docker containers...'
-docker-compose down || { echo 'Docker Compose down failed.'; exit 1; }
-docker-compose up --build -d || { echo 'Docker Compose up failed.'; exit 1; }
+docker compose down || { echo 'Docker Compose down failed.'; exit 1; }
+docker compose up --build -d || { echo 'Docker Compose up failed.'; exit 1; }
 
 echo 'Updates applied successfully!'
 EOT"
