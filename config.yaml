@@ -1,11 +1,15 @@
 yolink:
-  url: "http://192.168.1.100:8080"   # Yolink local bridge API URL
-  csid: "your_csid"
-  csseckey: "your_csseckey"
+  url: "https://api.yosmart.com/openApi"  # YoLink cloud API URL
+  csid: "your_csid"                       # YoLink Customer System ID
+  csseckey: "your_csseckey"               # YoLink Customer System Secret Key
+  token: "your_access_token"              # YoLink API token for authorization
 mqtt:
   url: "mqtt://192.168.1.100"
   port: 1883
   topic: "/yolink/events"
+chekt:
+  ip: "192.168.1.200"  # IP address of the CHEKT local bridge
+  port: 30003          # Default port for CHEKT local bridge
 files:
   device_file: "devices.yaml"
   map_file: "mappings.yaml"

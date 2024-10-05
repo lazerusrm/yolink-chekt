@@ -50,6 +50,7 @@ class YoLinkDevice:
         headers = {
             'Content-Type': 'application/json',
             'YS-CSID': self.csid,
+            'Authorization': f"Bearer {config_data['yolink']['token']}",
             'ys-sec': hashlib.md5((json.dumps(self.device_data) + self.csseckey).encode('utf-8')).hexdigest(),
         }
         try:
@@ -155,14 +156,10 @@ def on_message(client, userdata, msg):
         print(f"Error processing message: {str(e)}")
 
 def trigger_chekt_event(chekt_zone_id, event_state):
-    """
-    Trigger the CHEKT API based on the event state (e.g., door open or motion detected).
-    """
     config = load_config()
-    url = f"https://external.chekt.click/api/v1/zones/{chekt_zone_id}/events"
+    url = f"http://{config['chekt']['ip']}:{config['chekt']['port']}/api/v1/zones/{chekt_zone_id}/events"
     
     headers = {
-        'Authorization': f"Bearer {config['chekt']['api_token']}",
         'Content-Type': 'application/json'
     }
     
@@ -170,6 +167,15 @@ def trigger_chekt_event(chekt_zone_id, event_state):
         "event": event_state,
         "timestamp": int(time.time())
     }
+    
+    try:
+        response = requests.post(url, headers=headers, json=data)
+        if response.status_code == 200:
+            print(f"CHEKT zone {chekt_zone_id} updated successfully")
+        else:
+            print(f"Failed to update CHEKT zone {chekt_zone_id}. Status code: {response.status_code}")
+    except Exception as e:
+        print(f"Error communicating with CHEKT API: {str(e)}")
     
     try:
         response = requests.post(url, headers=headers, json=data)
