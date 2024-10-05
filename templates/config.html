@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Yolink CHEKT Configuration</title>
+</head>
+<body>
+    <h1>Yolink CHEKT Configuration</h1>
+    
+    <form id="configForm">
+        <h3>Yolink Configuration</h3>
+        <label>URL:</label>
+        <input type="text" id="yolink_url" value="{{ config['yolink']['url'] }}"><br>
+        <label>CSID:</label>
+        <input type="text" id="yolink_csid" value="{{ config['yolink']['csid'] }}"><br>
+        <label>CSSECKEY:</label>
+        <input type="text" id="yolink_csseckey" value="{{ config['yolink']['csseckey'] }}"><br>
+
+        <h3>CHEKT Configuration</h3>
+        <label>API Token:</label>
+        <input type="text" id="chekt_token" value="{{ config['chekt']['api_token'] }}"><br>
+
+        <h3>MQTT Configuration</h3>
+        <label>URL:</label>
+        <input type="text" id="mqtt_url" value="{{ config['mqtt']['url'] }}"><br>
+        <label>Port:</label>
+        <input type="text" id="mqtt_port" value="{{ config['mqtt']['port'] }}"><br>
+
+        <button type="button" onclick="saveConfig()">Save Configuration</button>
+    </form>
+
+    <script>
+        function saveConfig() {
+            const config = {
+                yolink: {
+                    url: document.getElementById('yolink_url').value,
+                    csid: document.getElementById('yolink_csid').value,
+                    csseckey: document.getElementById('yolink_csseckey').value
+                },
+                chekt: {
+                    api_token: document.getElementById('chekt_token').value
+                },
+                mqtt: {
+                    url: document.getElementById('mqtt_url').value,
+                    port: document.getElementById('mqtt_port').value
+                }
+            };
+            fetch('/config', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(config)
+            })
+            .then(response => response.json())
+            .then(data => alert(data.message))
+            .catch(error => console.error('Error:', error));
+        }
+    </script>
+</body>
+</html>

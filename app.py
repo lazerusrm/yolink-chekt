@@ -4,17 +4,30 @@ import requests
 from flask import Flask, render_template, request, jsonify
 import threading
 import paho.mqtt.client as mqtt
+import os
 
 app = Flask(__name__)
 
+# Load configuration from file or memory
 config_file = "config.yaml"
 device_file = "devices.yaml"
 mapping_file = "mappings.yaml"
 
+config_data = {}
+
 # Load Yolink configuration
 def load_config():
-    with open(config_file, 'r') as file:
-        return yaml.safe_load(file)
+    global config_data
+    if os.path.exists(config_file):
+        with open(config_file, 'r') as file:
+            config_data = yaml.safe_load(file)
+    return config_data
+
+def save_config(data):
+    global config_data
+    config_data = data
+    with open(config_file, 'w') as file:
+        yaml.dump(data, file)
 
 # Query Yolink devices (from the local API)
 def query_yolink_devices(url, csid, csseckey, device_list):
@@ -42,7 +55,7 @@ def index():
     # Query Yolink devices
     yolink_devices = query_yolink_devices(config['yolink']['url'], config['yolink']['csid'], config['yolink']['csseckey'], devices)
 
-    return render_template('index.html', devices=yolink_devices, mappings=mappings)
+    return render_template('index.html', devices=yolink_devices, mappings=mappings, config=config)
 
 @app.route('/save_mapping', methods=['POST'])
 def save_mapping():
@@ -50,6 +63,16 @@ def save_mapping():
     with open(mapping_file, 'w') as file:
         yaml.dump(data, file)
     return jsonify({"status": "success", "message": "Mappings saved successfully"})
+
+@app.route('/config', methods=['GET', 'POST'])
+def config():
+    if request.method == 'POST':
+        data = request.json
+        save_config(data)
+        return jsonify({"status": "success", "message": "Configuration saved successfully"})
+    else:
+        config = load_config()
+        return render_template('config.html', config=config)
 
 # MQTT Configuration and Callbacks
 def on_connect(client, userdata, flags, rc):
