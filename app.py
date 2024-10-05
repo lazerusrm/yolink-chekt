@@ -1,0 +1,123 @@
+import yaml
+import json
+import requests
+from flask import Flask, render_template, request, jsonify
+import threading
+import paho.mqtt.client as mqtt
+
+app = Flask(__name__)
+
+config_file = "config.yaml"
+device_file = "devices.yaml"
+mapping_file = "mappings.yaml"
+
+# Load Yolink configuration
+def load_config():
+    with open(config_file, 'r') as file:
+        return yaml.safe_load(file)
+
+# Query Yolink devices (from the local API)
+def query_yolink_devices(url, csid, csseckey, device_list):
+    devices = []
+    for device_data in device_list:
+        yolink_device = YoLinkDevice(url, csid, csseckey, device_data['serial_number'], "")
+        yolink_device.build_device_api_request_data()
+        yolink_device.enable_device_api()
+        devices.append({
+            'name': yolink_device.get_friendly_name(),
+            'id': yolink_device.get_id(),
+            'type': yolink_device.get_type()
+        })
+    return devices
+
+@app.route('/')
+def index():
+    # Load device and mapping configurations
+    config = load_config()
+    with open(device_file, 'r') as df:
+        devices = yaml.safe_load(df)['device_parameters']
+    with open(mapping_file, 'r') as mf:
+        mappings = yaml.safe_load(mf)
+
+    # Query Yolink devices
+    yolink_devices = query_yolink_devices(config['yolink']['url'], config['yolink']['csid'], config['yolink']['csseckey'], devices)
+
+    return render_template('index.html', devices=yolink_devices, mappings=mappings)
+
+@app.route('/save_mapping', methods=['POST'])
+def save_mapping():
+    data = request.json  # Expect a JSON payload of device-to-zone mappings
+    with open(mapping_file, 'w') as file:
+        yaml.dump(data, file)
+    return jsonify({"status": "success", "message": "Mappings saved successfully"})
+
+# MQTT Configuration and Callbacks
+def on_connect(client, userdata, flags, rc):
+    if rc == 0:
+        print("Connected to MQTT broker")
+        client.subscribe(userdata['topic'])  # Subscribe to the topic from the config
+    else:
+        print(f"Failed to connect, return code {rc}")
+
+def on_message(client, userdata, msg):
+    print(f"Received message on topic {msg.topic}: {msg.payload}")
+    
+    # Load device mappings from file
+    with open(mapping_file, 'r') as mf:
+        mappings = yaml.safe_load(mf)
+    
+    try:
+        payload = json.loads(msg.payload.decode("utf-8"))
+        device_id = payload['deviceId']
+        state = payload['data']['state']
+
+        if device_id in mappings:
+            chekt_zone_id = mappings[device_id]
+            print(f"Triggering CHEKT for device {device_id} in zone {chekt_zone_id} with state {state}")
+            # Add the logic to trigger CHEKT API
+            trigger_chekt_event(chekt_zone_id, state)
+
+    except Exception as e:
+        print(f"Error processing message: {str(e)}")
+
+def trigger_chekt_event(chekt_zone_id, event_state):
+    """
+    Trigger the CHEKT API based on the event state (e.g., door open or motion detected).
+    """
+    config = load_config()
+    url = f"https://external.chekt.click/api/v1/zones/{chekt_zone_id}/events"
+    
+    headers = {
+        'Authorization': f"Bearer {config['chekt']['api_token']}",
+        'Content-Type': 'application/json'
+    }
+    
+    data = {
+        "event": event_state,
+        "timestamp": int(time.time())
+    }
+    
+    try:
+        response = requests.post(url, headers=headers, json=data)
+        if response.status_code == 200:
+            print(f"CHEKT zone {chekt_zone_id} updated successfully")
+        else:
+            print(f"Failed to update CHEKT zone {chekt_zone_id}. Status code: {response.status_code}")
+    except Exception as e:
+        print(f"Error communicating with CHEKT API: {str(e)}")
+
+def run_mqtt_client():
+    config = load_config()
+    mqtt_client = mqtt.Client(userdata={"topic": config['mqtt']['topic']})
+    mqtt_client.on_connect = on_connect
+    mqtt_client.on_message = on_message
+    mqtt_client.connect(config['mqtt']['url'], config['mqtt']['port'])
+    mqtt_client.loop_forever()
+
+# Start the MQTT client in a separate thread
+mqtt_thread = threading.Thread(target=run_mqtt_client)
+mqtt_thread.daemon = True
+mqtt_thread.start()
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)

@@ -1,0 +1,7 @@
+device_parameters:
+  - serial_number: "device_serial_1"
+    name: "Front Door Sensor"
+    type: "door_sensor"
+  - serial_number: "device_serial_2"
+    name: "Living Room Motion Sensor"
+    type: "motion_sensor"

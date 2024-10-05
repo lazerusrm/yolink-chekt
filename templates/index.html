@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Yolink to CHEKT Mapping</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.0/dist/css/bootstrap.min.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Yolink to CHEKT Mapping</h1>
+
+        <form id="mapping-form">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Device Name</th>
+                        <th>Device ID</th>
+                        <th>CHEKT Zone</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for device in devices %}
+                    <tr>
+                        <td>{{ device['name'] }}</td>
+                        <td>{{ device['id'] }}</td>
+                        <td>
+                            <input type="text" name="chekt_zone" class="form-control" value="{{ mappings[device['id']] }}">
+                            <input type="hidden" name="device_id" value="{{ device['id'] }}">
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <button type="submit" class="btn btn-primary">Save Mapping</button>
+        </form>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script>
+        $('#mapping-form').on('submit', function (e) {
+            e.preventDefault();
+            var mappings = {};
+            $('input[name="device_id"]').each(function (index) {
+                var deviceId = $(this).val();
+                var zone = $(this).closest('tr').find('input[name="chekt_zone"]').val();
+                mappings[deviceId] = zone;
+            });
+
+            $.ajax({
+                type: "POST",
+                url: "/save_mapping",
+                contentType: "application/json",
+                data: JSON.stringify(mappings),
+                success: function (response) {
+                    alert(response.message);
+                }
+            });
+        });
+    </script>
+</body>
+</html>

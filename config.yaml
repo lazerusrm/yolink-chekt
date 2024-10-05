@@ -1,0 +1,11 @@
+yolink:
+  url: "http://192.168.1.100:8080"   # Yolink local bridge API URL
+  csid: "your_csid"
+  csseckey: "your_csseckey"
+mqtt:
+  url: "mqtt://192.168.1.100"
+  port: 1883
+  topic: "/yolink/events"
+files:
+  device_file: "devices.yaml"
+  map_file: "mappings.yaml"
