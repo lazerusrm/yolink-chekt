@@ -4,16 +4,23 @@
 REPO_URL="https://github.com/lazerusrm/yolink-chekt/archive/refs/heads/main.zip"
 APP_DIR="/opt/yolink-chekt"
 
+# Update package list
+apt-get update || { echo "apt-get update failed."; exit 1; }
+
 # Check if Docker is installed, install if necessary
 if ! [ -x "$(command -v docker)" ]; then
   echo "Docker not found, installing..."
-  curl -fsSL https://get.docker.com -o get-docker.sh
-  sh get-docker.sh || { echo "Docker installation failed."; exit 1; }
+  apt-get install -y ca-certificates curl gnupg lsb-release || { echo "Dependency installation for Docker failed."; exit 1; }
+  curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+  echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+  apt-get update || { echo "apt-get update failed."; exit 1; }
+  apt-get install -y docker-ce docker-ce-cli containerd.io || { echo "Docker installation failed."; exit 1; }
 fi
 
 # Check if Docker Compose is installed, install if necessary
 if ! [ -x "$(command -v docker-compose)" ]; then
   echo "Docker Compose not found, installing..."
+  apt-get install -y curl || { echo "Curl installation failed."; exit 1; }
   curl -L "https://github.com/docker/compose/releases/download/$(curl -s https://api.github.com/repos/docker/compose/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')" -o /usr/local/bin/docker-compose
   chmod +x /usr/local/bin/docker-compose || { echo "Docker Compose installation failed."; exit 1; }
 fi
@@ -21,7 +28,6 @@ fi
 # Check if unzip is installed, install if necessary
 if ! [ -x "$(command -v unzip)" ]; then
   echo "Unzip not found, installing..."
-  apt-get update || { echo "apt-get update failed."; exit 1; }
   apt-get install -y unzip || { echo "Unzip installation failed."; exit 1; }
 fi
 
