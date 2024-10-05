@@ -8,29 +8,29 @@ APP_DIR="/opt/yolink-chekt"
 if ! [ -x "$(command -v docker)" ]; then
   echo "Docker not found, installing..."
   curl -fsSL https://get.docker.com -o get-docker.sh
-  sh get-docker.sh
+  sh get-docker.sh || { echo "Docker installation failed."; exit 1; }
 fi
 
 # Check if Docker Compose is installed, install if necessary
 if ! [ -x "$(command -v docker-compose)" ]; then
   echo "Docker Compose not found, installing..."
   curl -L "https://github.com/docker/compose/releases/download/$(curl -s https://api.github.com/repos/docker/compose/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')" -o /usr/local/bin/docker-compose
-  chmod +x /usr/local/bin/docker-compose
+  chmod +x /usr/local/bin/docker-compose || { echo "Docker Compose installation failed."; exit 1; }
 fi
 
 # Check if unzip is installed, install if necessary
 if ! [ -x "$(command -v unzip)" ]; then
   echo "Unzip not found, installing..."
-  apt-get update
-  apt-get install -y unzip
+  apt-get update || { echo "apt-get update failed."; exit 1; }
+  apt-get install -y unzip || { echo "Unzip installation failed."; exit 1; }
 fi
 
 # Download the repository as a ZIP file and extract it
 echo "Downloading repository from $REPO_URL..."
 mkdir -p "$APP_DIR"
-curl -L "$REPO_URL" -o "$APP_DIR/repo.zip"
-unzip "$APP_DIR/repo.zip" -d "$APP_DIR"
-mv "$APP_DIR/yolink-chekt-main/"* "$APP_DIR/"
+curl -L "$REPO_URL" -o "$APP_DIR/repo.zip" || { echo "Repository download failed."; exit 1; }
+unzip "$APP_DIR/repo.zip" -d "$APP_DIR" || { echo "Unzip failed."; exit 1; }
+mv "$APP_DIR/yolink-chekt-main/"* "$APP_DIR/" || { echo "Move extracted files failed."; exit 1; }
 rm -rf "$APP_DIR/yolink-chekt-main"
 rm "$APP_DIR/repo.zip"
 
@@ -39,7 +39,7 @@ cd "$APP_DIR"
 
 # Build and run the app using Docker Compose
 echo "Building and running the Docker containers..."
-docker-compose up --build -d
+docker-compose up --build -d || { echo "Docker Compose up failed."; exit 1; }
 
 # Optional: Set up the app to run as a service
 echo "Setting up the app to run as a service..."
@@ -64,9 +64,9 @@ WantedBy=multi-user.target
 EOT"
 
 # Reload systemd and enable the service
-systemctl daemon-reload
-systemctl enable yolink-chekt
-systemctl start yolink-chekt
+systemctl daemon-reload || { echo "Systemd daemon-reload failed."; exit 1; }
+systemctl enable yolink-chekt || { echo "Systemd enable service failed."; exit 1; }
+systemctl start yolink-chekt || { echo "Systemd start service failed."; exit 1; }
 
 # Create the self-update script
 SELF_UPDATE_SCRIPT="$APP_DIR/self-update.sh"
@@ -83,16 +83,16 @@ cd \"\$APP_DIR\"
 
 # Download the latest changes as a ZIP file
 echo 'Checking for updates from \$REPO_URL...'
-curl -L \"\$REPO_URL\" -o \"\$APP_DIR/repo.zip\"
-unzip -o \"\$APP_DIR/repo.zip\" -d \"\$APP_DIR\"
-mv \"\$APP_DIR/yolink-chekt-main/\"* \"\$APP_DIR/\"
+curl -L \"\$REPO_URL\" -o \"\$APP_DIR/repo.zip\" || { echo 'Repository download failed.'; exit 1; }
+unzip -o \"\$APP_DIR/repo.zip\" -d \"\$APP_DIR\" || { echo 'Unzip failed.'; exit 1; }
+mv \"\$APP_DIR/yolink-chekt-main/\"* \"\$APP_DIR/\" || { echo 'Move extracted files failed.'; exit 1; }
 rm -rf \"\$APP_DIR/yolink-chekt-main\"
 rm \"\$APP_DIR/repo.zip\"
 
 # Rebuild the Docker containers with the latest code
 echo 'Rebuilding Docker containers...'
-docker-compose down
-docker-compose up --build -d
+docker-compose down || { echo 'Docker Compose down failed.'; exit 1; }
+docker-compose up --build -d || { echo 'Docker Compose up failed.'; exit 1; }
 
 echo 'Updates applied successfully!'
 EOT"
