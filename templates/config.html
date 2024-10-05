@@ -60,12 +60,10 @@
     
     <form id="configForm">
         <h3>Yolink Configuration</h3>
-        <label for="yolink_uac">UAC:</label>
-        <input type="text" id="yolink_uac" name="yolink_uac" required><br>
-        <label for="yolink_csseckey">CSSECKEY:</label>
-        <input type="text" id="yolink_csseckey" name="yolink_csseckey" required><br>
-        <label for="yolink_token">Access Token:</label>
-        <input type="text" id="yolink_token" name="yolink_token"><br>
+        <label for="yolink_uaid">UAID:</label>
+        <input type="text" id="yolink_uaid" name="yolink_uaid" required><br>
+        <label for="yolink_secret_key">Secret Key:</label>
+        <input type="text" id="yolink_secret_key" name="yolink_secret_key" required><br>
 
         <h3>CHEKT Configuration</h3>
         <label for="chekt_ip">IP Address:</label>
@@ -92,9 +90,8 @@
                 .then(response => response.json())
                 .then(data => {
                     if (data.yolink) {
-                        document.getElementById('yolink_uac').value = data.yolink.uac || '';
-                        document.getElementById('yolink_csseckey').value = data.yolink.csseckey || '';
-                        document.getElementById('yolink_token').value = data.yolink.token || '';
+                        document.getElementById('yolink_uaid').value = data.yolink.uaid || '';
+                        document.getElementById('yolink_secret_key').value = data.yolink.secret_key || '';
                     }
                     if (data.chekt) {
                         document.getElementById('chekt_ip').value = data.chekt.ip || '';
@@ -117,9 +114,8 @@
             
             const config = {
                 yolink: {
-                    uac: document.getElementById('yolink_uac').value,
-                    csseckey: document.getElementById('yolink_csseckey').value,
-                    token: document.getElementById('yolink_token').value
+                    uaid: document.getElementById('yolink_uaid').value,
+                    secret_key: document.getElementById('yolink_secret_key').value
                 },
                 chekt: {
                     ip: document.getElementById('chekt_ip').value,

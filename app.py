@@ -31,11 +31,41 @@ def save_config(data):
     with open(config_file, 'w') as file:
         yaml.dump(data, file)
 
+def generate_yolink_token(uaid, secret_key):
+    """
+    Generate the Yolink access token using the UAID and Secret Key.
+    """
+    url = "https://api.yosmart.com/openApi/auth/token"
+    headers = {
+        'Content-Type': 'application/json'
+    }
+    data = {
+        "uaId": uaid,
+        "secretKey": secret_key
+    }
+    
+    try:
+        response = requests.post(url, headers=headers, json=data)
+        if response.status_code == 200:
+            token = response.json().get("access_token")
+            if token:
+                config_data['yolink']['token'] = token
+                save_config(config_data)
+                return token
+            else:
+                print("Failed to obtain token, check UAID and Secret Key.")
+                return None
+        else:
+            print(f"Failed to generate Yolink token. Status code: {response.status_code}")
+            return None
+    except Exception as e:
+        print(f"Error generating Yolink token: {str(e)}")
+        return None
+
 class YoLinkDevice:
-    def __init__(self, uaid, secret_key, serial_number, friendly_name="Unknown"):
-        self.url = "https://api.yosmart.com/openApiV2"
-        self.uaid = uaid
-        self.secret_key = secret_key
+    def __init__(self, url, token, serial_number, friendly_name="Unknown"):
+        self.url = url
+        self.token = token
         self.serial_number = serial_number
         self.friendly_name = friendly_name
         self.device_data = {}
@@ -49,8 +79,7 @@ class YoLinkDevice:
     def enable_device_api(self):
         headers = {
             'Content-Type': 'application/json',
-            'YS-UAID': self.uaid,
-            'ys-sec': hashlib.md5((json.dumps(self.device_data) + self.secret_key).encode('utf-8')).hexdigest(),
+            'Authorization': f"Bearer {self.token}"
         }
         try:
             response = requests.post(self.url, json=self.device_data, headers=headers)
@@ -72,10 +101,10 @@ class YoLinkDevice:
         return self.device_data.get('type', 'Unknown')
 
 # Query Yolink devices (from the local API)
-def query_yolink_devices(uaid, secret_key, device_list):
+def query_yolink_devices(url, token, device_list):
     devices = []
     for device_data in device_list:
-        yolink_device = YoLinkDevice(uaid, secret_key, device_data['serial_number'], "")
+        yolink_device = YoLinkDevice(url, token, device_data['serial_number'], "")
         yolink_device.build_device_api_request_data()
         yolink_device.enable_device_api()
         devices.append({
@@ -84,26 +113,6 @@ def query_yolink_devices(uaid, secret_key, device_list):
             'type': yolink_device.get_type()
         })
     return devices
-
-def get_yolink_token(uaid, secret_key):
-    url = "https://api.yosmart.com/openApiV2/token"
-    headers = {
-        'Content-Type': 'application/json'
-    }
-    data = {
-        "uaId": uaid,
-        "secretKey": secret_key
-    }
-    try:
-        response = requests.post(url, headers=headers, json=data)
-        if response.status_code == 200:
-            return response.json().get('token', '')
-        else:
-            print(f"Failed to get YoLink token. Status code: {response.status_code}")
-            return ""
-    except Exception as e:
-        print(f"Error getting YoLink token: {str(e)}")
-        return ""
 
 @app.route('/')
 def index():
@@ -120,8 +129,14 @@ def index():
         with open(mapping_file, 'r') as mf:
             mappings = yaml.safe_load(mf)
 
+    # Generate Yolink token if it doesn't exist
+    if not config['yolink'].get('token'):
+        token = generate_yolink_token(config['yolink']['uaid'], config['yolink']['secret_key'])
+    else:
+        token = config['yolink']['token']
+
     # Query Yolink devices
-    yolink_devices = query_yolink_devices(config['yolink']['uaid'], config['yolink']['secret_key'], devices)
+    yolink_devices = query_yolink_devices(config['yolink']['url'], token, devices)
 
     return render_template('index.html', devices=yolink_devices, mappings=mappings, config=config)
 
@@ -179,44 +194,4 @@ def trigger_chekt_event(chekt_zone_id, event_state):
     Trigger the CHEKT API based on the event state (e.g., door open or motion detected).
     """
     config = load_config()
-    url = f"http://{config['chekt']['ip']}:{config['chekt']['port']}/api/v1/zones/{chekt_zone_id}/events"
-    
-    headers = {
-        'Authorization': f"Bearer {config['chekt']['api_token']}",
-        'Content-Type': 'application/json'
-    }
-    
-    data = {
-        "event": event_state,
-        "timestamp": int(time.time())
-    }
-    
-    try:
-        response = requests.post(url, headers=headers, json=data)
-        if response.status_code == 200:
-            print(f"CHEKT zone {chekt_zone_id} updated successfully")
-        else:
-            print(f"Failed to update CHEKT zone {chekt_zone_id}. Status code: {response.status_code}")
-    except Exception as e:
-        print(f"Error communicating with CHEKT API: {str(e)}")
-
-def run_mqtt_client():
-    config = load_config()
-    try:
-        mqtt_client = mqtt.Client(userdata={"topic": config['mqtt']['topic']})
-        mqtt_client.on_connect = on_connect
-        mqtt_client.on_message = on_message
-        mqtt_client.connect(config['mqtt']['url'], config['mqtt']['port'])
-        mqtt_client.loop_forever()
-    except socket.gaierror as e:
-        print(f"MQTT connection failed: {str(e)}. Please check the MQTT broker address.")
-    except Exception as e:
-        print(f"Unexpected error with MQTT client: {str(e)}")
-
-# Start the MQTT client in a separate thread
-mqtt_thread = threading.Thread(target=run_mqtt_client)
-mqtt_thread.daemon = True
-mqtt_thread.start()
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    url = f"http://{config['chekt']['ip']}:{config['chekt']['port']}/api/v1/zones/{chekt_zone_id}/
