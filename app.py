@@ -194,4 +194,4 @@ def trigger_chekt_event(chekt_zone_id, event_state):
     Trigger the CHEKT API based on the event state (e.g., door open or motion detected).
     """
     config = load_config()
-    url = f"http://{config['chekt']['ip']}:{config['chekt']['port']}/api/v1/zones/{chekt_zone_id}/
+    url = f"http://{config['chekt']['ip']}:{config['chekt']['port']}/api/v1/zones/{chekt_zone_id}/events"
