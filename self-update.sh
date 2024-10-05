@@ -18,6 +18,7 @@ if ! command -v rsync &> /dev/null; then
   exit 1
 fi
 rsync -a "$APP_DIR/yolink-chekt-main/" "$APP_DIR/" || { echo 'Move extracted files failed.'; exit 1; }
+chmod +x "$APP_DIR/self-update.sh" || { echo 'Setting executable permission failed.'; exit 1; }
 rm -rf "$APP_DIR/yolink-chekt-main"
 rm "$APP_DIR/repo.zip"
 
