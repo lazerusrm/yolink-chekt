@@ -7,15 +7,20 @@ APP_DIR="/opt/yolink-chekt"
 # Update package list
 apt-get update || { echo "apt-get update failed."; exit 1; }
 
-# Check if Docker is installed, install if necessary
-if ! [ -x "$(command -v docker)" ]; then
-  echo "Docker not found, installing..."
-  apt-get install -y ca-certificates curl gnupg lsb-release || { echo "Dependency installation for Docker failed."; exit 1; }
-  curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
-  echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
-  apt-get update || { echo "apt-get update failed."; exit 1; }
-  apt-get install -y docker-ce docker-ce-cli containerd.io || { echo "Docker installation failed."; exit 1; }
-fi
+# Add dependencies needed by the Docker installation process
+apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release || { echo "Dependency installation for Docker failed."; exit 1; }
+
+# Add Docker's repository GPG key
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg || { echo "Adding Docker GPG key failed."; exit 1; }
+
+# Add Docker's repository to sources
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null || { echo "Adding Docker repository to sources failed."; exit 1; }
+
+# Update package list again
+apt-get update || { echo "apt-get update failed."; exit 1; }
+
+# Install Docker
+apt-get install -y docker-ce docker-ce-cli containerd.io || { echo "Docker installation failed."; exit 1; }
 
 # Verify Docker is running
 if ! systemctl is-active --quiet docker; then
