@@ -18,6 +18,13 @@ if ! [ -x "$(command -v docker-compose)" ]; then
   chmod +x /usr/local/bin/docker-compose
 fi
 
+# Check if unzip is installed, install if necessary
+if ! [ -x "$(command -v unzip)" ]; then
+  echo "Unzip not found, installing..."
+  apt-get update
+  apt-get install -y unzip
+fi
+
 # Download the repository as a ZIP file and extract it
 echo "Downloading repository from $REPO_URL..."
 mkdir -p "$APP_DIR"
