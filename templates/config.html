@@ -65,7 +65,7 @@
         <label for="yolink_csseckey">CSSECKEY:</label>
         <input type="text" id="yolink_csseckey" name="yolink_csseckey" required><br>
         <label for="yolink_token">Access Token:</label>
-        <input type="text" id="yolink_token" name="yolink_token" required readonly><br>
+        <input type="text" id="yolink_token" name="yolink_token"><br>
 
         <h3>CHEKT Configuration</h3>
         <label for="chekt_ip">IP Address:</label>
@@ -77,11 +77,11 @@
 
         <h3>MQTT Configuration</h3>
         <label for="mqtt_url">URL:</label>
-        <input type="text" id="mqtt_url" name="mqtt_url" value="mqtt://api.yosmart.com" required readonly><br>
+        <input type="text" id="mqtt_url" name="mqtt_url" value="mqtt://api.yosmart.com" required><br>
         <label for="mqtt_port">Port:</label>
         <input type="number" id="mqtt_port" name="mqtt_port" value="1883" required><br>
         <label for="mqtt_topic">Topic:</label>
-        <input type="text" id="mqtt_topic" name="mqtt_topic" value="/yolink/events" required readonly><br>
+        <input type="text" id="mqtt_topic" name="mqtt_topic" value="/yolink/events" required><br>
 
         <button type="button" onclick="saveConfig()">Save Configuration</button>
     </form>
@@ -92,19 +92,19 @@
                 .then(response => response.json())
                 .then(data => {
                     if (data.yolink) {
-                        document.getElementById('yolink_uac').value = data.yolink.uac;
-                        document.getElementById('yolink_csseckey').value = data.yolink.csseckey;
-                        document.getElementById('yolink_token').value = data.yolink.token;
+                        document.getElementById('yolink_uac').value = data.yolink.uac || '';
+                        document.getElementById('yolink_csseckey').value = data.yolink.csseckey || '';
+                        document.getElementById('yolink_token').value = data.yolink.token || '';
                     }
                     if (data.chekt) {
-                        document.getElementById('chekt_ip').value = data.chekt.ip;
-                        document.getElementById('chekt_port').value = data.chekt.port;
-                        document.getElementById('chekt_token').value = data.chekt.api_token;
+                        document.getElementById('chekt_ip').value = data.chekt.ip || '';
+                        document.getElementById('chekt_port').value = data.chekt.port || '';
+                        document.getElementById('chekt_token').value = data.chekt.api_token || '';
                     }
                     if (data.mqtt) {
-                        document.getElementById('mqtt_url').value = data.mqtt.url;
-                        document.getElementById('mqtt_port').value = data.mqtt.port;
-                        document.getElementById('mqtt_topic').value = data.mqtt.topic;
+                        document.getElementById('mqtt_url').value = data.mqtt.url || 'mqtt://api.yosmart.com';
+                        document.getElementById('mqtt_port').value = data.mqtt.port || '1883';
+                        document.getElementById('mqtt_topic').value = data.mqtt.topic || '/yolink/events';
                     }
                 })
                 .catch(error => console.error('Error loading configuration:', error));
