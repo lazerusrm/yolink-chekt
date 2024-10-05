@@ -195,3 +195,44 @@ def trigger_chekt_event(chekt_zone_id, event_state):
     """
     config = load_config()
     url = f"http://{config['chekt']['ip']}:{config['chekt']['port']}/api/v1/zones/{chekt_zone_id}/events"
+    
+    headers = {
+        'Authorization': f"Bearer {config['chekt']['api_token']}",
+        'Content-Type': 'application/json'
+    }
+    
+    data = {
+        "event": event_state,
+        "timestamp": int(time.time())
+    }
+    
+    try:
+        response = requests.post(url, headers=headers, json=data)
+        if response.status_code == 200:
+            print(f"CHEKT zone {chekt_zone_id} updated successfully")
+        else:
+            print(f"Failed to update CHEKT zone {chekt_zone_id}. Status code: {response.status_code}")
+    except Exception as e:
+        print(f"Error communicating with CHEKT API: {str(e)}")
+
+def run_mqtt_client():
+    config = load_config()
+    try:
+        mqtt_client = mqtt.Client(userdata={"topic": config['mqtt']['topic']})
+        mqtt_client.on_connect = on_connect
+        mqtt_client.on_message = on_message
+        mqtt_client.connect(config['mqtt']['url'], config['mqtt']['port'])
+        mqtt_client.loop_start()  # Using loop_start to keep the main thread alive
+    except socket.gaierror as e:
+        print(f"MQTT connection failed: {str(e)}. Please check the MQTT broker address.")
+    except Exception as e:
+        print(f"Unexpected error with MQTT client: {str(e)}")
+
+# Start the MQTT client in a separate thread
+mqtt_thread = threading.Thread(target=run_mqtt_client)
+mqtt_thread.daemon = True
+mqtt_thread.start()
+
+# Run the Flask app
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
