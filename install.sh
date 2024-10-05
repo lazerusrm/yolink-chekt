@@ -64,6 +64,33 @@ rsync -a "$APP_DIR/yolink-chekt-main/" "$APP_DIR/" || { echo "Move extracted fil
 rm -rf "$APP_DIR/yolink-chekt-main"
 rm "$APP_DIR/repo.zip"
 
+# Create default configuration files if they don't exist
+if [ ! -f "$APP_DIR/config.yaml" ]; then
+cat <<EOT > "$APP_DIR/config.yaml"
+yolink:
+  url: "http://localhost"
+  csid: "12345"
+  csseckey: "abcdef"
+chekt:
+  api_token: ""
+mqtt:
+  url: "mqtt://localhost"
+  port: 1883
+EOT
+fi
+
+if [ ! -f "$APP_DIR/devices.yaml" ]; then
+cat <<EOT > "$APP_DIR/devices.yaml"
+device_parameters: []
+EOT
+fi
+
+if [ ! -f "$APP_DIR/mappings.yaml" ]; then
+cat <<EOT > "$APP_DIR/mappings.yaml"
+{}
+EOT
+fi
+
 # Navigate to the app directory
 cd "$APP_DIR" || { echo "Failed to navigate to app directory."; exit 1; }
 
@@ -99,6 +126,21 @@ unzip -o \"\$APP_DIR/repo.zip\" -d \"\$APP_DIR\" || { echo 'Unzip failed.'; exit
 rsync -a \"\$APP_DIR/yolink-chekt-main/\" \"\$APP_DIR/\" || { echo 'Move extracted files failed.'; exit 1; }
 rm -rf \"\$APP_DIR/yolink-chekt-main\"
 rm \"\$APP_DIR/repo.zip\"
+
+# Create config.yaml if it doesn't exist
+if [ ! -f /opt/yolink-chekt/config.yaml ]; then
+cat <<EOT > /opt/yolink-chekt/config.yaml
+yolink:
+  url: "http://localhost"
+  csid: "12345"
+  csseckey: "abcdef"
+chekt:
+  api_token: ""
+mqtt:
+  url: "mqtt://localhost"
+  port: 1883
+EOT
+fi
 
 # Rebuild the Docker containers with the latest code
 echo 'Rebuilding Docker containers...'

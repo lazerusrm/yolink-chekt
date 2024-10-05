@@ -15,6 +15,41 @@ mapping_file = "mappings.yaml"
 
 config_data = {}
 
+class YoLinkDevice:
+    def __init__(self, url, csid, csseckey, serial_number, friendly_name="Unknown"):
+        self.url = url
+        self.csid = csid
+        self.csseckey = csseckey
+        self.serial_number = serial_number
+        self.friendly_name = friendly_name
+        self.device_data = {}
+
+    def build_device_api_request_data(self):
+        self.device_data = {
+            "method": "Manage.addYoLinkDevice",
+            "params": {"sn": self.serial_number},
+        }
+
+    def enable_device_api(self):
+        headers = {
+            'Content-Type': 'application/json',
+            'YS-CSID': self.csid,
+            'ys-sec': hashlib.md5((json.dumps(self.device_data) + self.csseckey).encode('utf-8')).hexdigest(),
+        }
+        response = requests.post(self.url, json=self.device_data, headers=headers)
+        if response.status_code == 200:
+            self.device_data = response.json()['data']
+            self.friendly_name = self.device_data.get('name', 'Unknown')
+
+    def get_friendly_name(self):
+        return self.friendly_name
+
+    def get_id(self):
+        return self.device_data.get('deviceId', 'Unknown')
+
+    def get_type(self):
+        return self.device_data.get('type', 'Unknown')
+
 # Load Yolink configuration
 def load_config():
     global config_data
