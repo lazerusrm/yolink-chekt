@@ -38,7 +38,7 @@ else
 fi
 
 # Install Docker Compose if not already installed
-if ! [ -x "$(command -v docker-compose)" ]; then
+if ! [ -x "$(command -v docker compose)" ]; then
   echo "Docker Compose not found, installing Docker Compose plugin..."
 
   # Install Docker Compose using the Docker plugin
