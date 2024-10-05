@@ -32,10 +32,10 @@ def save_config(data):
         yaml.dump(data, file)
 
 class YoLinkDevice:
-    def __init__(self, url, uac, csseckey, serial_number, friendly_name="Unknown"):
-        self.url = url
-        self.uac = uac
-        self.csseckey = csseckey
+    def __init__(self, uaid, secret_key, serial_number, friendly_name="Unknown"):
+        self.url = "https://api.yosmart.com/openApiV2"
+        self.uaid = uaid
+        self.secret_key = secret_key
         self.serial_number = serial_number
         self.friendly_name = friendly_name
         self.device_data = {}
@@ -49,8 +49,8 @@ class YoLinkDevice:
     def enable_device_api(self):
         headers = {
             'Content-Type': 'application/json',
-            'YS-UAC': self.uac,
-            'ys-sec': hashlib.md5((json.dumps(self.device_data) + self.csseckey).encode('utf-8')).hexdigest(),
+            'YS-UAID': self.uaid,
+            'ys-sec': hashlib.md5((json.dumps(self.device_data) + self.secret_key).encode('utf-8')).hexdigest(),
         }
         try:
             response = requests.post(self.url, json=self.device_data, headers=headers)
@@ -72,10 +72,10 @@ class YoLinkDevice:
         return self.device_data.get('type', 'Unknown')
 
 # Query Yolink devices (from the local API)
-def query_yolink_devices(url, uac, csseckey, device_list):
+def query_yolink_devices(uaid, secret_key, device_list):
     devices = []
     for device_data in device_list:
-        yolink_device = YoLinkDevice(url, uac, csseckey, device_data['serial_number'], "")
+        yolink_device = YoLinkDevice(uaid, secret_key, device_data['serial_number'], "")
         yolink_device.build_device_api_request_data()
         yolink_device.enable_device_api()
         devices.append({
@@ -84,6 +84,26 @@ def query_yolink_devices(url, uac, csseckey, device_list):
             'type': yolink_device.get_type()
         })
     return devices
+
+def get_yolink_token(uaid, secret_key):
+    url = "https://api.yosmart.com/openApiV2/token"
+    headers = {
+        'Content-Type': 'application/json'
+    }
+    data = {
+        "uaId": uaid,
+        "secretKey": secret_key
+    }
+    try:
+        response = requests.post(url, headers=headers, json=data)
+        if response.status_code == 200:
+            return response.json().get('token', '')
+        else:
+            print(f"Failed to get YoLink token. Status code: {response.status_code}")
+            return ""
+    except Exception as e:
+        print(f"Error getting YoLink token: {str(e)}")
+        return ""
 
 @app.route('/')
 def index():
@@ -101,7 +121,7 @@ def index():
             mappings = yaml.safe_load(mf)
 
     # Query Yolink devices
-    yolink_devices = query_yolink_devices(config['yolink']['url'], config['yolink']['uac'], config['yolink']['csseckey'], devices)
+    yolink_devices = query_yolink_devices(config['yolink']['uaid'], config['yolink']['secret_key'], devices)
 
     return render_template('index.html', devices=yolink_devices, mappings=mappings, config=config)
 

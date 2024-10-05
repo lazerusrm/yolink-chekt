@@ -1,15 +1,14 @@
 yolink:
-  url: "http://192.168.1.100:8080"  # Yolink local bridge API URL
-  uac: "your_uac_value_here"
-  csseckey: "your_csseckey"
-  token: "your_token"
+  uaid: "your_uaid"
+  secret_key: "your_secret_key"
 mqtt:
-  url: "mqtt://192.168.1.100"
+  url: "mqtt://broker.yosmart.com"
   port: 1883
   topic: "/yolink/events"
-chekt:
-  ip: "192.168.1.101"
-  port: 30003
 files:
   device_file: "devices.yaml"
   map_file: "mappings.yaml"
+chekt:
+  ip: "192.168.1.100"
+  port: 30003
+  api_token: ""
