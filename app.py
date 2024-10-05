@@ -1,10 +1,13 @@
 import yaml
 import json
 import requests
+import hashlib
+import time
 from flask import Flask, render_template, request, jsonify
 import threading
 import paho.mqtt.client as mqtt
 import os
+import socket
 
 app = Flask(__name__)
 
@@ -14,6 +17,19 @@ device_file = "devices.yaml"
 mapping_file = "mappings.yaml"
 
 config_data = {}
+
+def load_config():
+    global config_data
+    if os.path.exists(config_file):
+        with open(config_file, 'r') as file:
+            config_data = yaml.safe_load(file)
+    return config_data
+
+def save_config(data):
+    global config_data
+    config_data = data
+    with open(config_file, 'w') as file:
+        yaml.dump(data, file)
 
 class YoLinkDevice:
     def __init__(self, url, csid, csseckey, serial_number, friendly_name="Unknown"):
@@ -36,10 +52,15 @@ class YoLinkDevice:
             'YS-CSID': self.csid,
             'ys-sec': hashlib.md5((json.dumps(self.device_data) + self.csseckey).encode('utf-8')).hexdigest(),
         }
-        response = requests.post(self.url, json=self.device_data, headers=headers)
-        if response.status_code == 200:
-            self.device_data = response.json()['data']
-            self.friendly_name = self.device_data.get('name', 'Unknown')
+        try:
+            response = requests.post(self.url, json=self.device_data, headers=headers)
+            if response.status_code == 200:
+                self.device_data = response.json().get('data', {})
+                self.friendly_name = self.device_data.get('name', 'Unknown')
+            else:
+                print(f"Failed to enable device API for {self.serial_number}. Status code: {response.status_code}")
+        except Exception as e:
+            print(f"Error enabling device API for {self.serial_number}: {str(e)}")
 
     def get_friendly_name(self):
         return self.friendly_name
@@ -49,20 +70,6 @@ class YoLinkDevice:
 
     def get_type(self):
         return self.device_data.get('type', 'Unknown')
-
-# Load Yolink configuration
-def load_config():
-    global config_data
-    if os.path.exists(config_file):
-        with open(config_file, 'r') as file:
-            config_data = yaml.safe_load(file)
-    return config_data
-
-def save_config(data):
-    global config_data
-    config_data = data
-    with open(config_file, 'w') as file:
-        yaml.dump(data, file)
 
 # Query Yolink devices (from the local API)
 def query_yolink_devices(url, csid, csseckey, device_list):
@@ -82,10 +89,16 @@ def query_yolink_devices(url, csid, csseckey, device_list):
 def index():
     # Load device and mapping configurations
     config = load_config()
-    with open(device_file, 'r') as df:
-        devices = yaml.safe_load(df)['device_parameters']
-    with open(mapping_file, 'r') as mf:
-        mappings = yaml.safe_load(mf)
+    devices = []
+    mappings = {}
+
+    if os.path.exists(device_file):
+        with open(device_file, 'r') as df:
+            devices = yaml.safe_load(df).get('device_parameters', [])
+
+    if os.path.exists(mapping_file):
+        with open(mapping_file, 'r') as mf:
+            mappings = yaml.safe_load(mf)
 
     # Query Yolink devices
     yolink_devices = query_yolink_devices(config['yolink']['url'], config['yolink']['csid'], config['yolink']['csseckey'], devices)
@@ -121,8 +134,11 @@ def on_message(client, userdata, msg):
     print(f"Received message on topic {msg.topic}: {msg.payload}")
     
     # Load device mappings from file
-    with open(mapping_file, 'r') as mf:
-        mappings = yaml.safe_load(mf)
+    if os.path.exists(mapping_file):
+        with open(mapping_file, 'r') as mf:
+            mappings = yaml.safe_load(mf)
+    else:
+        mappings = {}
     
     try:
         payload = json.loads(msg.payload.decode("utf-8"))
@@ -166,11 +182,16 @@ def trigger_chekt_event(chekt_zone_id, event_state):
 
 def run_mqtt_client():
     config = load_config()
-    mqtt_client = mqtt.Client(userdata={"topic": config['mqtt']['topic']})
-    mqtt_client.on_connect = on_connect
-    mqtt_client.on_message = on_message
-    mqtt_client.connect(config['mqtt']['url'], config['mqtt']['port'])
-    mqtt_client.loop_forever()
+    try:
+        mqtt_client = mqtt.Client(userdata={"topic": config['mqtt']['topic']})
+        mqtt_client.on_connect = on_connect
+        mqtt_client.on_message = on_message
+        mqtt_client.connect(config['mqtt']['url'], config['mqtt']['port'])
+        mqtt_client.loop_forever()
+    except socket.gaierror as e:
+        print(f"MQTT connection failed: {str(e)}. Please check the MQTT broker address.")
+    except Exception as e:
+        print(f"Unexpected error with MQTT client: {str(e)}")
 
 # Start the MQTT client in a separate thread
 mqtt_thread = threading.Thread(target=run_mqtt_client)
