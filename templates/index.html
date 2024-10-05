@@ -75,7 +75,7 @@
                         <td>{{ device['name'] }}</td>
                         <td>{{ device['id'] }}</td>
                         <td>
-                            <input type="text" name="chekt_zone" class="form-control" value="{{ mappings[device['id']] }}">
+                            <input type="text" name="chekt_zone" class="form-control" value="{{ mappings.get(device['id'], '') }}">
                             <input type="hidden" name="device_id" value="{{ device['id'] }}">
                         </td>
                     </tr>
@@ -104,6 +104,9 @@
                 data: JSON.stringify(mappings),
                 success: function (response) {
                     alert(response.message);
+                },
+                error: function (xhr, status, error) {
+                    alert('Error: ' + xhr.responseText);
                 }
             });
         });
