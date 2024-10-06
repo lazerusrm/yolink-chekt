@@ -159,13 +159,19 @@ def test_chekt_api():
     }
 
     try:
+        print(f"Testing CHEKT API Connection to URL: {url}")
         response = requests.get(url, headers=headers)
+        print(f"CHEKT API Response Status Code: {response.status_code}")
+        print(f"CHEKT API Response: {response.text}")
+
         if response.status_code == 200:
-            return jsonify({"status": "success", "message": "CHEKT API connection successful."})
+            return jsonify({"status": "success", "message": "CHEKT API connection successful.", "debug_info": response.text})
         else:
             return jsonify({"status": "error", "message": f"Failed to connect to CHEKT API. Status code: {response.status_code}", "response": response.text})
     except Exception as e:
+        print(f"Error connecting to CHEKT API: {str(e)}")
         return jsonify({"status": "error", "message": str(e)})
+
 
 @app.route('/test_yolink_api', methods=['GET'])
 def test_yolink_api():
@@ -181,6 +187,7 @@ def test_yolink_api():
         return jsonify({"status": "error", "message": "'base_url' key is missing in Yolink configuration."})
 
     # Try to access the Yolink API to verify connection
+    url = f"{base_url}/api"
     headers = {
         'Authorization': f"Bearer {token}",
         'Content-Type': 'application/json'
@@ -191,14 +198,23 @@ def test_yolink_api():
     }
 
     try:
-        response = requests.post(f"{base_url}/api", headers=headers, json=payload)
+        print(f"Testing Yolink API Connection to URL: {url}")
+        print(f"Request Headers: {headers}")
+        print(f"Request Payload: {payload}")
+
+        response = requests.post(url, headers=headers, json=payload)
+        print(f"Yolink API Response Status Code: {response.status_code}")
+        print(f"Yolink API Response: {response.text}")
+
         if response.status_code == 200:
             data = response.json()
-            return jsonify({"status": "success", "data": data})
+            return jsonify({"status": "success", "data": data, "debug_info": response.text})
         else:
             return jsonify({"status": "error", "message": f"Failed to access Yolink API. Status code: {response.status_code}", "response": response.text})
     except Exception as e:
+        print(f"Error connecting to Yolink API: {str(e)}")
         return jsonify({"status": "error", "message": str(e)})
+
 
 @app.route('/get_devices', methods=['POST'])
 def get_devices():
