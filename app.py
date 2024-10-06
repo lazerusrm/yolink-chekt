@@ -1,4 +1,5 @@
 import yaml
+import uuid
 import paho.mqtt.client as mqtt
 import json
 import requests
@@ -375,43 +376,49 @@ def on_message(client, userdata, msg):
         logger.error(f"Error processing message: {str(e)}")
 
 # Function to start the MQTT client
+import uuid  # Step 1: Import the uuid module
+
 def run_mqtt_client():
     config = load_config()
     try:
-        # Log that we're attempting to run the MQTT client
-        logger.debug("Starting the MQTT client setup.")
-        
         # Ensure we have a valid token
         token = config['yolink'].get('token')
-        if not token:
-            logger.info("No token found in config. Generating new Yolink token.")
+        if not token or is_token_expired():
+            logger.info("Generating or refreshing Yolink token")
             token = generate_yolink_token(config['yolink']['uaid'], config['yolink']['secret_key'])
-            if token:
-                logger.debug(f"Successfully generated new Yolink token: {token}")
-            else:
-                logger.error("Failed to generate Yolink token.")
-                return  # Exit if we can't generate the token
 
-        # Log the token and configuration details (obfuscate token in production)
-        logger.debug(f"Token used for MQTT connection: {token[:10]}... (truncated)")
-        logger.debug(f"Connecting to MQTT broker at {config['mqtt']['url']} on port {config['mqtt']['port']}")
+        # Get Home ID from API (required for MQTT topics)
+        yolink_api = YoLinkAPI(config['yolink']['base_url'], token)
+        homes = yolink_api.get_homes()
+        if not homes:
+            logger.error("Failed to retrieve homes, MQTT subscription will not proceed.")
+            return
+        home_id = homes[0].get('id')  # Assuming you're using the first home in the list
+
+        # Step 3: Generate a unique client ID
+        client_id = str(uuid.uuid4())  # Generate a unique client ID using uuid
 
         # Create the MQTT client and set up callbacks
-        mqtt_client = mqtt.Client(userdata={"topic": config['mqtt']['topic']})
+        logger.debug(f"Generated Client ID for MQTT connection: {client_id}")
+        mqtt_client = mqtt.Client(client_id=client_id, userdata={"topic": f"yl-home/{home_id}/+/report"})
         mqtt_client.on_connect = on_connect
         mqtt_client.on_message = on_message
 
-        # Use the Yolink Bearer token as the password for authentication
-        mqtt_client.username_pw_set(username="Bearer", password=token)
-        logger.debug("Bearer token set for MQTT authentication.")
+        # Log before setting the authentication details
+        logger.debug(f"Using access token for MQTT: {token[:10]}...(truncated)")
+        
+        # Username is the access token, password is None
+        mqtt_client.username_pw_set(username=token, password=None)
 
-        # Connect to the Yolink MQTT broker
-        mqtt_client.connect(config['mqtt']['url'].replace("mqtt://", ""), int(config['mqtt']['port']))
-        logger.info(f"Successfully connected to MQTT broker at {config['mqtt']['url']}")
+        # Log before attempting to connect to the MQTT broker
+        mqtt_broker_url = config['mqtt']['url'].replace("mqtt://", "")
+        mqtt_broker_port = int(config['mqtt']['port'])
+        logger.debug(f"Connecting to MQTT broker at {mqtt_broker_url} on port {mqtt_broker_port}")
+        
+        mqtt_client.connect(mqtt_broker_url, mqtt_broker_port)
 
         # Start the MQTT loop
         mqtt_client.loop_forever()
-        logger.debug("MQTT client loop started.")
 
     except socket.gaierror as e:
         logger.error(f"MQTT connection failed (DNS error): {str(e)}. Check the MQTT broker address.")
