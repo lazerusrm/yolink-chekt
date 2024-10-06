@@ -8,6 +8,7 @@ import threading
 import paho.mqtt.client as mqtt
 import os
 import socket
+from datetime import datetime
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -20,23 +21,12 @@ device_file = "devices.yaml"
 mapping_file = "mappings.yaml"
 
 config_data = {}
-log_messages = []  # To collect logs for web view
-
-def add_to_log(message):
-    global log_messages
-    timestamp = time.strftime("%m/%d/%Y, %I:%M:%S %p")
-    log_entry = f"{timestamp}: {message}"
-    log_messages.append(log_entry)
-    logging.info(log_entry)
 
 def load_config():
     global config_data
     if os.path.exists(config_file):
         with open(config_file, 'r') as file:
             config_data = yaml.safe_load(file)
-        add_to_log("Configuration loaded.")
-    else:
-        add_to_log(f"Configuration file '{config_file}' not found.")
     return config_data
 
 def save_config(data):
@@ -59,25 +49,23 @@ def generate_yolink_token(uaid, secret_key):
         "client_secret": secret_key
     }
 
-    add_to_log(f"Requesting Yolink token from URL: {url}")
-    
+    logging.debug(f"Sending token request to URL: {url}")
     try:
         response = requests.post(url, headers=headers, data=data)
-        add_to_log(f"Token response: {response.status_code} - {response.text}")
+        logging.debug(f"Token response: {response.status_code} - {response.text}")
 
         if response.status_code == 200:
             token = response.json().get("access_token")
             if token:
-                add_to_log("Successfully obtained Yolink token.")
                 config_data['yolink']['token'] = token
                 save_config(config_data)
                 return token
             else:
-                add_to_log("Failed to obtain Yolink token. Check UAID and Secret Key.")
+                logging.error("Failed to obtain Yolink token. Check UAID and Secret Key.")
         else:
-            add_to_log(f"Failed to generate Yolink token. Status code: {response.status_code}")
+            logging.error(f"Failed to generate Yolink token. Status code: {response.status_code}")
     except Exception as e:
-        add_to_log(f"Error generating Yolink token: {str(e)}")
+        logging.error(f"Error generating Yolink token: {str(e)}")
 
     return None
 
@@ -86,67 +74,56 @@ class YoLinkAPI:
         self.base_url = base_url
         self.token = token
 
-    def get_homes(self):
-        url = f"{self.base_url}/open/yolink/v2/api"
+    def request_with_token_refresh(self, data):
         headers = {
             'Content-Type': 'application/json',
             'Authorization': f"Bearer {self.token}"
         }
-        data = {
-            "method": "Home.getGeneralInfo",
-            "time": int(time.time() * 1000),
-        }
 
-        add_to_log(f"Sending request to get homes: {url}")
-        
         try:
-            response = requests.post(url, json=data, headers=headers)
-            add_to_log(f"Response: {response.status_code} - {response.text}")
+            response = requests.post(self.base_url, headers=headers, json=data)
+            logging.debug(f"Response Code: {response.status_code}")
+            logging.debug(f"Response Body: {response.text}")
 
             if response.status_code == 200:
-                return response.json().get('data', {}).get('homes', [])
-            elif response.status_code == 401:
-                add_to_log("Token expired, regenerating...")
-                return None  # Token expired, needs to be regenerated
+                return response.json()
+            elif response.status_code == 401 and "token is expired" in response.text.lower():
+                # Token expired, regenerate and retry
+                logging.warning("Token expired, regenerating...")
+                self.token = generate_yolink_token(config_data['yolink']['uaid'], config_data['yolink']['secret_key'])
+                if self.token:
+                    headers['Authorization'] = f"Bearer {self.token}"
+                    response = requests.post(self.base_url, headers=headers, json=data)
+                    if response.status_code == 200:
+                        return response.json()
             else:
-                add_to_log(f"Failed to get home info. Status code: {response.status_code}")
-                return []
+                logging.error(f"Failed request. Status code: {response.status_code} - {response.text}")
+
         except Exception as e:
-            add_to_log(f"Error getting home info: {str(e)}")
-            return []
+            logging.error(f"Error during API request: {str(e)}")
+
+        return None
+
+    def get_homes(self):
+        data = {
+            "method": "Home.getGeneralInfo",
+            "time": int(time.time() * 1000)
+        }
+        logging.debug(f"Sending get_homes request: {data}")
+        return self.request_with_token_refresh(data).get('data', {}).get('homes', []) if self.request_with_token_refresh(data) else []
 
     def get_device_list(self, home_id):
-        url = f"{self.base_url}/open/yolink/v2/api"
-        headers = {
-            'Content-Type': 'application/json',
-            'Authorization': f"Bearer {self.token}"
-        }
         data = {
             "method": "Home.getDeviceList",
             "time": int(time.time() * 1000),
             "homeId": home_id
         }
-
-        add_to_log(f"Sending request to get device list: {url}")
-        
-        try:
-            response = requests.post(url, json=data, headers=headers)
-            add_to_log(f"Response: {response.status_code} - {response.text}")
-
-            if response.status_code == 200:
-                return response.json().get('data', {}).get('devices', [])
-            elif response.status_code == 401:
-                add_to_log("Token expired, regenerating...")
-                return None  # Token expired, needs to be regenerated
-            else:
-                add_to_log(f"Failed to get device list. Status code: {response.status_code}")
-                return []
-        except Exception as e:
-            add_to_log(f"Error getting device list: {str(e)}")
-            return []
+        logging.debug(f"Sending get_device_list request: {data}")
+        return self.request_with_token_refresh(data).get('data', {}).get('devices', []) if self.request_with_token_refresh(data) else []
 
 @app.route('/')
 def index():
+    # Load device and mapping configurations
     config = load_config()
     mappings = {}
 
@@ -154,103 +131,74 @@ def index():
         with open(mapping_file, 'r') as mf:
             mappings = yaml.safe_load(mf)
 
-    # Generate Yolink token if it doesn't exist or is invalid
-    token = config.get('yolink', {}).get('token')
+    # Generate Yolink token if it doesn't exist
+    token = config['yolink'].get('token')
     if not token:
-        token = generate_yolink_token(config['yolink'].get('uaid', ''), config['yolink'].get('secret_key', ''))
+        token = generate_yolink_token(config['yolink']['uaid'], config['yolink']['secret_key'])
 
     # Check if required keys are available
     if 'base_url' not in config['yolink']:
-        add_to_log("Missing 'base_url' in Yolink configuration.")
         return render_template('index.html', devices=[], mappings=mappings, config=config, error="Configuration Error: 'base_url' key is missing in Yolink configuration.")
 
     # Query Yolink homes
     yolink_api = YoLinkAPI(config['yolink']['base_url'], token)
     homes = yolink_api.get_homes()
-    if homes is None:
-        token = generate_yolink_token(config['yolink']['uaid'], config['yolink']['secret_key'])
-        if token:
-            yolink_api = YoLinkAPI(config['yolink']['base_url'], token)
-            homes = yolink_api.get_homes()
-        else:
-            add_to_log("Failed to regenerate token for Yolink.")
 
-    return render_template('index.html', homes=homes, mappings=mappings, config=config, logs=log_messages)
+    return render_template('index.html', homes=homes, mappings=mappings, config=config)
 
-@app.route('/get_logs', methods=['GET'])
-def get_logs():
-    return jsonify(log_messages)
-
-# MQTT Configuration and Callbacks
-def on_connect(client, userdata, flags, rc):
-    if rc == 0:
-        add_to_log("Connected to MQTT broker")
-        client.subscribe(userdata['topic'])
-    else:
-        add_to_log(f"Failed to connect, return code {rc}")
-
-def on_message(client, userdata, msg):
-    add_to_log(f"Received message on topic {msg.topic}: {msg.payload}")
-    
-    if os.path.exists(mapping_file):
-        with open(mapping_file, 'r') as mf:
-            mappings = yaml.safe_load(mf)
-    else:
-        mappings = {}
-
-    try:
-        payload = json.loads(msg.payload.decode("utf-8"))
-        device_id = payload['deviceId']
-        state = payload['data']['state']
-
-        if device_id in mappings:
-            chekt_zone_id = mappings[device_id]
-            add_to_log(f"Triggering CHEKT for device {device_id} in zone {chekt_zone_id} with state {state}")
-            trigger_chekt_event(chekt_zone_id, state)
-    except Exception as e:
-        add_to_log(f"Error processing message: {str(e)}")
-
-def trigger_chekt_event(chekt_zone_id, event_state):
+@app.route('/test_chekt_api', methods=['GET'])
+def test_chekt_api():
+    # Load configuration to get CHEKT API settings
     config = load_config()
-    url = f"http://{config['chekt']['ip']}:{config['chekt']['port']}/api/v1/zones/{chekt_zone_id}/events"
-    
+    chekt_ip = config['chekt'].get('ip')
+    chekt_port = config['chekt'].get('port')
+    api_token = config['chekt'].get('api_token')
+
+    if not chekt_ip or not chekt_port:
+        return jsonify({"status": "error", "message": "CHEKT API configuration (IP or port) is missing."})
+
+    # Try to access the CHEKT API health endpoint to verify the connection
+    url = f"http://{chekt_ip}:{chekt_port}/api/v1/"
     headers = {
-        'Authorization': f"Bearer {config['chekt']['api_token']}",
+        'Authorization': f"Bearer {api_token}",
         'Content-Type': 'application/json'
     }
-    data = {
-        "event": event_state,
-        "timestamp": int(time.time())
-    }
-
-    add_to_log(f"Sending event to CHEKT: {url}")
 
     try:
-        response = requests.post(url, headers=headers, json=data)
-        if response.status_code in [200, 202]:
-            add_to_log(f"CHEKT zone {chekt_zone_id} updated successfully")
+        logging.debug(f"Testing CHEKT API Connection to URL: {url}")
+        response = requests.get(url, headers=headers)
+        logging.debug(f"CHEKT API Response Status Code: {response.status_code} - Response: {response.text}")
+
+        if response.status_code == 200:
+            return jsonify({"status": "success", "message": "CHEKT API connection successful.", "debug_info": response.text})
         else:
-            add_to_log(f"Failed to update CHEKT zone {chekt_zone_id}. Status code: {response.status_code}")
+            return jsonify({"status": "error", "message": f"Failed to connect to CHEKT API. Status code: {response.status_code}", "response": response.text})
     except Exception as e:
-        add_to_log(f"Error communicating with CHEKT API: {str(e)}")
+        logging.error(f"Error connecting to CHEKT API: {str(e)}")
+        return jsonify({"status": "error", "message": str(e)})
 
-def run_mqtt_client():
+@app.route('/test_yolink_api', methods=['GET'])
+def test_yolink_api():
+    # Load configuration to get token
     config = load_config()
-    try:
-        mqtt_client = mqtt.Client(userdata={"topic": config['mqtt']['topic']})
-        mqtt_client.on_connect = on_connect
-        mqtt_client.on_message = on_message
-        mqtt_client.connect(config['mqtt']['url'], int(config['mqtt']['port']))
-        mqtt_client.loop_forever()
-    except socket.gaierror as e:
-        add_to_log(f"MQTT connection failed: {str(e)}. Please check the MQTT broker address.")
-    except Exception as e:
-        add_to_log(f"Unexpected error with MQTT client: {str(e)}")
+    token = config['yolink'].get('token')
 
-# Start the MQTT client in a separate thread
-mqtt_thread = threading.Thread(target=run_mqtt_client)
-mqtt_thread.daemon = True
-mqtt_thread.start()
+    if not token:
+        return jsonify({"status": "error", "message": "No token available. Please generate a token first."})
+
+    base_url = config['yolink']['base_url']
+    if not base_url:
+        return jsonify({"status": "error", "message": "'base_url' key is missing in Yolink configuration."})
+
+    # Try to access the Yolink API to verify connection
+    yolink_api = YoLinkAPI(base_url, token)
+    homes = yolink_api.get_homes()
+    if homes:
+        return jsonify({"status": "success", "data": homes})
+    else:
+        return jsonify({"status": "error", "message": "Failed to access Yolink API or no homes found."})
+
+# Remaining route definitions (get_devices, save_mapping, etc.) can follow similar improvements...
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
