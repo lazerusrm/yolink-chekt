@@ -123,9 +123,6 @@ class YoLinkAPI:
         return []
 
     def get_device_list(self, home_id):
-    """
-    This method fetches the list of devices for a given home.
-    """
     url = f"{self.base_url}open/yolink/v2/api"
     headers = {
         'Content-Type': 'application/json',
@@ -245,9 +242,6 @@ def test_chekt_api():
 
 @app.route('/get_logs', methods=['GET'])
 def get_logs():
-    """
-    Fetch logs for displaying on the web interface.
-    """
     try:
         with open('application.log', 'r') as log_file:
             logs = log_file.read()
@@ -286,9 +280,6 @@ def on_message(client, userdata, msg):
         logger.error(f"Error processing message: {str(e)}")
 
 def trigger_chekt_event(chekt_zone_id, event_state):
-    """
-    Trigger the CHEKT API based on the event state (e.g., door open or motion detected).
-    """
     config = load_config()
     url = f"http://{config['chekt']['ip']}:{config['chekt']['port']}/api/v1/zones/{chekt_zone_id}/events"
 
