@@ -20,7 +20,6 @@ logger = logging.getLogger()
 config_file = "config.yaml"
 config_data = {}
 
-
 def load_config():
     global config_data
     if os.path.exists(config_file):
@@ -28,13 +27,11 @@ def load_config():
             config_data = yaml.safe_load(file)
     return config_data
 
-
 def save_config(data):
     global config_data
     config_data = data
     with open(config_file, 'w') as file:
         yaml.dump(data, file)
-
 
 def generate_yolink_token(uaid, secret_key):
     """
@@ -71,7 +68,6 @@ def generate_yolink_token(uaid, secret_key):
 
     return None
 
-
 def handle_token_expiry():
     """
     Handles the token expiry by generating a new one if needed.
@@ -84,10 +80,9 @@ def handle_token_expiry():
         logger.error("Failed to generate a new Yolink token.")
         return None
 
-
 class YoLinkAPI:
     def __init__(self, base_url, token):
-        self.base_url = base_url
+        self.base_url = base_url if base_url.endswith('/') else base_url + '/'
         self.token = token
 
     def get_homes(self):
@@ -157,7 +152,6 @@ class YoLinkAPI:
 
         return []
 
-
 @app.route('/')
 def index():
     # Load device and mapping configurations
@@ -187,7 +181,6 @@ def index():
     homes = yolink_api.get_homes()
 
     return render_template('index.html', homes=homes, mappings=mappings, config=config)
-
 
 @app.route('/test_chekt_api', methods=['GET'])
 def test_chekt_api():
@@ -224,7 +217,6 @@ def test_chekt_api():
         logger.error(f"Error connecting to CHEKT API: {str(e)}")
         return jsonify({"status": "error", "message": str(e)})
 
-
 @app.route('/get_logs', methods=['GET'])
 def get_logs():
     """
@@ -236,7 +228,6 @@ def get_logs():
         return jsonify({"status": "success", "logs": logs})
     except FileNotFoundError:
         return jsonify({"status": "error", "message": "Log file not found."})
-
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
