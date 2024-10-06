@@ -1,4 +1,5 @@
 import yaml
+import paho.mqtt.client as mqtt
 import json
 import requests
 import time
@@ -280,6 +281,76 @@ def on_connect(client, userdata, flags, rc):
 def on_message(client, userdata, msg):
     logger.info(f"Received message on topic {msg.topic}: {msg.payload}")
 
+    # Load the mappings from mappings.yaml
+    config = load_config()
+    if os.path.exists(config['files']['map_file']):
+        with open(config['files']['map_file'], 'r') as mf:
+            mappings = yaml.safe_load(mf)
+    else:
+        logger.error("Mappings file is missing.")
+        return
+
+    try:
+        # Decode and parse the payload
+        payload = json.loads(msg.payload.decode("utf-8"))
+        device_id = payload.get('deviceId')
+        state = payload['data'].get('state')
+
+        if device_id in mappings:
+            # Get the corresponding CHEKT zone ID from the mappings
+            chekt_zone_id = mappings[device_id]
+
+            logger.info(f"Triggering CHEKT for device {device_id} in zone {chekt_zone_id} with state {state}")
+            # Trigger the CHEKT event using the API
+            trigger_chekt_event(chekt_zone_id, state)
+        else:
+            logger.warning(f"Device ID {device_id} not found in mappings.")
+    except Exception as e:
+        logger.error(f"Error processing message: {str(e)}")
+
+def trigger_chekt_event(chekt_zone_id, event_state):
+    """
+    Trigger an event in the CHEKT system based on the zone ID and the event state.
+    """
+    config = load_config()
+    url = f"http://{config['chekt']['ip']}:{config['chekt']['port']}/api/v1/zones/{chekt_zone_id}/events"
+
+    headers = {
+        'Authorization': f"Bearer {config['chekt']['api_token']}",
+        'Content-Type': 'application/json'
+    }
+
+    # Create the payload for the CHEKT API
+    data = {
+        "event": event_state,  # Send the state received from Yolink
+        "timestamp": int(time.time())
+    }
+
+    try:
+        # Send the event to the CHEKT API
+        response = requests.post(url, headers=headers, json=data)
+        if response.status_code in [200, 202]:
+            logger.info(f"CHEKT zone {chekt_zone_id} updated successfully")
+            if response.status_code == 202:
+                logger.info(f"Request accepted for processing. Response: {response.text}")
+        else:
+            logger.error(f"Failed to update CHEKT zone {chekt_zone_id}. Status code: {response.status_code}")
+            logger.error(f"Response: {response.text}")
+    except Exception as e:
+        logger.error(f"Error communicating with CHEKT API: {str(e)}")
+
+# MQTT Callbacks and Client Handling
+def on_connect(client, userdata, flags, rc):
+    if rc == 0:
+        logger.info("Connected to Yolink MQTT broker")
+        client.subscribe(userdata['topic'])  # Subscribe to the topic from the config
+    else:
+        logger.error(f"Failed to connect, return code {rc}")
+
+# Callback when a message is received
+def on_message(client, userdata, msg):
+    logger.info(f"Received message on topic {msg.topic}: {msg.payload}")
+
     if os.path.exists(config_data['files']['map_file']):
         with open(config_data['files']['map_file'], 'r') as mf:
             mappings = yaml.safe_load(mf)
@@ -299,40 +370,30 @@ def on_message(client, userdata, msg):
     except Exception as e:
         logger.error(f"Error processing message: {str(e)}")
 
-def trigger_chekt_event(chekt_zone_id, event_state):
-    config = load_config()
-    url = f"http://{config['chekt']['ip']}:{config['chekt']['port']}/api/v1/zones/{chekt_zone_id}/events"
-
-    headers = {
-        'Authorization': f"Bearer {config['chekt']['api_token']}",
-        'Content-Type': 'application/json'
-    }
-
-    data = {
-        "event": event_state,
-        "timestamp": int(time.time())
-    }
-
-    try:
-        response = requests.post(url, headers=headers, json=data)
-        if response.status_code in [200, 202]:
-            logger.info(f"CHEKT zone {chekt_zone_id} updated successfully")
-            if response.status_code == 202:
-                logger.info(f"Request accepted for processing. Response: {response.text}")
-        else:
-            logger.error(f"Failed to update CHEKT zone {chekt_zone_id}. Status code: {response.status_code}")
-            logger.error(f"Response: {response.text}")
-    except Exception as e:
-        logger.error(f"Error communicating with CHEKT API: {str(e)}")
-
+# Function to start the MQTT client
 def run_mqtt_client():
     config = load_config()
     try:
+        # Ensure we have a valid token
+        token = config['yolink'].get('token')
+        if not token:
+            logger.info("Generating new Yolink token")
+            token = generate_yolink_token(config['yolink']['uaid'], config['yolink']['secret_key'])
+
+        # Create the MQTT client and set up callbacks
         mqtt_client = mqtt.Client(userdata={"topic": config['mqtt']['topic']})
         mqtt_client.on_connect = on_connect
         mqtt_client.on_message = on_message
-        mqtt_client.connect(config['mqtt']['url'], int(config['mqtt']['port']))
+
+        # Use the Yolink Bearer token as the password for authentication
+        mqtt_client.username_pw_set(username="Bearer", password=token)
+
+        # Connect to the Yolink MQTT broker
+        mqtt_client.connect(config['mqtt']['url'].replace("mqtt://", ""), int(config['mqtt']['port']))
+
+        # Start the MQTT loop
         mqtt_client.loop_forever()
+
     except socket.gaierror as e:
         logger.error(f"MQTT connection failed: {str(e)}. Please check the MQTT broker address.")
     except Exception as e:
