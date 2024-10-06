@@ -375,7 +375,7 @@ def on_message(client, userdata, msg):
         logger.error(f"Error processing message: {str(e)}")
 
 # Function to start the MQTT client
-ddef run_mqtt_client():
+def run_mqtt_client():
     config = load_config()
     try:
         # Log that we're attempting to run the MQTT client
