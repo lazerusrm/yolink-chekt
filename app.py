@@ -20,8 +20,15 @@ config_data = {}
 def load_config():
     global config_data
     if os.path.exists(config_file):
-        with open(config_file, 'r') as file:
-            config_data = yaml.safe_load(file)
+        try:
+            with open(config_file, 'r') as file:
+                config_data = yaml.safe_load(file)
+                if not config_data or 'yolink' not in config_data:
+                    raise ValueError("Yolink configuration section is missing")
+        except Exception as e:
+            print(f"Error loading configuration: {str(e)}")
+    else:
+        print("Configuration file not found")
     return config_data
 
 def save_config(data):
@@ -129,21 +136,26 @@ def index():
             mappings = yaml.safe_load(mf)
 
     # Generate Yolink token if it doesn't exist
-    if not config['yolink'].get('token'):
-        token = generate_yolink_token(config['yolink'].get('uaid', ''), config['yolink'].get('secret_key', ''))
+    if not config.get('yolink', {}).get('token'):
+        token = generate_yolink_token(config.get('yolink', {}).get('uaid', ''), config.get('yolink', {}).get('secret_key', ''))
     else:
         token = config['yolink']['token']
 
-    # Check if required keys are available
-    if 'base_url' not in config['yolink']:
-        return "Configuration Error: 'base_url' key is missing in Yolink configuration.", 500
+    # Gracefully handle missing base_url
+    base_url = config.get('yolink', {}).get('base_url')
+    if not base_url:
+        error_message = "Configuration Error: 'base_url' key is missing in Yolink configuration."
+        print(error_message)
+        return render_template('index.html', devices=[], mappings=mappings, config=config, error=error_message)
 
     # Query Yolink devices
     yolink_devices = []
     if token:
-        yolink_devices = query_yolink_devices(config['yolink']['base_url'], token, devices)
+        yolink_devices = query_yolink_devices(base_url, token, devices)
     else:
-        print("Unable to generate Yolink token. Please check UAID and Secret Key.")
+        error_message = "Unable to generate Yolink token. Please check UAID and Secret Key."
+        print(error_message)
+        return render_template('index.html', devices=[], mappings=mappings, config=config, error=error_message)
     
     return render_template('index.html', devices=yolink_devices, mappings=mappings, config=config)
 

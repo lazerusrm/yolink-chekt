@@ -50,12 +50,17 @@
         .navigation a:hover {
             text-decoration: underline;
         }
-        .status-message {
-            margin-bottom: 20px;
+        .config-display {
+            background-color: #ffffff;
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            margin-top: 20px;
+        }
+        pre {
+            background-color: #f1f1f1;
             padding: 10px;
             border-radius: 5px;
-            background-color: #f8d7da;
-            color: #721c24;
         }
     </style>
 </head>
@@ -64,13 +69,6 @@
         <a href="/">Home</a>
         <a href="/config">Configuration</a>
     </div>
-
-    {% if status_message %}
-    <div class="status-message">
-        {{ status_message }}
-    </div>
-    {% endif %}
-
     <div class="container">
         <h1>Yolink to CHEKT Mapping</h1>
 
@@ -98,10 +96,25 @@
             </table>
             <button type="submit" class="btn btn-primary">Save Mapping</button>
         </form>
+
+        <div class="config-display">
+            <h3>Current Configuration</h3>
+            <pre id="config-data"></pre>
+        </div>
     </div>
 
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script>
+        $(document).ready(function() {
+            // Load and display the current configuration
+            fetch('/config')
+                .then(response => response.json())
+                .then(data => {
+                    $('#config-data').text(JSON.stringify(data, null, 2));
+                })
+                .catch(error => console.error('Error loading configuration:', error));
+        });
+
         $('#mapping-form').on('submit', function (e) {
             e.preventDefault();
             var mappings = {};
