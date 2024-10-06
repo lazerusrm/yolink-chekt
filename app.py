@@ -387,20 +387,12 @@ def run_mqtt_client():
             logger.info("Generating or refreshing Yolink token")
             token = generate_yolink_token(config['yolink']['uaid'], config['yolink']['secret_key'])
 
-        # Get Home ID from API (required for MQTT topics)
-        yolink_api = YoLinkAPI(config['yolink']['base_url'], token)
-        homes = yolink_api.get_homes()
-        if not homes:
-            logger.error("Failed to retrieve homes, MQTT subscription will not proceed.")
-            return
-        home_id = homes[0].get('id')  # Assuming you're using the first home in the list
-
         # Step 3: Generate a unique client ID
         client_id = str(uuid.uuid4())  # Generate a unique client ID using uuid
 
         # Create the MQTT client and set up callbacks
         logger.debug(f"Generated Client ID for MQTT connection: {client_id}")
-        mqtt_client = mqtt.Client(client_id=client_id, userdata={"topic": f"yl-home/{home_id}/+/report"})
+        mqtt_client = mqtt.Client(client_id=client_id, userdata={"topic": config['mqtt']['topic']})
         mqtt_client.on_connect = on_connect
         mqtt_client.on_message = on_message
 
@@ -420,10 +412,8 @@ def run_mqtt_client():
         # Start the MQTT loop
         mqtt_client.loop_forever()
 
-    except socket.gaierror as e:
-        logger.error(f"MQTT connection failed (DNS error): {str(e)}. Check the MQTT broker address.")
     except Exception as e:
-        logger.error(f"Unexpected error during MQTT setup: {str(e)}")
+        logger.error(f"MQTT client encountered an error: {str(e)}")
 
 # Start the MQTT client in a separate thread
 mqtt_thread = threading.Thread(target=run_mqtt_client)
