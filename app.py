@@ -46,12 +46,14 @@ def generate_yolink_token(uaid, secret_key):
     }
     
     try:
+        print(f"Generating Yolink token at URL: {url} with UAID: {uaid}")
         response = requests.post(url, headers=headers, data=data)
         if response.status_code == 200:
             token = response.json().get("access_token")
             if token:
                 config_data['yolink']['token'] = token
                 save_config(config_data)
+                print(f"Successfully generated Yolink token: {token}")
                 return token
             else:
                 print("Failed to obtain token, check UAID and Secret Key.")
@@ -81,6 +83,7 @@ class YoLinkAPI:
         }
 
         try:
+            print(f"Requesting home information from Yolink API at URL: {url}")
             response = requests.post(url, json=data, headers=headers)
             if response.status_code == 200:
                 return response.json().get('data', {}).get('homes', [])
@@ -105,6 +108,7 @@ class YoLinkAPI:
         }
 
         try:
+            print(f"Requesting device list for home {home_id} from Yolink API at URL: {url}")
             response = requests.post(url, json=data, headers=headers)
             if response.status_code == 200:
                 return response.json().get('data', {}).get('devices', [])
@@ -197,14 +201,17 @@ def test_yolink_api():
     }
 
     try:
-        # Correct the endpoint path to avoid duplication of `/api`
+        print(f"Testing Yolink API Connection with token: {token}")
         response = requests.post(f"{base_url}", headers=headers, json=payload)
         if response.status_code == 200:
             data = response.json()
+            print(f"Yolink API Response Data: {data}")
             return jsonify({"status": "success", "data": data})
         else:
+            print(f"Failed to access Yolink API. Status code: {response.status_code}, Response: {response.text}")
             return jsonify({"status": "error", "message": f"Failed to access Yolink API. Status code: {response.status_code}", "response": response.text})
     except Exception as e:
+        print(f"Error accessing Yolink API: {str(e)}")
         return jsonify({"status": "error", "message": str(e)})
 
 @app.route('/get_devices', methods=['POST'])
@@ -271,7 +278,7 @@ def trigger_chekt_event(chekt_zone_id, event_state):
     Trigger the CHEKT API based on the event state (e.g., door open or motion detected).
     """
     config = load_config()
-    url = f"http://{config['chekt']['ip']}:{config['chekt']['port']}/api/v1/channels/{chekt_zone_id}/events"
+    url = f"http://{config['chekt']['ip']}:{config['chekt']['port']}/api/v1/zones/{chekt_zone_id}/events"
     
     headers = {
         'Authorization': f"Bearer {config['chekt']['api_token']}",
@@ -279,16 +286,37 @@ def trigger_chekt_event(chekt_zone_id, event_state):
     }
     
     data = {
-        "event_description": f"Event triggered with state: {event_state}",
+        "event": event_state,
         "timestamp": int(time.time())
     }
     
     try:
-        print(f"Attempting to post event to CHEKT at URL: {url}")
+        print(f"Triggering CHEKT API for zone {chekt_zone_id} with event {event_state}")
         response = requests.post(url, headers=headers, json=data)
-        if response.status_code in [200, 202]:
-            print("Successfully posted event to CHEKT")
+        if response.status_code == 200:
+            print(f"CHEKT zone {chekt_zone_id} updated successfully")
         else:
-            print(f"Failed to post event to CHEKT. Status code: {response.status_code}, Response: {response.text}")
+            print(f"Failed to update CHEKT zone {chekt_zone_id}. Status code: {response.status_code}")
     except Exception as e:
-        print(f"Error communicating with
+        print(f"Error communicating with CHEKT API: {str(e)}")
+
+# Start the MQTT client in a separate thread
+def run_mqtt_client():
+    config = load_config()
+    try:
+        mqtt_client = mqtt.Client(userdata={"topic": config['mqtt']['topic']})
+        mqtt_client.on_connect = on_connect
+        mqtt_client.on_message = on_message
+        mqtt_client.connect(config['mqtt']['url'], config['mqtt']['port'])
+        mqtt_client.loop_forever()
+    except socket.gaierror as e:
+        print(f"MQTT connection failed: {str(e)}. Please check the MQTT broker address.")
+    except Exception as e:
+        print(f"Unexpected error with MQTT client: {str(e)}")
+
+mqtt_thread = threading.Thread(target=run_mqtt_client)
+mqtt_thread.daemon = True
+mqtt_thread.start()
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
