@@ -34,7 +34,7 @@ def generate_yolink_token(uaid, secret_key):
     """
     Generate the Yolink access token using the UAID and Secret Key.
     """
-    url = "https://api.yosmart.com/openApi/auth/token"
+    url = "https://api.yosmart.com/openApi/auth/token"  # URL to generate the token
     headers = {
         'Content-Type': 'application/json'
     }
@@ -139,8 +139,12 @@ def index():
         return "Configuration Error: 'base_url' key is missing in Yolink configuration.", 500
 
     # Query Yolink devices
-    yolink_devices = query_yolink_devices(config['yolink']['base_url'], token, devices)
-
+    yolink_devices = []
+    if token:
+        yolink_devices = query_yolink_devices(config['yolink']['base_url'], token, devices)
+    else:
+        print("Unable to generate Yolink token. Please check UAID and Secret Key.")
+    
     return render_template('index.html', devices=yolink_devices, mappings=mappings, config=config)
 
 @app.route('/save_mapping', methods=['POST'])
