@@ -46,14 +46,12 @@ def generate_yolink_token(uaid, secret_key):
     }
     
     try:
-        print(f"Generating Yolink token at URL: {url} with UAID: {uaid}")
         response = requests.post(url, headers=headers, data=data)
         if response.status_code == 200:
             token = response.json().get("access_token")
             if token:
                 config_data['yolink']['token'] = token
                 save_config(config_data)
-                print(f"Successfully generated Yolink token: {token}")
                 return token
             else:
                 print("Failed to obtain token, check UAID and Secret Key.")
@@ -83,7 +81,6 @@ class YoLinkAPI:
         }
 
         try:
-            print(f"Requesting home information from Yolink API at URL: {url}")
             response = requests.post(url, json=data, headers=headers)
             if response.status_code == 200:
                 return response.json().get('data', {}).get('homes', [])
@@ -108,7 +105,6 @@ class YoLinkAPI:
         }
 
         try:
-            print(f"Requesting device list for home {home_id} from Yolink API at URL: {url}")
             response = requests.post(url, json=data, headers=headers)
             if response.status_code == 200:
                 return response.json().get('data', {}).get('devices', [])
@@ -153,8 +149,8 @@ def test_chekt_api():
     chekt_port = config['chekt'].get('port')
     api_token = config['chekt'].get('api_token')
 
-    if not chekt_ip or not chekt_port:
-        return jsonify({"status": "error", "message": "CHEKT API configuration (IP or port) is missing."})
+    if not chekt_ip or not chekt_port or not api_token:
+        return jsonify({"status": "error", "message": "CHEKT API configuration (IP, port, or token) is missing."})
 
     # Try to access the CHEKT API health endpoint to verify the connection
     url = f"http://{chekt_ip}:{chekt_port}/api/v1/"
@@ -201,17 +197,13 @@ def test_yolink_api():
     }
 
     try:
-        print(f"Testing Yolink API Connection with token: {token}")
         response = requests.post(f"{base_url}", headers=headers, json=payload)
         if response.status_code == 200:
             data = response.json()
-            print(f"Yolink API Response Data: {data}")
             return jsonify({"status": "success", "data": data})
         else:
-            print(f"Failed to access Yolink API. Status code: {response.status_code}, Response: {response.text}")
             return jsonify({"status": "error", "message": f"Failed to access Yolink API. Status code: {response.status_code}", "response": response.text})
     except Exception as e:
-        print(f"Error accessing Yolink API: {str(e)}")
         return jsonify({"status": "error", "message": str(e)})
 
 @app.route('/get_devices', methods=['POST'])
@@ -267,7 +259,6 @@ def on_message(client, userdata, msg):
         if device_id in mappings:
             chekt_zone_id = mappings[device_id]
             print(f"Triggering CHEKT for device {device_id} in zone {chekt_zone_id} with state {state}")
-            # Add the logic to trigger CHEKT API
             trigger_chekt_event(chekt_zone_id, state)
 
     except Exception as e:
