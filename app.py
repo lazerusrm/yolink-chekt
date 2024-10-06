@@ -82,7 +82,6 @@ def handle_token_expiry():
         logger.error("Failed to generate a new Yolink token.")
         return None
 
-
 class YoLinkAPI:
     def __init__(self, base_url, token):
         self.base_url = base_url if base_url.endswith('/') else base_url + '/'
@@ -252,7 +251,7 @@ def get_logs():
 # MQTT Configuration and Callbacks
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
-        logger.info("Connected to MQTT broker")
+        logger.info("Connected to Yolink MQTT broker")
         client.subscribe(userdata['topic'])  # Subscribe to the topic from the config
     else:
         logger.error(f"Failed to connect, return code {rc}")
