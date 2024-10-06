@@ -162,8 +162,8 @@ def test_chekt_api():
     chekt_port = config['chekt'].get('port')
     api_token = config['chekt'].get('api_token')
 
-    if not chekt_ip or not chekt_port or not api_token:
-        return jsonify({"status": "error", "message": "CHEKT API configuration (IP, port, or token) is missing."})
+    if not chekt_ip or not chekt_port:
+        return jsonify({"status": "error", "message": "CHEKT API configuration (IP or port) is missing."})
 
     # Try to access the CHEKT API health endpoint to verify the connection
     url = f"http://{chekt_ip}:{chekt_port}/api/v1/"
@@ -174,9 +174,13 @@ def test_chekt_api():
 
     try:
         print(f"Testing CHEKT API Connection to URL: {url}")
+        print(f"Using headers: {headers}")
+        
         response = requests.get(url, headers=headers)
+
         print(f"CHEKT API Response Status Code: {response.status_code}")
-        print(f"CHEKT API Response: {response.text}")
+        print(f"CHEKT API Response Headers: {response.headers}")
+        print(f"CHEKT API Response Body: {response.text}")
 
         if response.status_code == 200:
             return jsonify({"status": "success", "message": "CHEKT API connection successful.", "debug_info": response.text})
@@ -185,6 +189,7 @@ def test_chekt_api():
     except Exception as e:
         print(f"Error connecting to CHEKT API: {str(e)}")
         return jsonify({"status": "error", "message": str(e)})
+
 
 @app.route('/test_yolink_api', methods=['GET'])
 def test_yolink_api():
