@@ -99,6 +99,15 @@
             </div>
         </div>
 
+        <!-- Section to list Yolink homes -->
+        <div class="mb-3">
+            <label for="home-select">Select a Home:</label>
+            <select id="home-select" class="form-control">
+                <option value="">Select a home...</option>
+            </select>
+            <button type="button" id="load-devices-btn" class="btn btn-success mt-2">Load Devices for Selected Home</button>
+        </div>
+
         <!-- Section to list Yolink devices and map them to CHEKT zones -->
         <form id="mapping-form">
             <table class="table">
@@ -109,17 +118,8 @@
                         <th>CHEKT Zone</th>
                     </tr>
                 </thead>
-                <tbody>
-                    {% for device in devices %}
-                    <tr>
-                        <td>{{ device['name'] }}</td>
-                        <td>{{ device['id'] }}</td>
-                        <td>
-                            <input type="text" name="chekt_zone" class="form-control" value="{{ mappings.get(device['id'], '') }}">
-                            <input type="hidden" name="device_id" value="{{ device['id'] }}">
-                        </td>
-                    </tr>
-                    {% endfor %}
+                <tbody id="devices-table-body">
+                    <!-- Devices will be dynamically added here -->
                 </tbody>
             </table>
             <button type="submit" class="btn btn-primary">Save Mapping</button>
@@ -152,11 +152,11 @@
                     if (response.status === "success") {
                         updateStatus('yolink-message', 'yolink-icon', 'Yolink API connection successful.', true);
                         addToLog("Yolink API connection successful: " + JSON.stringify(response.data));
-                        addToLog("Debug Info: " + JSON.stringify(response.debug_info));
+                        addToLog("Debug Info: " + response.debug_info);
                     } else {
                         updateStatus('yolink-message', 'yolink-icon', 'Failed to connect to Yolink API.', false);
                         addToLog("Failed to connect to Yolink API: " + response.message);
-                        addToLog("Debug Info: " + JSON.stringify(response.response));
+                        addToLog("Debug Info: " + response.response);
                     }
                 },
                 error: function (xhr, status, error) {
@@ -176,16 +176,49 @@
                     if (response.status === "success") {
                         updateStatus('chekt-message', 'chekt-icon', 'CHEKT API connection successful.', true);
                         addToLog("CHEKT API connection successful.");
-                        addToLog("Debug Info: " + JSON.stringify(response.debug_info));
+                        addToLog("Debug Info: " + response.debug_info);
                     } else {
                         updateStatus('chekt-message', 'chekt-icon', 'Failed to connect to CHEKT API.', false);
                         addToLog("Failed to connect to CHEKT API: " + response.message);
-                        addToLog("Debug Info: " + JSON.stringify(response.response));
+                        addToLog("Debug Info: " + response.response);
                     }
                 },
                 error: function (xhr, status, error) {
                     updateStatus('chekt-message', 'chekt-icon', 'Error connecting to CHEKT API.', false);
                     addToLog('Error connecting to CHEKT API: ' + xhr.responseText);
+                }
+            });
+        });
+
+        $('#load-devices-btn').on('click', function () {
+            const homeId = $('#home-select').val();
+            if (!homeId) {
+                addToLog('Please select a home before loading devices.');
+                return;
+            }
+
+            $.ajax({
+                type: "POST",
+                url: "/get_devices",
+                contentType: "application/json",
+                data: JSON.stringify({ "home_id": homeId }),
+                success: function (devices) {
+                    addToLog("Loaded devices for home: " + JSON.stringify(devices));
+                    const devicesTableBody = $('#devices-table-body');
+                    devicesTableBody.empty();
+
+                    devices.forEach(device => {
+                        const row = `<tr>
+                                        <td>${device.name}</td>
+                                        <td>${device.id}</td>
+                                        <td><input type="text" name="chekt_zone" class="form-control" value=""></td>
+                                        <input type="hidden" name="device_id" value="${device.id}">
+                                    </tr>`;
+                        devicesTableBody.append(row);
+                    });
+                },
+                error: function (xhr, status, error) {
+                    addToLog('Error loading devices: ' + xhr.responseText);
                 }
             });
         });
@@ -209,6 +242,28 @@
                 },
                 error: function (xhr, status, error) {
                     addToLog('Error: ' + xhr.responseText);
+                }
+            });
+        });
+
+        $(document).ready(function () {
+            // Load list of homes when the page is loaded
+            $.ajax({
+                type: "GET",
+                url: "/test_yolink_api",
+                success: function (response) {
+                    if (response.status === "success") {
+                        const homes = response.data.data.homes;
+                        homes.forEach(home => {
+                            $('#home-select').append(`<option value="${home.id}">${home.name}</option>`);
+                        });
+                        addToLog('Homes loaded successfully.');
+                    } else {
+                        addToLog('Failed to load homes: ' + response.message);
+                    }
+                },
+                error: function (xhr, status, error) {
+                    addToLog('Error loading homes: ' + xhr.responseText);
                 }
             });
         });

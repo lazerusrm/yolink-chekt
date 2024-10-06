@@ -7,6 +7,7 @@ import threading
 import paho.mqtt.client as mqtt
 import os
 import socket
+from datetime import datetime
 
 app = Flask(__name__)
 
@@ -152,7 +153,7 @@ def test_chekt_api():
         return jsonify({"status": "error", "message": "CHEKT API configuration (IP or port) is missing."})
 
     # Try to access the CHEKT API health endpoint to verify the connection
-    url = f"http://{chekt_ip}:{chekt_port}/"
+    url = f"http://{chekt_ip}:{chekt_port}/api/v1/"
     headers = {
         'Authorization': f"Bearer {api_token}",
         'Content-Type': 'application/json'
@@ -172,7 +173,6 @@ def test_chekt_api():
         print(f"Error connecting to CHEKT API: {str(e)}")
         return jsonify({"status": "error", "message": str(e)})
 
-
 @app.route('/test_yolink_api', methods=['GET'])
 def test_yolink_api():
     # Load configuration to get token
@@ -187,7 +187,6 @@ def test_yolink_api():
         return jsonify({"status": "error", "message": "'base_url' key is missing in Yolink configuration."})
 
     # Try to access the Yolink API to verify connection
-    url = f"{base_url}/api"
     headers = {
         'Authorization': f"Bearer {token}",
         'Content-Type': 'application/json'
@@ -198,23 +197,15 @@ def test_yolink_api():
     }
 
     try:
-        print(f"Testing Yolink API Connection to URL: {url}")
-        print(f"Request Headers: {headers}")
-        print(f"Request Payload: {payload}")
-
-        response = requests.post(url, headers=headers, json=payload)
-        print(f"Yolink API Response Status Code: {response.status_code}")
-        print(f"Yolink API Response: {response.text}")
-
+        # Correct the endpoint path to avoid duplication of `/api`
+        response = requests.post(f"{base_url}", headers=headers, json=payload)
         if response.status_code == 200:
             data = response.json()
-            return jsonify({"status": "success", "data": data, "debug_info": response.text})
+            return jsonify({"status": "success", "data": data})
         else:
             return jsonify({"status": "error", "message": f"Failed to access Yolink API. Status code: {response.status_code}", "response": response.text})
     except Exception as e:
-        print(f"Error connecting to Yolink API: {str(e)}")
         return jsonify({"status": "error", "message": str(e)})
-
 
 @app.route('/get_devices', methods=['POST'])
 def get_devices():
@@ -280,7 +271,7 @@ def trigger_chekt_event(chekt_zone_id, event_state):
     Trigger the CHEKT API based on the event state (e.g., door open or motion detected).
     """
     config = load_config()
-    url = f"http://{config['chekt']['ip']}:{config['chekt']['port']}/api/v1/zones/{chekt_zone_id}/events"
+    url = f"http://{config['chekt']['ip']}:{config['chekt']['port']}/api/v1/channels/{chekt_zone_id}/events"
     
     headers = {
         'Authorization': f"Bearer {config['chekt']['api_token']}",
@@ -288,36 +279,16 @@ def trigger_chekt_event(chekt_zone_id, event_state):
     }
     
     data = {
-        "event": event_state,
+        "event_description": f"Event triggered with state: {event_state}",
         "timestamp": int(time.time())
     }
     
     try:
+        print(f"Attempting to post event to CHEKT at URL: {url}")
         response = requests.post(url, headers=headers, json=data)
-        if response.status_code == 200:
-            print(f"CHEKT zone {chekt_zone_id} updated successfully")
+        if response.status_code in [200, 202]:
+            print("Successfully posted event to CHEKT")
         else:
-            print(f"Failed to update CHEKT zone {chekt_zone_id}. Status code: {response.status_code}")
+            print(f"Failed to post event to CHEKT. Status code: {response.status_code}, Response: {response.text}")
     except Exception as e:
-        print(f"Error communicating with CHEKT API: {str(e)}")
-
-def run_mqtt_client():
-    config = load_config()
-    try:
-        mqtt_client = mqtt.Client(userdata={"topic": config['mqtt']['topic']})
-        mqtt_client.on_connect = on_connect
-        mqtt_client.on_message = on_message
-        mqtt_client.connect(config['mqtt']['url'], config['mqtt']['port'])
-        mqtt_client.loop_forever()
-    except socket.gaierror as e:
-        print(f"MQTT connection failed: {str(e)}. Please check the MQTT broker address.")
-    except Exception as e:
-        print(f"Unexpected error with MQTT client: {str(e)}")
-
-# Start the MQTT client in a separate thread
-mqtt_thread = threading.Thread(target=run_mqtt_client)
-mqtt_thread.daemon = True
-mqtt_thread.start()
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+        print(f"Error communicating with
