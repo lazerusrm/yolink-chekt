@@ -23,9 +23,16 @@ config_data = {}
 
 def load_config():
     global config_data
+    logger.debug(f"Attempting to load configuration from {config_file}")
+    
     if os.path.exists(config_file):
+        logger.debug(f"Config file {config_file} found.")
         with open(config_file, 'r') as file:
             config_data = yaml.safe_load(file)
+        logger.debug(f"Loaded configuration: {config_data}")
+    else:
+        logger.error(f"Config file {config_file} not found!")
+    
     return config_data
 
 def save_config(data):
@@ -273,40 +280,37 @@ def get_logs():
 # MQTT Configuration and Callbacks
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
-        logger.info("Connected to Yolink MQTT broker")
-        client.subscribe(userdata['topic'])  # Subscribe to the topic from the config
+        logger.info(f"Successfully connected to MQTT broker. Subscribing to topic: {userdata['topic']}")
+        client.subscribe(userdata['topic'])
     else:
-        logger.error(f"Failed to connect, return code {rc}")
+        logger.error(f"Failed to connect to MQTT broker. Return code: {rc}")
 
 def on_message(client, userdata, msg):
-    logger.info(f"Received message on topic {msg.topic}: {msg.payload}")
-
-    # Load the mappings from mappings.yaml
-    config = load_config()
-    if os.path.exists(config['files']['map_file']):
-        with open(config['files']['map_file'], 'r') as mf:
+    logger.info(f"Received message on topic {msg.topic}: {msg.payload.decode('utf-8')}")
+    
+    # Log file path for mappings
+    if os.path.exists(config_data['files']['map_file']):
+        logger.debug(f"Loading mappings from {config_data['files']['map_file']}")
+        with open(config_data['files']['map_file'], 'r') as mf:
             mappings = yaml.safe_load(mf)
     else:
-        logger.error("Mappings file is missing.")
-        return
-
+        mappings = {}
+        logger.error(f"Mappings file {config_data['files']['map_file']} not found.")
+    
     try:
-        # Decode and parse the payload
         payload = json.loads(msg.payload.decode("utf-8"))
-        device_id = payload.get('deviceId')
-        state = payload['data'].get('state')
+        device_id = payload['deviceId']
+        state = payload['data']['state']
 
         if device_id in mappings:
-            # Get the corresponding CHEKT zone ID from the mappings
             chekt_zone_id = mappings[device_id]
-
             logger.info(f"Triggering CHEKT for device {device_id} in zone {chekt_zone_id} with state {state}")
-            # Trigger the CHEKT event using the API
             trigger_chekt_event(chekt_zone_id, state)
         else:
             logger.warning(f"Device ID {device_id} not found in mappings.")
     except Exception as e:
         logger.error(f"Error processing message: {str(e)}")
+
 
 def trigger_chekt_event(chekt_zone_id, event_state):
     """
@@ -371,14 +375,26 @@ def on_message(client, userdata, msg):
         logger.error(f"Error processing message: {str(e)}")
 
 # Function to start the MQTT client
-def run_mqtt_client():
+ddef run_mqtt_client():
     config = load_config()
     try:
+        # Log that we're attempting to run the MQTT client
+        logger.debug("Starting the MQTT client setup.")
+        
         # Ensure we have a valid token
         token = config['yolink'].get('token')
         if not token:
-            logger.info("Generating new Yolink token")
+            logger.info("No token found in config. Generating new Yolink token.")
             token = generate_yolink_token(config['yolink']['uaid'], config['yolink']['secret_key'])
+            if token:
+                logger.debug(f"Successfully generated new Yolink token: {token}")
+            else:
+                logger.error("Failed to generate Yolink token.")
+                return  # Exit if we can't generate the token
+
+        # Log the token and configuration details (obfuscate token in production)
+        logger.debug(f"Token used for MQTT connection: {token[:10]}... (truncated)")
+        logger.debug(f"Connecting to MQTT broker at {config['mqtt']['url']} on port {config['mqtt']['port']}")
 
         # Create the MQTT client and set up callbacks
         mqtt_client = mqtt.Client(userdata={"topic": config['mqtt']['topic']})
@@ -387,17 +403,20 @@ def run_mqtt_client():
 
         # Use the Yolink Bearer token as the password for authentication
         mqtt_client.username_pw_set(username="Bearer", password=token)
+        logger.debug("Bearer token set for MQTT authentication.")
 
         # Connect to the Yolink MQTT broker
         mqtt_client.connect(config['mqtt']['url'].replace("mqtt://", ""), int(config['mqtt']['port']))
+        logger.info(f"Successfully connected to MQTT broker at {config['mqtt']['url']}")
 
         # Start the MQTT loop
         mqtt_client.loop_forever()
+        logger.debug("MQTT client loop started.")
 
     except socket.gaierror as e:
-        logger.error(f"MQTT connection failed: {str(e)}. Please check the MQTT broker address.")
+        logger.error(f"MQTT connection failed (DNS error): {str(e)}. Check the MQTT broker address.")
     except Exception as e:
-        logger.error(f"Unexpected error with MQTT client: {str(e)}")
+        logger.error(f"Unexpected error during MQTT setup: {str(e)}")
 
 # Start the MQTT client in a separate thread
 mqtt_thread = threading.Thread(target=run_mqtt_client)

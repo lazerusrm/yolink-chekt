@@ -4,7 +4,7 @@ yolink:
   secret_key: "your_secret_key"
   token: ""  # Placeholder for storing the generated access token
 mqtt:
-  url: "api.yosmart.com"
+  url: "mqtt://api.yosmart.com"
   port: 8003
   topic: "/yolink/events"
 files:
