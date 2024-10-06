@@ -116,19 +116,6 @@ class YoLinkAPI:
             print(f"Error getting device list: {str(e)}")
             return []
 
-@app.route('/get_homes', methods=['GET'])
-def get_homes():
-    config = load_config()
-    token = config['yolink'].get('token')
-
-    if not token:
-        return jsonify({"status": "error", "message": "No token available. Please generate a token first."})
-
-    yolink_api = YoLinkAPI(config['yolink']['base_url'], token)
-    homes = yolink_api.get_homes()
-
-    return jsonify(homes)
-
 @app.route('/')
 def index():
     # Load device and mapping configurations
@@ -174,13 +161,9 @@ def test_chekt_api():
 
     try:
         print(f"Testing CHEKT API Connection to URL: {url}")
-        print(f"Using headers: {headers}")
-        
         response = requests.get(url, headers=headers)
-
         print(f"CHEKT API Response Status Code: {response.status_code}")
-        print(f"CHEKT API Response Headers: {response.headers}")
-        print(f"CHEKT API Response Body: {response.text}")
+        print(f"CHEKT API Response: {response.text}")
 
         if response.status_code == 200:
             return jsonify({"status": "success", "message": "CHEKT API connection successful.", "debug_info": response.text})
@@ -189,7 +172,6 @@ def test_chekt_api():
     except Exception as e:
         print(f"Error connecting to CHEKT API: {str(e)}")
         return jsonify({"status": "error", "message": str(e)})
-
 
 @app.route('/test_yolink_api', methods=['GET'])
 def test_yolink_api():
@@ -200,7 +182,7 @@ def test_yolink_api():
     if not token:
         return jsonify({"status": "error", "message": "No token available. Please generate a token first."})
 
-    base_url = config['yolink'].get('base_url')
+    base_url = config['yolink']['base_url']
     if not base_url:
         return jsonify({"status": "error", "message": "'base_url' key is missing in Yolink configuration."})
 
@@ -215,7 +197,7 @@ def test_yolink_api():
     }
 
     try:
-        response = requests.post(f"{base_url}", headers=headers, json=payload)
+        response = requests.post(f"{base_url}/open/yolink/v2/api", headers=headers, json=payload)
         if response.status_code == 200:
             data = response.json()
             return jsonify({"status": "success", "data": data})
@@ -300,29 +282,31 @@ def trigger_chekt_event(chekt_zone_id, event_state):
     }
     
     try:
-        print(f"Triggering CHEKT API for zone {chekt_zone_id} with event {event_state}")
         response = requests.post(url, headers=headers, json=data)
-        if response.status_code == 200:
+        if response.status_code in [200, 202]:
             print(f"CHEKT zone {chekt_zone_id} updated successfully")
+            if response.status_code == 202:
+                print(f"Request accepted for processing. Response: {response.text}")
         else:
             print(f"Failed to update CHEKT zone {chekt_zone_id}. Status code: {response.status_code}")
+            print(f"Response: {response.text}")
     except Exception as e:
         print(f"Error communicating with CHEKT API: {str(e)}")
 
-# Start the MQTT client in a separate thread
 def run_mqtt_client():
     config = load_config()
     try:
         mqtt_client = mqtt.Client(userdata={"topic": config['mqtt']['topic']})
         mqtt_client.on_connect = on_connect
         mqtt_client.on_message = on_message
-        mqtt_client.connect(config['mqtt']['url'], config['mqtt']['port'])
+        mqtt_client.connect(config['mqtt']['url'], int(config['mqtt']['port']))
         mqtt_client.loop_forever()
     except socket.gaierror as e:
         print(f"MQTT connection failed: {str(e)}. Please check the MQTT broker address.")
     except Exception as e:
         print(f"Unexpected error with MQTT client: {str(e)}")
 
+# Start the MQTT client in a separate thread
 mqtt_thread = threading.Thread(target=run_mqtt_client)
 mqtt_thread.daemon = True
 mqtt_thread.start()
