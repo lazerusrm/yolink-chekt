@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Yolink CHEKT Configuration</title>
+    <title>Yolink to CHEKT Mapping</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.0/dist/css/bootstrap.min.css">
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -56,99 +57,59 @@
         <a href="/">Home</a>
         <a href="/config">Configuration</a>
     </div>
-    <h1>Yolink CHEKT Configuration</h1>
-    
-    <form id="configForm">
-        <h3>Yolink Configuration</h3>
-        <label for="yolink_uaid">UAID:</label>
-        <input type="text" id="yolink_uaid" name="yolink_uaid" required><br>
-        <label for="yolink_secret_key">Secret Key:</label>
-        <input type="text" id="yolink_secret_key" name="yolink_secret_key" required><br>
+    <div class="container">
+        <h1>Yolink to CHEKT Mapping</h1>
 
-        <h3>CHEKT Configuration</h3>
-        <label for="chekt_ip">IP Address:</label>
-        <input type="text" id="chekt_ip" name="chekt_ip" required><br>
-        <label for="chekt_port">Port:</label>
-        <input type="text" id="chekt_port" name="chekt_port" value="30003" required><br>
-        <label for="chekt_token">API Token:</label>
-        <input type="text" id="chekt_token" name="chekt_token" required><br>
+        <form id="mapping-form">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Device Name</th>
+                        <th>Device ID</th>
+                        <th>CHEKT Zone</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for device in devices %}
+                    <tr>
+                        <td>{{ device['name'] }}</td>
+                        <td>{{ device['id'] }}</td>
+                        <td>
+                            <input type="text" name="chekt_zone" class="form-control" value="{{ mappings.get(device['id'], '') }}">
+                            <input type="hidden" name="device_id" value="{{ device['id'] }}">
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <button type="submit" class="btn btn-primary">Save Mapping</button>
+        </form>
+    </div>
 
-        <h3>MQTT Configuration</h3>
-        <label for="mqtt_url">URL:</label>
-        <input type="text" id="mqtt_url" name="mqtt_url" value="mqtt://api.yosmart.com" required><br>
-        <label for="mqtt_port">Port:</label>
-        <input type="number" id="mqtt_port" name="mqtt_port" value="1883" required><br>
-        <label for="mqtt_topic">Topic:</label>
-        <input type="text" id="mqtt_topic" name="mqtt_topic" value="/yolink/events" required><br>
-
-        <button type="button" onclick="saveConfig()">Save Configuration</button>
-    </form>
-
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script>
-        document.addEventListener('DOMContentLoaded', (event) => {
-            fetch('/config')
-                .then(response => response.json())
-                .then(data => {
-                    if (data.yolink) {
-                        document.getElementById('yolink_uaid').value = data.yolink.uaid || '';
-                        document.getElementById('yolink_secret_key').value = data.yolink.secret_key || '';
-                    }
-                    if (data.chekt) {
-                        document.getElementById('chekt_ip').value = data.chekt.ip || '';
-                        document.getElementById('chekt_port').value = data.chekt.port || '';
-                        document.getElementById('chekt_token').value = data.chekt.api_token || '';
-                    }
-                    if (data.mqtt) {
-                        document.getElementById('mqtt_url').value = data.mqtt.url || 'mqtt://api.yosmart.com';
-                        document.getElementById('mqtt_port').value = data.mqtt.port || '1883';
-                        document.getElementById('mqtt_topic').value = data.mqtt.topic || '/yolink/events';
-                    }
-                })
-                .catch(error => console.error('Error loading configuration:', error));
-        });
-
-        function saveConfig() {
-            const saveButton = document.querySelector('button');
-            saveButton.disabled = true;
-            saveButton.innerText = "Saving...";
-            
-            const config = {
-                yolink: {
-                    uaid: document.getElementById('yolink_uaid').value,
-                    secret_key: document.getElementById('yolink_secret_key').value
-                },
-                chekt: {
-                    ip: document.getElementById('chekt_ip').value,
-                    port: document.getElementById('chekt_port').value,
-                    api_token: document.getElementById('chekt_token').value
-                },
-                mqtt: {
-                    url: document.getElementById('mqtt_url').value,
-                    port: document.getElementById('mqtt_port').value,
-                    topic: document.getElementById('mqtt_topic').value
-                }
-            };
-
-            fetch('/config', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(config)
-            })
-            .then(response => response.json())
-            .then(data => {
-                alert(data.message);
-                saveButton.disabled = false;
-                saveButton.innerText = "Save Configuration";
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                alert('Failed to save configuration. Please try again.');
-                saveButton.disabled = false;
-                saveButton.innerText = "Save Configuration";
+        $('#mapping-form').on('submit', function (e) {
+            e.preventDefault();
+            var mappings = {};
+            $('input[name="device_id"]').each(function (index) {
+                var deviceId = $(this).val();
+                var zone = $(this).closest('tr').find('input[name="chekt_zone"]').val();
+                mappings[deviceId] = zone;
             });
-        }
+
+            $.ajax({
+                type: "POST",
+                url: "/save_mapping",
+                contentType: "application/json",
+                data: JSON.stringify(mappings),
+                success: function (response) {
+                    alert(response.message);
+                },
+                error: function (xhr, status, error) {
+                    alert('Error: ' + xhr.responseText);
+                }
+            });
+        });
     </script>
 </body>
 </html>

@@ -1,4 +1,5 @@
 yolink:
+  url: "https://api.yosmart.com"
   uaid: "your_uaid"
   secret_key: "your_secret_key"
   token: "your_access_token_here"  # Placeholder for storing the generated access token
