@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -12,22 +13,26 @@
             padding: 20px;
             background-color: #f8f8f8;
         }
+
         form {
             background-color: white;
             padding: 20px;
             border-radius: 10px;
             box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
         }
+
         label {
             font-weight: bold;
             display: block;
             margin-top: 10px;
         }
+
         input {
             width: 100%;
             padding: 5px;
             margin: 5px 0 15px;
         }
+
         button {
             background-color: #007BFF;
             color: white;
@@ -36,20 +41,25 @@
             cursor: pointer;
             border-radius: 5px;
         }
+
         button:hover {
             background-color: #0056b3;
         }
+
         .navigation {
             margin-bottom: 20px;
         }
+
         .navigation a {
             text-decoration: none;
             color: #007BFF;
             margin-right: 10px;
         }
+
         .navigation a:hover {
             text-decoration: underline;
         }
+
         .log {
             background-color: #f1f1f1;
             padding: 15px;
@@ -58,21 +68,25 @@
             height: 150px;
             overflow-y: auto;
         }
+
         .status {
             display: flex;
             align-items: center;
             margin-top: 10px;
         }
+
         .status img {
             width: 20px;
             height: 20px;
             margin-right: 10px;
         }
+
         .hidden {
             display: none;
         }
     </style>
 </head>
+
 <body>
     <div class="navigation">
         <a href="/">Home</a>
@@ -99,13 +113,13 @@
             </div>
         </div>
 
-        <!-- Section to list Yolink homes -->
+        <!-- Section to select a home and load devices -->
         <div class="mb-3">
-            <label for="home-select">Select a Home:</label>
-            <select id="home-select" class="form-control">
-                <option value="">Select a home...</option>
+            <label for="home-select">Select a Home</label>
+            <select id="home-select" class="form-select">
+                <option value="">Loading homes...</option>
             </select>
-            <button type="button" id="load-devices-btn" class="btn btn-success mt-2">Load Devices for Selected Home</button>
+            <button type="button" id="load-devices-btn" class="btn btn-info mt-3">Load Devices for Selected Home</button>
         </div>
 
         <!-- Section to list Yolink devices and map them to CHEKT zones -->
@@ -119,7 +133,7 @@
                     </tr>
                 </thead>
                 <tbody id="devices-table-body">
-                    <!-- Devices will be dynamically added here -->
+                    <!-- Devices will be populated here -->
                 </tbody>
             </table>
             <button type="submit" class="btn btn-primary">Save Mapping</button>
@@ -142,6 +156,66 @@
             $('#' + elementId).text(message);
         }
 
+        // Function to populate homes dropdown
+        function loadHomes() {
+            $.ajax({
+                type: "GET",
+                url: "/get_homes",
+                success: function (response) {
+                    if (Array.isArray(response) && response.length > 0) {
+                        $('#home-select').empty();
+                        response.forEach(function (home) {
+                            $('#home-select').append('<option value="' + home.id + '">' + home.name + '</option>');
+                        });
+                    } else {
+                        addToLog("No homes available.");
+                    }
+                },
+                error: function (xhr, status, error) {
+                    addToLog('Error loading homes: ' + xhr.responseText);
+                }
+            });
+        }
+
+        // Load homes when the page loads
+        $(document).ready(function () {
+            loadHomes();
+        });
+
+        // Load devices for selected home
+        $('#load-devices-btn').on('click', function () {
+            const homeId = $('#home-select').val();
+            if (!homeId) {
+                addToLog("Please select a home.");
+                return;
+            }
+
+            $('#devices-table-body').empty();
+            $.ajax({
+                type: "POST",
+                url: "/get_devices",
+                contentType: "application/json",
+                data: JSON.stringify({ "home_id": homeId }),
+                success: function (devices) {
+                    devices.forEach(function (device) {
+                        $('#devices-table-body').append(`
+                            <tr>
+                                <td>${device.name}</td>
+                                <td>${device.id}</td>
+                                <td>
+                                    <input type="text" name="chekt_zone" class="form-control" value="">
+                                    <input type="hidden" name="device_id" value="${device.id}">
+                                </td>
+                            </tr>
+                        `);
+                    });
+                },
+                error: function (xhr, status, error) {
+                    addToLog('Error loading devices: ' + xhr.responseText);
+                }
+            });
+        });
+
         $('#test-token-btn').on('click', function () {
             $('#yolink-icon').addClass('hidden');
             $('#yolink-message').text('Testing Yolink API connection...');
@@ -151,12 +225,10 @@
                 success: function (response) {
                     if (response.status === "success") {
                         updateStatus('yolink-message', 'yolink-icon', 'Yolink API connection successful.', true);
-                        addToLog("Yolink API connection successful: " + JSON.stringify(response.data));
-                        addToLog("Debug Info: " + response.debug_info);
+                        addToLog("Yolink API connection successful: " + response.data);
                     } else {
                         updateStatus('yolink-message', 'yolink-icon', 'Failed to connect to Yolink API.', false);
                         addToLog("Failed to connect to Yolink API: " + response.message);
-                        addToLog("Debug Info: " + response.response);
                     }
                 },
                 error: function (xhr, status, error) {
@@ -176,49 +248,14 @@
                     if (response.status === "success") {
                         updateStatus('chekt-message', 'chekt-icon', 'CHEKT API connection successful.', true);
                         addToLog("CHEKT API connection successful.");
-                        addToLog("Debug Info: " + response.debug_info);
                     } else {
                         updateStatus('chekt-message', 'chekt-icon', 'Failed to connect to CHEKT API.', false);
                         addToLog("Failed to connect to CHEKT API: " + response.message);
-                        addToLog("Debug Info: " + response.response);
                     }
                 },
                 error: function (xhr, status, error) {
                     updateStatus('chekt-message', 'chekt-icon', 'Error connecting to CHEKT API.', false);
                     addToLog('Error connecting to CHEKT API: ' + xhr.responseText);
-                }
-            });
-        });
-
-        $('#load-devices-btn').on('click', function () {
-            const homeId = $('#home-select').val();
-            if (!homeId) {
-                addToLog('Please select a home before loading devices.');
-                return;
-            }
-
-            $.ajax({
-                type: "POST",
-                url: "/get_devices",
-                contentType: "application/json",
-                data: JSON.stringify({ "home_id": homeId }),
-                success: function (devices) {
-                    addToLog("Loaded devices for home: " + JSON.stringify(devices));
-                    const devicesTableBody = $('#devices-table-body');
-                    devicesTableBody.empty();
-
-                    devices.forEach(device => {
-                        const row = `<tr>
-                                        <td>${device.name}</td>
-                                        <td>${device.id}</td>
-                                        <td><input type="text" name="chekt_zone" class="form-control" value=""></td>
-                                        <input type="hidden" name="device_id" value="${device.id}">
-                                    </tr>`;
-                        devicesTableBody.append(row);
-                    });
-                },
-                error: function (xhr, status, error) {
-                    addToLog('Error loading devices: ' + xhr.responseText);
                 }
             });
         });
@@ -245,28 +282,7 @@
                 }
             });
         });
-
-        $(document).ready(function () {
-            // Load list of homes when the page is loaded
-            $.ajax({
-                type: "GET",
-                url: "/test_yolink_api",
-                success: function (response) {
-                    if (response.status === "success") {
-                        const homes = response.data.data.homes;
-                        homes.forEach(home => {
-                            $('#home-select').append(`<option value="${home.id}">${home.name}</option>`);
-                        });
-                        addToLog('Homes loaded successfully.');
-                    } else {
-                        addToLog('Failed to load homes: ' + response.message);
-                    }
-                },
-                error: function (xhr, status, error) {
-                    addToLog('Error loading homes: ' + xhr.responseText);
-                }
-            });
-        });
     </script>
 </body>
+
 </html>

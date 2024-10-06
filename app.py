@@ -116,6 +116,19 @@ class YoLinkAPI:
             print(f"Error getting device list: {str(e)}")
             return []
 
+@app.route('/get_homes', methods=['GET'])
+def get_homes():
+    config = load_config()
+    token = config['yolink'].get('token')
+
+    if not token:
+        return jsonify({"status": "error", "message": "No token available. Please generate a token first."})
+
+    yolink_api = YoLinkAPI(config['yolink']['base_url'], token)
+    homes = yolink_api.get_homes()
+
+    return jsonify(homes)
+
 @app.route('/')
 def index():
     # Load device and mapping configurations
