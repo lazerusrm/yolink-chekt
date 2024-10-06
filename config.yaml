@@ -6,7 +6,7 @@ yolink:
 mqtt:
   url: "mqtt://api.yosmart.com"
   port: 8003
-  topic: "/yolink/events"
+  topic: "yl-home/${Home ID}/+/report"
 files:
   device_file: "devices.yaml"
   map_file: "mappings.yaml"
