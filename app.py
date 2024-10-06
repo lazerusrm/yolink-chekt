@@ -2,16 +2,12 @@ import yaml
 import json
 import requests
 import time
-import logging
 from flask import Flask, render_template, request, jsonify
 import threading
 import paho.mqtt.client as mqtt
 import os
 import socket
 from datetime import datetime
-
-# Configure logging
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 app = Flask(__name__)
 
@@ -21,6 +17,7 @@ device_file = "devices.yaml"
 mapping_file = "mappings.yaml"
 
 config_data = {}
+web_log_storage = []  # Store log messages for web access
 
 def load_config():
     global config_data
@@ -34,6 +31,12 @@ def save_config(data):
     config_data = data
     with open(config_file, 'w') as file:
         yaml.dump(data, file)
+
+def web_log(message):
+    """Logs messages to the console and also stores them for the web interface."""
+    timestamped_message = f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}: {message}"
+    print(timestamped_message)
+    web_log_storage.append(timestamped_message)
 
 def generate_yolink_token(uaid, secret_key):
     """
@@ -49,23 +52,24 @@ def generate_yolink_token(uaid, secret_key):
         "client_secret": secret_key
     }
 
-    logging.debug(f"Sending token request to URL: {url}")
+    web_log(f"Sending token request to URL: {url}")
     try:
         response = requests.post(url, headers=headers, data=data)
-        logging.debug(f"Token response: {response.status_code} - {response.text}")
+        web_log(f"Token response: {response.status_code} - {response.text}")
 
         if response.status_code == 200:
             token = response.json().get("access_token")
             if token:
                 config_data['yolink']['token'] = token
                 save_config(config_data)
+                web_log("Successfully obtained Yolink token.")
                 return token
             else:
-                logging.error("Failed to obtain Yolink token. Check UAID and Secret Key.")
+                web_log("Failed to obtain Yolink token. Check UAID and Secret Key.")
         else:
-            logging.error(f"Failed to generate Yolink token. Status code: {response.status_code}")
+            web_log(f"Failed to generate Yolink token. Status code: {response.status_code}")
     except Exception as e:
-        logging.error(f"Error generating Yolink token: {str(e)}")
+        web_log(f"Error generating Yolink token: {str(e)}")
 
     return None
 
@@ -81,15 +85,19 @@ class YoLinkAPI:
         }
 
         try:
+            web_log(f"Sending request to Yolink API: {self.base_url}")
+            web_log(f"Request Headers: {headers}")
+            web_log(f"Request Payload: {json.dumps(data, indent=2)}")
+
             response = requests.post(self.base_url, headers=headers, json=data)
-            logging.debug(f"Response Code: {response.status_code}")
-            logging.debug(f"Response Body: {response.text}")
+            web_log(f"Response Code: {response.status_code}")
+            web_log(f"Response Body: {response.text}")
 
             if response.status_code == 200:
                 return response.json()
             elif response.status_code == 401 and "token is expired" in response.text.lower():
                 # Token expired, regenerate and retry
-                logging.warning("Token expired, regenerating...")
+                web_log("Token expired, regenerating...")
                 self.token = generate_yolink_token(config_data['yolink']['uaid'], config_data['yolink']['secret_key'])
                 if self.token:
                     headers['Authorization'] = f"Bearer {self.token}"
@@ -97,10 +105,10 @@ class YoLinkAPI:
                     if response.status_code == 200:
                         return response.json()
             else:
-                logging.error(f"Failed request. Status code: {response.status_code} - {response.text}")
+                web_log(f"Failed request. Status code: {response.status_code} - {response.text}")
 
         except Exception as e:
-            logging.error(f"Error during API request: {str(e)}")
+            web_log(f"Error during API request: {str(e)}")
 
         return None
 
@@ -109,8 +117,9 @@ class YoLinkAPI:
             "method": "Home.getGeneralInfo",
             "time": int(time.time() * 1000)
         }
-        logging.debug(f"Sending get_homes request: {data}")
-        return self.request_with_token_refresh(data).get('data', {}).get('homes', []) if self.request_with_token_refresh(data) else []
+        web_log(f"Sending get_homes request: {data}")
+        response = self.request_with_token_refresh(data)
+        return response.get('data', {}).get('homes', []) if response else []
 
     def get_device_list(self, home_id):
         data = {
@@ -118,8 +127,9 @@ class YoLinkAPI:
             "time": int(time.time() * 1000),
             "homeId": home_id
         }
-        logging.debug(f"Sending get_device_list request: {data}")
-        return self.request_with_token_refresh(data).get('data', {}).get('devices', []) if self.request_with_token_refresh(data) else []
+        web_log(f"Sending get_device_list request: {data}")
+        response = self.request_with_token_refresh(data)
+        return response.get('data', {}).get('devices', []) if response else []
 
 @app.route('/')
 def index():
@@ -138,6 +148,7 @@ def index():
 
     # Check if required keys are available
     if 'base_url' not in config['yolink']:
+        web_log("Configuration Error: 'base_url' key is missing in Yolink configuration.")
         return render_template('index.html', devices=[], mappings=mappings, config=config, error="Configuration Error: 'base_url' key is missing in Yolink configuration.")
 
     # Query Yolink homes
@@ -155,6 +166,7 @@ def test_chekt_api():
     api_token = config['chekt'].get('api_token')
 
     if not chekt_ip or not chekt_port:
+        web_log("CHEKT API configuration (IP or port) is missing.")
         return jsonify({"status": "error", "message": "CHEKT API configuration (IP or port) is missing."})
 
     # Try to access the CHEKT API health endpoint to verify the connection
@@ -165,40 +177,22 @@ def test_chekt_api():
     }
 
     try:
-        logging.debug(f"Testing CHEKT API Connection to URL: {url}")
+        web_log(f"Testing CHEKT API Connection to URL: {url}")
         response = requests.get(url, headers=headers)
-        logging.debug(f"CHEKT API Response Status Code: {response.status_code} - Response: {response.text}")
+        web_log(f"CHEKT API Response Status Code: {response.status_code} - Response: {response.text}")
 
         if response.status_code == 200:
             return jsonify({"status": "success", "message": "CHEKT API connection successful.", "debug_info": response.text})
         else:
             return jsonify({"status": "error", "message": f"Failed to connect to CHEKT API. Status code: {response.status_code}", "response": response.text})
     except Exception as e:
-        logging.error(f"Error connecting to CHEKT API: {str(e)}")
+        web_log(f"Error connecting to CHEKT API: {str(e)}")
         return jsonify({"status": "error", "message": str(e)})
 
-@app.route('/test_yolink_api', methods=['GET'])
-def test_yolink_api():
-    # Load configuration to get token
-    config = load_config()
-    token = config['yolink'].get('token')
-
-    if not token:
-        return jsonify({"status": "error", "message": "No token available. Please generate a token first."})
-
-    base_url = config['yolink']['base_url']
-    if not base_url:
-        return jsonify({"status": "error", "message": "'base_url' key is missing in Yolink configuration."})
-
-    # Try to access the Yolink API to verify connection
-    yolink_api = YoLinkAPI(base_url, token)
-    homes = yolink_api.get_homes()
-    if homes:
-        return jsonify({"status": "success", "data": homes})
-    else:
-        return jsonify({"status": "error", "message": "Failed to access Yolink API or no homes found."})
-
-# Remaining route definitions (get_devices, save_mapping, etc.) can follow similar improvements...
+@app.route('/get_logs', methods=['GET'])
+def get_logs():
+    """API endpoint to get all web logs."""
+    return jsonify({"logs": web_log_storage})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
