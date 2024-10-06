@@ -41,6 +41,21 @@ def save_config(data):
     config_data = data
     with open(config_file, 'w') as file:
         yaml.dump(data, file)
+        
+def is_token_expired():
+    """
+    Check if the token is expired based on the current time and the stored expiry time.
+    Returns True if the token has expired, otherwise False.
+    """
+    expiry_time = config_data['yolink'].get('token_expiry', 0)
+    current_time = time.time()
+    
+    if current_time >= expiry_time:
+        logger.info("Yolink token has expired.")
+        return True
+    else:
+        logger.debug(f"Yolink token is still valid. Expiry time: {expiry_time}, Current time: {current_time}")
+        return False
 
 def generate_yolink_token(uaid, secret_key):
     """
@@ -62,11 +77,19 @@ def generate_yolink_token(uaid, secret_key):
         logger.debug(f"Token response: {response.status_code} - {response.text}")
 
         if response.status_code == 200:
-            token = response.json().get("access_token")
+            token_data = response.json()
+            token = token_data.get("access_token")
+            expires_in = token_data.get("expires_in")  # Typically in seconds
+
             if token:
                 logger.info("Successfully obtained Yolink token.")
+                expiry_time = time.time() + expires_in - 60  # Subtract 60 seconds to renew slightly before actual expiry
+
+                # Store token and expiry time in config
                 config_data['yolink']['token'] = token
-                save_config(config_data)
+                config_data['yolink']['token_expiry'] = expiry_time
+                save_config(config_data)  # Save the updated token and expiry time
+
                 return token
             else:
                 logger.error("Failed to obtain Yolink token. Check UAID and Secret Key.")
@@ -382,14 +405,17 @@ import uuid  # Step 1: Import the uuid module
 def run_mqtt_client():
     config = load_config()
     try:
-        # Ensure we have a valid token
+        # Ensure we have a valid token and refresh if expired
         token = config['yolink'].get('token')
         if not token or is_token_expired():
             logger.info("Generating or refreshing Yolink token")
             token = generate_yolink_token(config['yolink']['uaid'], config['yolink']['secret_key'])
+            if not token:
+                logger.error("Failed to obtain a valid Yolink token. MQTT client will not start.")
+                return  # Exit if token generation fails
 
-        # Step 3: Generate a unique client ID
-        client_id = str(uuid.uuid4())  # Generate a unique client ID using uuid
+        # Generate a unique client ID using uuid
+        client_id = str(uuid.uuid4())  
 
         # Create the MQTT client and set up callbacks
         logger.debug(f"Generated Client ID for MQTT connection: {client_id}")
@@ -397,17 +423,14 @@ def run_mqtt_client():
         mqtt_client.on_connect = on_connect
         mqtt_client.on_message = on_message
 
-        # Log before setting the authentication details
+        # Set up the MQTT credentials with the Yolink token
         logger.debug(f"Using access token for MQTT: {token[:10]}...(truncated)")
-        
-        # Username is the access token, password is None
         mqtt_client.username_pw_set(username=token, password=None)
 
-        # Log before attempting to connect to the MQTT broker
+        # Connect to the MQTT broker
         mqtt_broker_url = config['mqtt']['url'].replace("mqtt://", "")
         mqtt_broker_port = int(config['mqtt']['port'])
         logger.debug(f"Connecting to MQTT broker at {mqtt_broker_url} on port {mqtt_broker_port}")
-        
         mqtt_client.connect(mqtt_broker_url, mqtt_broker_port)
 
         # Start the MQTT loop
