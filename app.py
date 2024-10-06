@@ -101,17 +101,20 @@ class YoLinkDevice:
         return self.device_data.get('type', 'Unknown')
 
 # Query Yolink devices (from the local API)
-def query_yolink_devices(url, token, device_list):
+def query_yolink_devices(url, token, device_list, status_messages):
     devices = []
     for device_data in device_list:
-        yolink_device = YoLinkDevice(url, token, device_data['serial_number'], "")
-        yolink_device.build_device_api_request_data()
-        yolink_device.enable_device_api()
-        devices.append({
-            'name': yolink_device.get_friendly_name(),
-            'id': yolink_device.get_id(),
-            'type': yolink_device.get_type()
-        })
+        try:
+            yolink_device = YoLinkDevice(url, token, device_data['serial_number'], "")
+            yolink_device.build_device_api_request_data()
+            yolink_device.enable_device_api()
+            devices.append({
+                'name': yolink_device.get_friendly_name(),
+                'id': yolink_device.get_id(),
+                'type': yolink_device.get_type()
+            })
+        except Exception as e:
+            status_messages.append(f"Error querying Yolink device {device_data['serial_number']}: {str(e)}")
     return devices
 
 @app.route('/')
@@ -120,6 +123,7 @@ def index():
     config = load_config()
     devices = []
     mappings = {}
+    status_messages = []
 
     if os.path.exists(device_file):
         with open(device_file, 'r') as df:
@@ -130,15 +134,20 @@ def index():
             mappings = yaml.safe_load(mf)
 
     # Generate Yolink token if it doesn't exist
-    if not config['yolink'].get('token'):
-        token = generate_yolink_token(config['yolink']['uaid'], config['yolink']['secret_key'])
+    token = config['yolink'].get('token')
+    if not token:
+        token = generate_yolink_token(config['yolink'].get('uaid', ''), config['yolink'].get('secret_key', ''))
+        if not token:
+            status_messages.append("Unable to generate Yolink token. Please check UAID and Secret Key.")
+
+    # Check if required keys are available
+    if 'url' not in config['yolink']:
+        status_messages.append("Configuration Error: 'url' key is missing in Yolink configuration.")
     else:
-        token = config['yolink']['token']
+        # Query Yolink devices
+        yolink_devices = query_yolink_devices(config['yolink']['url'], token, devices, status_messages)
 
-    # Query Yolink devices
-    yolink_devices = query_yolink_devices(config['yolink']['url'], token, devices)
-
-    return render_template('index.html', devices=yolink_devices, mappings=mappings, config=config)
+    return render_template('index.html', devices=yolink_devices if 'yolink_devices' in locals() else [], mappings=mappings, config=config, status_messages=status_messages)
 
 @app.route('/save_mapping', methods=['POST'])
 def save_mapping():
@@ -222,7 +231,7 @@ def run_mqtt_client():
         mqtt_client.on_connect = on_connect
         mqtt_client.on_message = on_message
         mqtt_client.connect(config['mqtt']['url'], config['mqtt']['port'])
-        mqtt_client.loop_start()  # Using loop_start to keep the main thread alive
+        mqtt_client.loop_forever()
     except socket.gaierror as e:
         print(f"MQTT connection failed: {str(e)}. Please check the MQTT broker address.")
     except Exception as e:
@@ -233,6 +242,5 @@ mqtt_thread = threading.Thread(target=run_mqtt_client)
 mqtt_thread.daemon = True
 mqtt_thread.start()
 
-# Run the Flask app
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)

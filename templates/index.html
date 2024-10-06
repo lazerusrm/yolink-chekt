@@ -50,6 +50,13 @@
         .navigation a:hover {
             text-decoration: underline;
         }
+        .status-messages {
+            margin-bottom: 20px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            background-color: #f1f1f1;
+        }
     </style>
 </head>
 <body>
@@ -59,6 +66,12 @@
     </div>
     <div class="container">
         <h1>Yolink to CHEKT Mapping</h1>
+
+        <div id="status-messages" class="status-messages">
+            {% for message in status_messages %}
+            <p>{{ message }}</p>
+            {% endfor %}
+        </div>
 
         <form id="mapping-form">
             <table class="table">
@@ -75,7 +88,7 @@
                         <td>{{ device['name'] }}</td>
                         <td>{{ device['id'] }}</td>
                         <td>
-                            <input type="text" name="chekt_zone" class="form-control" value="{{ mappings.get(device['id'], '') }}" required>
+                            <input type="text" name="chekt_zone" class="form-control" value="{{ mappings.get(device['id'], '') }}">
                             <input type="hidden" name="device_id" value="{{ device['id'] }}">
                         </td>
                     </tr>
@@ -91,22 +104,11 @@
         $('#mapping-form').on('submit', function (e) {
             e.preventDefault();
             var mappings = {};
-            var allFilled = true;
-
             $('input[name="device_id"]').each(function (index) {
                 var deviceId = $(this).val();
                 var zone = $(this).closest('tr').find('input[name="chekt_zone"]').val();
-                if (!zone.trim()) {
-                    allFilled = false;
-                    alert('Please fill out all CHEKT zone fields before saving.');
-                    return false; // Breaks out of the each() loop
-                }
                 mappings[deviceId] = zone;
             });
-
-            if (!allFilled) {
-                return;
-            }
 
             $.ajax({
                 type: "POST",
@@ -117,7 +119,7 @@
                     alert(response.message);
                 },
                 error: function (xhr, status, error) {
-                    alert('Error: ' + xhr.responseText + '. Please check your network connection or configuration and try again.');
+                    alert('Error: ' + xhr.responseText);
                 }
             });
         });
