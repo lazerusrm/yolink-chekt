@@ -187,6 +187,13 @@ class YoLinkAPI:
 
         return []
 
+@app.route('/save_mapping', methods=['POST'])
+def save_mapping():
+    # Logic to handle saving the mappings
+    data = request.get_json()
+    save_config(data)
+    return jsonify({"status": "success", "message": "Mapping saved successfully."})
+
 
 @app.route('/')
 def index():
