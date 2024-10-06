@@ -23,7 +23,7 @@
             display: block;
             margin-top: 10px;
         }
-        input {
+        input, select {
             width: 100%;
             padding: 5px;
             margin: 5px 0 15px;
@@ -99,8 +99,19 @@
             </div>
         </div>
 
+        <!-- Section to select home and list Yolink devices -->
+        <form id="home-form">
+            <h3>Select Home</h3>
+            <select id="home-select" class="form-control">
+                <option value="">Select Home</option>
+                <!-- Homes will be dynamically added here -->
+            </select>
+            <button type="button" id="load-devices-btn" class="btn btn-primary">Load Devices</button>
+        </form>
+
         <!-- Section to list Yolink devices and map them to CHEKT zones -->
-        <form id="mapping-form">
+        <form id="devices-form" style="display:none;">
+            <h3>Map Devices to CHEKT Channels</h3>
             <table class="table">
                 <thead>
                     <tr>
@@ -109,17 +120,8 @@
                         <th>CHEKT Zone</th>
                     </tr>
                 </thead>
-                <tbody>
-                    {% for device in devices %}
-                    <tr>
-                        <td>{{ device['name'] }}</td>
-                        <td>{{ device['id'] }}</td>
-                        <td>
-                            <input type="text" name="chekt_zone" class="form-control" value="{{ mappings.get(device['id'], '') }}">
-                            <input type="hidden" name="device_id" value="{{ device['id'] }}">
-                        </td>
-                    </tr>
-                    {% endfor %}
+                <tbody id="devices-tbody">
+                    <!-- Devices will be dynamically added here -->
                 </tbody>
             </table>
             <button type="submit" class="btn btn-primary">Save Mapping</button>
@@ -142,6 +144,7 @@
             $('#' + elementId).text(message);
         }
 
+        // Test Yolink Token Generation
         $('#test-token-btn').on('click', function () {
             $('#yolink-icon').addClass('hidden');
             $('#yolink-message').text('Testing Yolink token generation...');
@@ -164,6 +167,7 @@
             });
         });
 
+        // Test CHEKT API Connection
         $('#test-chekt-btn').on('click', function () {
             $('#chekt-icon').addClass('hidden');
             $('#chekt-message').text('Testing CHEKT API connection...');
@@ -186,13 +190,72 @@
             });
         });
 
+        // Load Homes when page loads
+        $(document).ready(function () {
+            $.ajax({
+                type: "GET",
+                url: "/get_homes",
+                success: function (response) {
+                    if (response.homes) {
+                        response.homes.forEach(function (home) {
+                            $('#home-select').append(`<option value="${home.id}">${home.name}</option>`);
+                        });
+                    }
+                },
+                error: function (xhr, status, error) {
+                    alert('Error loading homes: ' + xhr.responseText);
+                }
+            });
+        });
+
+        // Load Devices for selected home
+        $('#load-devices-btn').on('click', function () {
+            var homeId = $('#home-select').val();
+            if (homeId) {
+                $.ajax({
+                    type: "GET",
+                    url: "/get_devices",
+                    data: { home_id: homeId },
+                    success: function (response) {
+                        if (response.devices) {
+                            $('#devices-tbody').empty();
+                            response.devices.forEach(function (device) {
+                                $('#devices-tbody').append(`
+                                    <tr>
+                                        <td>${device.name}</td>
+                                        <td>${device.id}</td>
+                                        <td>
+                                            <select name="chekt_channel" class="form-control">
+                                                <option value="">Select Channel</option>
+                                                ${Array.from({ length: 16 }, (_, i) => `<option value="${i + 1}">Channel ${i + 1}</option>`).join('')}
+                                            </select>
+                                            <input type="hidden" name="device_id" value="${device.id}">
+                                        </td>
+                                    </tr>
+                                `);
+                            });
+                            $('#devices-form').show();
+                        } else {
+                            alert('No devices found for the selected home.');
+                        }
+                    },
+                    error: function (xhr, status, error) {
+                        alert('Error loading devices: ' + xhr.responseText);
+                    }
+                });
+            } else {
+                alert('Please select a home.');
+            }
+        });
+
+        // Save the mapping
         $('#mapping-form').on('submit', function (e) {
             e.preventDefault();
             var mappings = {};
             $('input[name="device_id"]').each(function (index) {
                 var deviceId = $(this).val();
-                var zone = $(this).closest('tr').find('input[name="chekt_zone"]').val();
-                mappings[deviceId] = zone;
+                var channel = $(this).closest('tr').find('select[name="chekt_channel"]').val();
+                mappings[deviceId] = channel;
             });
 
             $.ajax({
