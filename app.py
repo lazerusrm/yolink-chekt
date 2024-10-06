@@ -249,5 +249,82 @@ def get_logs():
     except FileNotFoundError:
         return jsonify({"status": "error", "message": "Log file not found."})
 
+# MQTT Configuration and Callbacks
+def on_connect(client, userdata, flags, rc):
+    if rc == 0:
+        logger.info("Connected to MQTT broker")
+        client.subscribe(userdata['topic'])  # Subscribe to the topic from the config
+    else:
+        logger.error(f"Failed to connect, return code {rc}")
+
+def on_message(client, userdata, msg):
+    logger.info(f"Received message on topic {msg.topic}: {msg.payload}")
+
+    if os.path.exists(config_data['files']['map_file']):
+        with open(config_data['files']['map_file'], 'r') as mf:
+            mappings = yaml.safe_load(mf)
+    else:
+        mappings = {}
+
+    try:
+        payload = json.loads(msg.payload.decode("utf-8"))
+        device_id = payload['deviceId']
+        state = payload['data']['state']
+
+        if device_id in mappings:
+            chekt_zone_id = mappings[device_id]
+            logger.info(f"Triggering CHEKT for device {device_id} in zone {chekt_zone_id} with state {state}")
+            trigger_chekt_event(chekt_zone_id, state)
+
+    except Exception as e:
+        logger.error(f"Error processing message: {str(e)}")
+
+def trigger_chekt_event(chekt_zone_id, event_state):
+    """
+    Trigger the CHEKT API based on the event state (e.g., door open or motion detected).
+    """
+    config = load_config()
+    url = f"http://{config['chekt']['ip']}:{config['chekt']['port']}/api/v1/zones/{chekt_zone_id}/events"
+
+    headers = {
+        'Authorization': f"Bearer {config['chekt']['api_token']}",
+        'Content-Type': 'application/json'
+    }
+
+    data = {
+        "event": event_state,
+        "timestamp": int(time.time())
+    }
+
+    try:
+        response = requests.post(url, headers=headers, json=data)
+        if response.status_code in [200, 202]:
+            logger.info(f"CHEKT zone {chekt_zone_id} updated successfully")
+            if response.status_code == 202:
+                logger.info(f"Request accepted for processing. Response: {response.text}")
+        else:
+            logger.error(f"Failed to update CHEKT zone {chekt_zone_id}. Status code: {response.status_code}")
+            logger.error(f"Response: {response.text}")
+    except Exception as e:
+        logger.error(f"Error communicating with CHEKT API: {str(e)}")
+
+def run_mqtt_client():
+    config = load_config()
+    try:
+        mqtt_client = mqtt.Client(userdata={"topic": config['mqtt']['topic']})
+        mqtt_client.on_connect = on_connect
+        mqtt_client.on_message = on_message
+        mqtt_client.connect(config['mqtt']['url'], int(config['mqtt']['port']))
+        mqtt_client.loop_forever()
+    except socket.gaierror as e:
+        logger.error(f"MQTT connection failed: {str(e)}. Please check the MQTT broker address.")
+    except Exception as e:
+        logger.error(f"Unexpected error with MQTT client: {str(e)}")
+
+# Start the MQTT client in a separate thread
+mqtt_thread = threading.Thread(target=run_mqtt_client)
+mqtt_thread.daemon = True
+mqtt_thread.start()
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
