@@ -151,10 +151,12 @@
                 success: function (response) {
                     if (response.status === "success") {
                         updateStatus('yolink-message', 'yolink-icon', 'Yolink API connection successful.', true);
-                        addToLog("Yolink API connection successful: " + response.data);
+                        addToLog("Yolink API connection successful: " + JSON.stringify(response.data));
+                        addToLog("Debug Info: " + JSON.stringify(response.debug_info));
                     } else {
                         updateStatus('yolink-message', 'yolink-icon', 'Failed to connect to Yolink API.', false);
                         addToLog("Failed to connect to Yolink API: " + response.message);
+                        addToLog("Debug Info: " + JSON.stringify(response.response));
                     }
                 },
                 error: function (xhr, status, error) {
@@ -174,9 +176,11 @@
                     if (response.status === "success") {
                         updateStatus('chekt-message', 'chekt-icon', 'CHEKT API connection successful.', true);
                         addToLog("CHEKT API connection successful.");
+                        addToLog("Debug Info: " + JSON.stringify(response.debug_info));
                     } else {
                         updateStatus('chekt-message', 'chekt-icon', 'Failed to connect to CHEKT API.', false);
                         addToLog("Failed to connect to CHEKT API: " + response.message);
+                        addToLog("Debug Info: " + JSON.stringify(response.response));
                     }
                 },
                 error: function (xhr, status, error) {
