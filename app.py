@@ -116,7 +116,7 @@ def handle_token_expiry():
 
 class YoLinkAPI:
     def __init__(self, token):
-        self.base_url = "https://api.yosmart.com/open/yolink/v2/api"  # Hardcoded base URL
+        self.base_url = "https://api.yosmart.com/open/yolink/v2/api"
         self.token = token
 
     def get_homes(self):
@@ -195,9 +195,14 @@ def index():
     mappings = {}
 
     if 'files' in config and 'map_file' in config['files']:
+        # Log the map file location before trying to open it
+        logger.debug(f"Loading mappings from {config['files']['map_file']}")
+        
         if os.path.exists(config['files']['map_file']):
             with open(config['files']['map_file'], 'r') as mf:
                 mappings = yaml.safe_load(mf)
+        else:
+            logger.error(f"Mappings file {config['files']['map_file']} not found.")
     else:
         logger.error("Configuration Error: 'files' section or 'map_file' key is missing in the configuration.")
 
@@ -212,7 +217,7 @@ def index():
         return render_template('index.html', devices=[], mappings=mappings, config=config, error="Configuration Error: 'base_url' key is missing in Yolink configuration.")
 
     # Query Yolink homes
-    yolink_api = YoLinkAPI(config['yolink']['base_url'], token)
+    yolink_api = YoLinkAPI(token)
     homes = yolink_api.get_homes()
 
     return render_template('index.html', homes=homes, mappings=mappings, config=config)
