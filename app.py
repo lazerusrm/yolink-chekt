@@ -75,10 +75,13 @@ def handle_token_expiry():
     logger.info("Handling token expiry. Generating a new token...")
     token = generate_yolink_token(config_data['yolink']['uaid'], config_data['yolink']['secret_key'])
     if token:
+        config_data['yolink']['token'] = token
+        save_config(config_data)  # Save the updated token
         return token
     else:
         logger.error("Failed to generate a new Yolink token.")
         return None
+
 
 class YoLinkAPI:
     def __init__(self, base_url, token):
@@ -120,38 +123,41 @@ class YoLinkAPI:
         return []
 
     def get_device_list(self, home_id):
-        url = f"{self.base_url}open/yolink/v2/api"
-        headers = {
-            'Content-Type': 'application/json',
-            'Authorization': f"Bearer {self.token}"
-        }
-        data = {
-            "method": "Home.getDeviceList",
-            "time": int(time.time() * 1000),
-            "homeId": home_id
-        }
+    """
+    This method fetches the list of devices for a given home.
+    """
+    url = f"{self.base_url}open/yolink/v2/api"
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f"Bearer {self.token}"
+    }
+    data = {
+        "method": "Home.getDeviceList",
+        "time": int(time.time() * 1000),
+        "homeId": home_id
+    }
 
-        logger.debug(f"Sending get_device_list request to URL: {url}")
-        logger.debug(f"Request Headers: {json.dumps(headers, indent=2)}")
-        logger.debug(f"Request Payload: {json.dumps(data, indent=2)}")
+    logger.debug(f"Sending get_device_list request to URL: {url}")
+    logger.debug(f"Request Headers: {json.dumps(headers, indent=2)}")
+    logger.debug(f"Request Payload: {json.dumps(data, indent=2)}")
 
-        try:
-            response = requests.post(url, json=data, headers=headers)
-            logger.debug(f"Response Code: {response.status_code}")
-            logger.debug(f"Response Body: {response.text}")
+    try:
+        response = requests.post(url, json=data, headers=headers)
+        logger.debug(f"Response Code: {response.status_code}")
+        logger.debug(f"Response Body: {response.text}")
 
-            if response.status_code == 200:
-                return response.json().get('data', {}).get('devices', [])
-            elif response.status_code == 401:
-                logger.warning("Unauthorized request. Token may be invalid or expired.")
-                self.token = handle_token_expiry()
-                return self.get_device_list(home_id)  # Retry after getting a new token
-            else:
-                logger.error(f"Failed to retrieve device list. Status code: {response.status_code} - {response.text}")
-        except Exception as e:
-            logger.error(f"Error retrieving device list: {str(e)}")
+        if response.status_code == 200:
+            return response.json().get('data', {}).get('devices', [])
+        elif response.status_code == 401:
+            logger.warning("Unauthorized request. Token may be invalid or expired.")
+            self.token = handle_token_expiry()
+            return self.get_device_list(home_id)  # Retry after getting a new token
+        else:
+            logger.error(f"Failed to retrieve device list. Status code: {response.status_code} - {response.text}")
+    except Exception as e:
+        logger.error(f"Error retrieving device list: {str(e)}")
 
-        return []
+    return []
 
 @app.route('/')
 def index():
