@@ -13,7 +13,7 @@ import logging
 app = Flask(__name__)
 
 # Configure logging
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s', filename='application.log')
 logger = logging.getLogger()
 
 # Load configuration from file or memory
@@ -59,7 +59,6 @@ def generate_yolink_token(uaid, secret_key):
             token = response.json().get("access_token")
             if token:
                 logger.info("Successfully obtained Yolink token.")
-                # Update token in the configuration and save it
                 config_data['yolink']['token'] = token
                 save_config(config_data)
                 return token
@@ -92,7 +91,7 @@ class YoLinkAPI:
         self.token = token
 
     def get_homes(self):
-        url = f"{self.base_url}/open/yolink/v2/api"
+        url = f"{self.base_url}open/yolink/v2/api"
         headers = {
             'Content-Type': 'application/json',
             'Authorization': f"Bearer {self.token}"
@@ -125,7 +124,7 @@ class YoLinkAPI:
         return []
 
     def get_device_list(self, home_id):
-        url = f"{self.base_url}/open/yolink/v2/api"
+        url = f"{self.base_url}open/yolink/v2/api"
         headers = {
             'Content-Type': 'application/json',
             'Authorization': f"Bearer {self.token}"
@@ -171,7 +170,6 @@ def index():
             with open(config['files']['map_file'], 'r') as mf:
                 mappings = yaml.safe_load(mf)
     else:
-        # Log the configuration issue if 'files' key is missing
         logger.error("Configuration Error: 'files' section or 'map_file' key is missing in the configuration.")
 
     # Generate Yolink token if it doesn't exist
@@ -189,6 +187,42 @@ def index():
     homes = yolink_api.get_homes()
 
     return render_template('index.html', homes=homes, mappings=mappings, config=config)
+
+
+@app.route('/test_chekt_api', methods=['GET'])
+def test_chekt_api():
+    # Load configuration to get CHEKT API settings
+    config = load_config()
+    chekt_ip = config['chekt'].get('ip')
+    chekt_port = config['chekt'].get('port')
+    api_token = config['chekt'].get('api_token')
+
+    if not chekt_ip or not chekt_port:
+        return jsonify({"status": "error", "message": "CHEKT API configuration (IP or port) is missing."})
+
+    # Try to access the CHEKT API health endpoint to verify the connection
+    url = f"http://{chekt_ip}:{chekt_port}/api/v1/"
+    headers = {
+        'Authorization': f"Bearer {api_token}",
+        'Content-Type': 'application/json',
+        'Username': 'apikey'  # Fixed value "apikey" as the username
+    }
+
+    try:
+        logger.debug(f"Testing CHEKT API Connection to URL: {url}")
+        logger.debug(f"Request Headers: {json.dumps(headers, indent=2)}")
+
+        response = requests.get(url, headers=headers)
+        logger.debug(f"CHEKT API Response Status Code: {response.status_code}")
+        logger.debug(f"CHEKT API Response: {response.text}")
+
+        if response.status_code == 200:
+            return jsonify({"status": "success", "message": "CHEKT API connection successful.", "debug_info": response.text})
+        else:
+            return jsonify({"status": "error", "message": f"Failed to connect to CHEKT API. Status code: {response.status_code}", "response": response.text})
+    except Exception as e:
+        logger.error(f"Error connecting to CHEKT API: {str(e)}")
+        return jsonify({"status": "error", "message": str(e)})
 
 
 @app.route('/get_logs', methods=['GET'])
