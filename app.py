@@ -235,7 +235,7 @@ def get_homes():
     if not base_url:
         return jsonify({"status": "error", "message": "'base_url' key is missing in Yolink configuration."})
 
-    yolink_api = YoLinkAPI(base_url, token)
+    yolink_api = YoLinkAPI(token)
     homes = yolink_api.get_homes()
 
     if homes:
@@ -256,7 +256,7 @@ def test_yolink_api():
     if not base_url:
         return jsonify({"status": "error", "message": "'base_url' key is missing in Yolink configuration."})
 
-    yolink_api = YoLinkAPI(base_url, token)
+    yolink_api = YoLinkAPI(token)
     homes = yolink_api.get_homes()
     if homes:
         return jsonify({"status": "success", "data": homes})
