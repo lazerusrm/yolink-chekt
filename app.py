@@ -184,6 +184,27 @@ def index():
 
     return render_template('index.html', homes=homes, mappings=mappings, config=config)
 
+@app.route('/get_homes', methods=['GET'])
+def get_homes():
+    # Load device and mapping configurations
+    config = load_config()
+    token = config['yolink'].get('token')
+
+    if not token:
+        return jsonify({"status": "error", "message": "No token available. Please generate a token first."})
+
+    base_url = config['yolink'].get('base_url')
+    if not base_url:
+        return jsonify({"status": "error", "message": "'base_url' key is missing in Yolink configuration."})
+
+    yolink_api = YoLinkAPI(base_url, token)
+    homes = yolink_api.get_homes()
+
+    if homes:
+        return jsonify({"status": "success", "data": homes})
+    else:
+        return jsonify({"status": "error", "message": "Failed to access Yolink API."})
+        
 @app.route('/test_yolink_api', methods=['GET'])
 def test_yolink_api():
     # Load configuration to get token
