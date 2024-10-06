@@ -13,16 +13,13 @@ import logging
 app = Flask(__name__)
 
 # Configure logging
-log_file = "application.log"
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s', handlers=[
-    logging.FileHandler(log_file),
-    logging.StreamHandler()
-])
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger()
 
 # Load configuration from file or memory
 config_file = "config.yaml"
 config_data = {}
+
 
 def load_config():
     global config_data
@@ -31,11 +28,13 @@ def load_config():
             config_data = yaml.safe_load(file)
     return config_data
 
+
 def save_config(data):
     global config_data
     config_data = data
     with open(config_file, 'w') as file:
         yaml.dump(data, file)
+
 
 def generate_yolink_token(uaid, secret_key):
     """
@@ -50,12 +49,12 @@ def generate_yolink_token(uaid, secret_key):
         "client_id": uaid,
         "client_secret": secret_key
     }
-    
+
     logger.debug(f"Sending token request to URL: {url}")
     try:
         response = requests.post(url, headers=headers, data=data)
         logger.debug(f"Token response: {response.status_code} - {response.text}")
-        
+
         if response.status_code == 200:
             token = response.json().get("access_token")
             if token:
@@ -73,6 +72,7 @@ def generate_yolink_token(uaid, secret_key):
 
     return None
 
+
 def handle_token_expiry():
     """
     Handles the token expiry by generating a new one if needed.
@@ -85,13 +85,14 @@ def handle_token_expiry():
         logger.error("Failed to generate a new Yolink token.")
         return None
 
+
 class YoLinkAPI:
     def __init__(self, base_url, token):
         self.base_url = base_url
         self.token = token
 
     def get_homes(self):
-        url = f"{self.base_url}open/yolink/v2/api"
+        url = f"{self.base_url}/open/yolink/v2/api"
         headers = {
             'Content-Type': 'application/json',
             'Authorization': f"Bearer {self.token}"
@@ -104,7 +105,7 @@ class YoLinkAPI:
         logger.debug(f"Sending get_homes request to URL: {url}")
         logger.debug(f"Request Headers: {json.dumps(headers, indent=2)}")
         logger.debug(f"Request Payload: {json.dumps(data, indent=2)}")
-        
+
         try:
             response = requests.post(url, json=data, headers=headers)
             logger.debug(f"Response Code: {response.status_code}")
@@ -124,7 +125,7 @@ class YoLinkAPI:
         return []
 
     def get_device_list(self, home_id):
-        url = f"{self.base_url}open/yolink/v2/api"
+        url = f"{self.base_url}/open/yolink/v2/api"
         headers = {
             'Content-Type': 'application/json',
             'Authorization': f"Bearer {self.token}"
@@ -157,6 +158,7 @@ class YoLinkAPI:
 
         return []
 
+
 @app.route('/')
 def index():
     # Load device and mapping configurations
@@ -188,17 +190,19 @@ def index():
 
     return render_template('index.html', homes=homes, mappings=mappings, config=config)
 
+
 @app.route('/get_logs', methods=['GET'])
 def get_logs():
     """
     Fetch logs for displaying on the web interface.
     """
     try:
-        with open(log_file, 'r') as log_file_obj:
-            logs = log_file_obj.read()
+        with open('application.log', 'r') as log_file:
+            logs = log_file.read()
         return jsonify({"status": "success", "logs": logs})
     except FileNotFoundError:
         return jsonify({"status": "error", "message": "Log file not found."})
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
