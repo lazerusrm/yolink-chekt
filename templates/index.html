@@ -50,12 +50,12 @@
         .navigation a:hover {
             text-decoration: underline;
         }
-        .status-messages {
+        .status-message {
             margin-bottom: 20px;
             padding: 10px;
-            border: 1px solid #ccc;
             border-radius: 5px;
-            background-color: #f1f1f1;
+            background-color: #f8d7da;
+            color: #721c24;
         }
     </style>
 </head>
@@ -64,14 +64,15 @@
         <a href="/">Home</a>
         <a href="/config">Configuration</a>
     </div>
+
+    {% if status_message %}
+    <div class="status-message">
+        {{ status_message }}
+    </div>
+    {% endif %}
+
     <div class="container">
         <h1>Yolink to CHEKT Mapping</h1>
-
-        <div id="status-messages" class="status-messages">
-            {% for message in status_messages %}
-            <p>{{ message }}</p>
-            {% endfor %}
-        </div>
 
         <form id="mapping-form">
             <table class="table">

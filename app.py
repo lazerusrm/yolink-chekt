@@ -1,7 +1,6 @@
 import yaml
 import json
 import requests
-import hashlib
 import time
 from flask import Flask, render_template, request, jsonify
 import threading
@@ -63,8 +62,8 @@ def generate_yolink_token(uaid, secret_key):
         return None
 
 class YoLinkDevice:
-    def __init__(self, url, token, serial_number, friendly_name="Unknown"):
-        self.url = url
+    def __init__(self, base_url, token, serial_number, friendly_name="Unknown"):
+        self.base_url = base_url
         self.token = token
         self.serial_number = serial_number
         self.friendly_name = friendly_name
@@ -82,7 +81,7 @@ class YoLinkDevice:
             'Authorization': f"Bearer {self.token}"
         }
         try:
-            response = requests.post(self.url, json=self.device_data, headers=headers)
+            response = requests.post(self.base_url, json=self.device_data, headers=headers)
             if response.status_code == 200:
                 self.device_data = response.json().get('data', {})
                 self.friendly_name = self.device_data.get('name', 'Unknown')
@@ -100,21 +99,18 @@ class YoLinkDevice:
     def get_type(self):
         return self.device_data.get('type', 'Unknown')
 
-# Query Yolink devices (from the local API)
-def query_yolink_devices(url, token, device_list, status_messages):
+# Query Yolink devices (from the API)
+def query_yolink_devices(base_url, token, device_list):
     devices = []
     for device_data in device_list:
-        try:
-            yolink_device = YoLinkDevice(url, token, device_data['serial_number'], "")
-            yolink_device.build_device_api_request_data()
-            yolink_device.enable_device_api()
-            devices.append({
-                'name': yolink_device.get_friendly_name(),
-                'id': yolink_device.get_id(),
-                'type': yolink_device.get_type()
-            })
-        except Exception as e:
-            status_messages.append(f"Error querying Yolink device {device_data['serial_number']}: {str(e)}")
+        yolink_device = YoLinkDevice(base_url, token, device_data['serial_number'], "")
+        yolink_device.build_device_api_request_data()
+        yolink_device.enable_device_api()
+        devices.append({
+            'name': yolink_device.get_friendly_name(),
+            'id': yolink_device.get_id(),
+            'type': yolink_device.get_type()
+        })
     return devices
 
 @app.route('/')
@@ -123,7 +119,6 @@ def index():
     config = load_config()
     devices = []
     mappings = {}
-    status_messages = []
 
     if os.path.exists(device_file):
         with open(device_file, 'r') as df:
@@ -134,20 +129,19 @@ def index():
             mappings = yaml.safe_load(mf)
 
     # Generate Yolink token if it doesn't exist
-    token = config['yolink'].get('token')
-    if not token:
+    if not config['yolink'].get('token'):
         token = generate_yolink_token(config['yolink'].get('uaid', ''), config['yolink'].get('secret_key', ''))
-        if not token:
-            status_messages.append("Unable to generate Yolink token. Please check UAID and Secret Key.")
+    else:
+        token = config['yolink']['token']
 
     # Check if required keys are available
-    if 'url' not in config['yolink']:
-        status_messages.append("Configuration Error: 'url' key is missing in Yolink configuration.")
-    else:
-        # Query Yolink devices
-        yolink_devices = query_yolink_devices(config['yolink']['url'], token, devices, status_messages)
+    if 'base_url' not in config['yolink']:
+        return "Configuration Error: 'base_url' key is missing in Yolink configuration.", 500
 
-    return render_template('index.html', devices=yolink_devices if 'yolink_devices' in locals() else [], mappings=mappings, config=config, status_messages=status_messages)
+    # Query Yolink devices
+    yolink_devices = query_yolink_devices(config['yolink']['base_url'], token, devices)
+
+    return render_template('index.html', devices=yolink_devices, mappings=mappings, config=config)
 
 @app.route('/save_mapping', methods=['POST'])
 def save_mapping():
