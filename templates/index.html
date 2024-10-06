@@ -23,7 +23,7 @@
             display: block;
             margin-top: 10px;
         }
-        input, select {
+        input {
             width: 100%;
             padding: 5px;
             margin: 5px 0 15px;
@@ -83,7 +83,7 @@
 
         <!-- Section for testing Yolink token generation -->
         <div class="mb-3">
-            <button type="button" id="test-token-btn" class="btn btn-primary">Test Yolink Token Generation</button>
+            <button type="button" id="test-token-btn" class="btn btn-primary">Test Yolink API Connection</button>
             <div id="yolink-status" class="status">
                 <img src="" alt="" id="yolink-icon" class="hidden">
                 <span id="yolink-message"></span>
@@ -99,19 +99,8 @@
             </div>
         </div>
 
-        <!-- Section to select home and list Yolink devices -->
-        <form id="home-form">
-            <h3>Select Home</h3>
-            <select id="home-select" class="form-control">
-                <option value="">Select Home</option>
-                <!-- Homes will be dynamically added here -->
-            </select>
-            <button type="button" id="load-devices-btn" class="btn btn-primary">Load Devices</button>
-        </form>
-
         <!-- Section to list Yolink devices and map them to CHEKT zones -->
-        <form id="devices-form" style="display:none;">
-            <h3>Map Devices to CHEKT Channels</h3>
+        <form id="mapping-form">
             <table class="table">
                 <thead>
                     <tr>
@@ -120,8 +109,17 @@
                         <th>CHEKT Zone</th>
                     </tr>
                 </thead>
-                <tbody id="devices-tbody">
-                    <!-- Devices will be dynamically added here -->
+                <tbody>
+                    {% for device in devices %}
+                    <tr>
+                        <td>{{ device['name'] }}</td>
+                        <td>{{ device['id'] }}</td>
+                        <td>
+                            <input type="text" name="chekt_zone" class="form-control" value="{{ mappings.get(device['id'], '') }}">
+                            <input type="hidden" name="device_id" value="{{ device['id'] }}">
+                        </td>
+                    </tr>
+                    {% endfor %}
                 </tbody>
             </table>
             <button type="submit" class="btn btn-primary">Save Mapping</button>
@@ -144,35 +142,33 @@
             $('#' + elementId).text(message);
         }
 
-        // Test Yolink Token Generation
         $('#test-token-btn').on('click', function () {
             $('#yolink-icon').addClass('hidden');
-            $('#yolink-message').text('Testing Yolink token generation...');
+            $('#yolink-message').text('Testing Yolink API connection...');
             $.ajax({
-                type: "POST",
-                url: "/test_yolink_token",
+                type: "GET",
+                url: "/test_yolink_api",
                 success: function (response) {
                     if (response.status === "success") {
-                        updateStatus('yolink-message', 'yolink-icon', 'Yolink token generated successfully.', true);
-                        addToLog("Yolink token generated successfully: " + response.token);
+                        updateStatus('yolink-message', 'yolink-icon', 'Yolink API connection successful.', true);
+                        addToLog("Yolink API connection successful: " + response.data);
                     } else {
-                        updateStatus('yolink-message', 'yolink-icon', 'Failed to generate Yolink token.', false);
-                        addToLog("Failed to generate Yolink token: " + response.message);
+                        updateStatus('yolink-message', 'yolink-icon', 'Failed to connect to Yolink API.', false);
+                        addToLog("Failed to connect to Yolink API: " + response.message);
                     }
                 },
                 error: function (xhr, status, error) {
-                    updateStatus('yolink-message', 'yolink-icon', 'Error generating Yolink token.', false);
-                    addToLog('Error generating Yolink token: ' + xhr.responseText);
+                    updateStatus('yolink-message', 'yolink-icon', 'Error connecting to Yolink API.', false);
+                    addToLog('Error connecting to Yolink API: ' + xhr.responseText);
                 }
             });
         });
 
-        // Test CHEKT API Connection
         $('#test-chekt-btn').on('click', function () {
             $('#chekt-icon').addClass('hidden');
             $('#chekt-message').text('Testing CHEKT API connection...');
             $.ajax({
-                type: "POST",
+                type: "GET",
                 url: "/test_chekt_api",
                 success: function (response) {
                     if (response.status === "success") {
@@ -190,72 +186,13 @@
             });
         });
 
-        // Load Homes when page loads
-        $(document).ready(function () {
-            $.ajax({
-                type: "GET",
-                url: "/get_homes",
-                success: function (response) {
-                    if (response.homes) {
-                        response.homes.forEach(function (home) {
-                            $('#home-select').append(`<option value="${home.id}">${home.name}</option>`);
-                        });
-                    }
-                },
-                error: function (xhr, status, error) {
-                    alert('Error loading homes: ' + xhr.responseText);
-                }
-            });
-        });
-
-        // Load Devices for selected home
-        $('#load-devices-btn').on('click', function () {
-            var homeId = $('#home-select').val();
-            if (homeId) {
-                $.ajax({
-                    type: "GET",
-                    url: "/get_devices",
-                    data: { home_id: homeId },
-                    success: function (response) {
-                        if (response.devices) {
-                            $('#devices-tbody').empty();
-                            response.devices.forEach(function (device) {
-                                $('#devices-tbody').append(`
-                                    <tr>
-                                        <td>${device.name}</td>
-                                        <td>${device.id}</td>
-                                        <td>
-                                            <select name="chekt_channel" class="form-control">
-                                                <option value="">Select Channel</option>
-                                                ${Array.from({ length: 16 }, (_, i) => `<option value="${i + 1}">Channel ${i + 1}</option>`).join('')}
-                                            </select>
-                                            <input type="hidden" name="device_id" value="${device.id}">
-                                        </td>
-                                    </tr>
-                                `);
-                            });
-                            $('#devices-form').show();
-                        } else {
-                            alert('No devices found for the selected home.');
-                        }
-                    },
-                    error: function (xhr, status, error) {
-                        alert('Error loading devices: ' + xhr.responseText);
-                    }
-                });
-            } else {
-                alert('Please select a home.');
-            }
-        });
-
-        // Save the mapping
         $('#mapping-form').on('submit', function (e) {
             e.preventDefault();
             var mappings = {};
             $('input[name="device_id"]').each(function (index) {
                 var deviceId = $(this).val();
-                var channel = $(this).closest('tr').find('select[name="chekt_channel"]').val();
-                mappings[deviceId] = channel;
+                var zone = $(this).closest('tr').find('input[name="chekt_zone"]').val();
+                mappings[deviceId] = zone;
             });
 
             $.ajax({
