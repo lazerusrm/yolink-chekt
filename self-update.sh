@@ -4,13 +4,15 @@
 REPO_URL="https://github.com/lazerusrm/yolink-chekt/archive/refs/heads/main.zip"
 APP_DIR="/opt/yolink-chekt"
 
-# Navigate to the app directory
-cd "$APP_DIR" || { echo 'Failed to navigate to app directory.'; exit 1; }
+# Backup current config.yaml
+cp "$APP_DIR/config.yaml" "$APP_DIR/config.yaml.bak"
 
-# Download the latest changes as a ZIP file
-echo "Checking for updates from $REPO_URL..."
+# Perform update steps
 curl -L "$REPO_URL" -o "$APP_DIR/repo.zip" || { echo 'Repository download failed.'; exit 1; }
 unzip -o "$APP_DIR/repo.zip" -d "$APP_DIR" || { echo 'Unzip failed.'; exit 1; }
+
+# Restore configuration file after update
+mv "$APP_DIR/config.yaml.bak" "$APP_DIR/config.yaml"
 
 # Move extracted files while preserving the existing structure and keeping config.yaml intact
 if ! command -v rsync &> /dev/null; then

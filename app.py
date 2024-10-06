@@ -20,16 +20,26 @@ config_data = {}
 def load_config():
     global config_data
     if os.path.exists(config_file):
-        try:
-            with open(config_file, 'r') as file:
-                config_data = yaml.safe_load(file)
-                if not config_data or 'yolink' not in config_data:
-                    raise ValueError("Yolink configuration section is missing")
-        except Exception as e:
-            print(f"Error loading configuration: {str(e)}")
-    else:
-        print("Configuration file not found")
+        with open(config_file, 'r') as file:
+            config_data = yaml.safe_load(file)
+
+    # Ensure necessary configurations are present
+    if 'yolink' not in config_data:
+        config_data['yolink'] = {}
+
+    # Add default values for Yolink configuration if they are missing
+    yolink_defaults = {
+        'base_url': "https://api.yosmart.com/open/yolink/v2/api",
+        'uaid': '',
+        'secret_key': '',
+        'token': ''
+    }
+    for key, default_value in yolink_defaults.items():
+        if key not in config_data['yolink']:
+            config_data['yolink'][key] = default_value
+
     return config_data
+
 
 def save_config(data):
     global config_data
