@@ -106,11 +106,12 @@ class YoLinkAPI:
             logger.debug(f"Response Body: {response.text}")
 
             if response.status_code == 200:
-                return response.json().get('data', {}).get('homes', [])
-            elif response.status_code == 401:
-                logger.warning("Unauthorized request. Token may be invalid or expired.")
-                self.token = handle_token_expiry()
-                return self.get_homes()  # Retry after getting a new token
+                response_data = response.json()
+                if response_data.get("desc") == "Invalid request: The token is expired":
+                    logger.warning("Token expired, attempting to refresh.")
+                    self.token = handle_token_expiry()
+                    return self.get_homes()  # Retry after getting a new token
+                return response_data.get('data', {}).get('homes', [])
             else:
                 logger.error(f"Failed to retrieve homes. Status code: {response.status_code} - {response.text}")
         except Exception as e:
@@ -158,7 +159,6 @@ def index():
     config = load_config()
     mappings = {}
 
-    # Ensure the 'files' key exists in the configuration
     if 'files' in config and 'map_file' in config['files']:
         if os.path.exists(config['files']['map_file']):
             with open(config['files']['map_file'], 'r') as mf:
@@ -181,6 +181,26 @@ def index():
     homes = yolink_api.get_homes()
 
     return render_template('index.html', homes=homes, mappings=mappings, config=config)
+
+@app.route('/test_yolink_api', methods=['GET'])
+def test_yolink_api():
+    # Load configuration to get token
+    config = load_config()
+    token = config['yolink'].get('token')
+
+    if not token:
+        return jsonify({"status": "error", "message": "No token available. Please generate a token first."})
+
+    base_url = config['yolink'].get('base_url')
+    if not base_url:
+        return jsonify({"status": "error", "message": "'base_url' key is missing in Yolink configuration."})
+
+    yolink_api = YoLinkAPI(base_url, token)
+    homes = yolink_api.get_homes()
+    if homes:
+        return jsonify({"status": "success", "data": homes})
+    else:
+        return jsonify({"status": "error", "message": "Failed to access Yolink API."})
 
 @app.route('/test_chekt_api', methods=['GET'])
 def test_chekt_api():
