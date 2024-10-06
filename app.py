@@ -92,12 +92,12 @@ def handle_token_expiry():
         return None
 
 class YoLinkAPI:
-    def __init__(self, base_url, token):
-        self.base_url = base_url if base_url.endswith('/') else base_url + '/'
+    def __init__(self, token):
+        self.base_url = "https://api.yosmart.com/open/yolink/v2/api"  # Hardcoded base URL
         self.token = token
 
     def get_homes(self):
-        url = f"{self.base_url}open/yolink/v2/api"
+        url = self.base_url  # No need to format, as it's hardcoded now
         headers = {
             'Content-Type': 'application/json',
             'Authorization': f"Bearer {self.token}"
@@ -131,7 +131,7 @@ class YoLinkAPI:
         return []
 
     def get_device_list(self, home_id):
-        url = f"{self.base_url}open/yolink/v2/api"
+        url = self.base_url  # No need to format
         headers = {
             'Content-Type': 'application/json',
             'Authorization': f"Bearer {self.token}"
@@ -163,6 +163,7 @@ class YoLinkAPI:
             logger.error(f"Error retrieving device list: {str(e)}")
 
         return []
+
 
 @app.route('/')
 def index():
