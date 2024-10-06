@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Yolink to CHEKT Mapping</title>
+    <title>Yolink to CHEKT Configuration</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.0/dist/css/bootstrap.min.css">
     <style>
         body {
@@ -50,6 +50,27 @@
         .navigation a:hover {
             text-decoration: underline;
         }
+        .log {
+            background-color: #f1f1f1;
+            padding: 15px;
+            margin-top: 20px;
+            border-radius: 10px;
+            height: 150px;
+            overflow-y: auto;
+        }
+        .status {
+            display: flex;
+            align-items: center;
+            margin-top: 10px;
+        }
+        .status img {
+            width: 20px;
+            height: 20px;
+            margin-right: 10px;
+        }
+        .hidden {
+            display: none;
+        }
     </style>
 </head>
 <body>
@@ -60,6 +81,25 @@
     <div class="container">
         <h1>Yolink to CHEKT Mapping</h1>
 
+        <!-- Section for testing Yolink token generation -->
+        <div class="mb-3">
+            <button type="button" id="test-token-btn" class="btn btn-primary">Test Yolink Token Generation</button>
+            <div id="yolink-status" class="status">
+                <img src="" alt="" id="yolink-icon" class="hidden">
+                <span id="yolink-message"></span>
+            </div>
+        </div>
+
+        <!-- Section for testing CHEKT API -->
+        <div class="mb-3">
+            <button type="button" id="test-chekt-btn" class="btn btn-secondary">Test CHEKT API Connection</button>
+            <div id="chekt-status" class="status">
+                <img src="" alt="" id="chekt-icon" class="hidden">
+                <span id="chekt-message"></span>
+            </div>
+        </div>
+
+        <!-- Section to list Yolink devices and map them to CHEKT zones -->
         <form id="mapping-form">
             <table class="table">
                 <thead>
@@ -85,15 +125,67 @@
             <button type="submit" class="btn btn-primary">Save Mapping</button>
         </form>
 
-        <!-- Configuration Debug Section -->
-        <div class="container mt-5">
-            <h2>Current Configuration</h2>
-            <pre>{{ config | tojson(indent=2) }}</pre>
-        </div>
+        <!-- Log area for messages -->
+        <div id="log-area" class="log"></div>
     </div>
 
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script>
+        function addToLog(message) {
+            $('#log-area').append('<div>' + message + '</div>');
+            $('#log-area').scrollTop($('#log-area')[0].scrollHeight);
+        }
+
+        function updateStatus(elementId, iconId, message, success) {
+            const icon = success ? 'https://img.icons8.com/color/48/000000/checkmark.png' : 'https://img.icons8.com/color/48/000000/cancel.png';
+            $('#' + iconId).attr('src', icon).removeClass('hidden');
+            $('#' + elementId).text(message);
+        }
+
+        $('#test-token-btn').on('click', function () {
+            $('#yolink-icon').addClass('hidden');
+            $('#yolink-message').text('Testing Yolink token generation...');
+            $.ajax({
+                type: "POST",
+                url: "/test_yolink_token",
+                success: function (response) {
+                    if (response.status === "success") {
+                        updateStatus('yolink-message', 'yolink-icon', 'Yolink token generated successfully.', true);
+                        addToLog("Yolink token generated successfully: " + response.token);
+                    } else {
+                        updateStatus('yolink-message', 'yolink-icon', 'Failed to generate Yolink token.', false);
+                        addToLog("Failed to generate Yolink token: " + response.message);
+                    }
+                },
+                error: function (xhr, status, error) {
+                    updateStatus('yolink-message', 'yolink-icon', 'Error generating Yolink token.', false);
+                    addToLog('Error generating Yolink token: ' + xhr.responseText);
+                }
+            });
+        });
+
+        $('#test-chekt-btn').on('click', function () {
+            $('#chekt-icon').addClass('hidden');
+            $('#chekt-message').text('Testing CHEKT API connection...');
+            $.ajax({
+                type: "POST",
+                url: "/test_chekt_api",
+                success: function (response) {
+                    if (response.status === "success") {
+                        updateStatus('chekt-message', 'chekt-icon', 'CHEKT API connection successful.', true);
+                        addToLog("CHEKT API connection successful.");
+                    } else {
+                        updateStatus('chekt-message', 'chekt-icon', 'Failed to connect to CHEKT API.', false);
+                        addToLog("Failed to connect to CHEKT API: " + response.message);
+                    }
+                },
+                error: function (xhr, status, error) {
+                    updateStatus('chekt-message', 'chekt-icon', 'Error connecting to CHEKT API.', false);
+                    addToLog('Error connecting to CHEKT API: ' + xhr.responseText);
+                }
+            });
+        });
+
         $('#mapping-form').on('submit', function (e) {
             e.preventDefault();
             var mappings = {};
@@ -109,10 +201,10 @@
                 contentType: "application/json",
                 data: JSON.stringify(mappings),
                 success: function (response) {
-                    alert(response.message);
+                    addToLog(response.message);
                 },
                 error: function (xhr, status, error) {
-                    alert('Error: ' + xhr.responseText);
+                    addToLog('Error: ' + xhr.responseText);
                 }
             });
         });
