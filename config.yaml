@@ -2,6 +2,7 @@ yolink:
   url: "https://api.yosmart.com"
   uaid: "your_uaid"
   secret_key: "your_secret_key"
+  url: "https://api.yosmart.com/openApi"  # This is the Yolink API base URL.
   token: "your_access_token_here"  # Placeholder for storing the generated access token
 mqtt:
   url: "mqtt://broker.yosmart.com"
