@@ -13,12 +13,15 @@ import logging
 app = Flask(__name__)
 
 # Configure logging
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+log_file = "application.log"
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s', handlers=[
+    logging.FileHandler(log_file),
+    logging.StreamHandler()
+])
 logger = logging.getLogger()
 
 # Load configuration from file or memory
 config_file = "config.yaml"
-
 config_data = {}
 
 def load_config():
@@ -160,17 +163,23 @@ def index():
     config = load_config()
     mappings = {}
 
-    if os.path.exists(config['files']['map_file']):
-        with open(config['files']['map_file'], 'r') as mf:
-            mappings = yaml.safe_load(mf)
+    # Ensure the 'files' key exists in the configuration
+    if 'files' in config and 'map_file' in config['files']:
+        if os.path.exists(config['files']['map_file']):
+            with open(config['files']['map_file'], 'r') as mf:
+                mappings = yaml.safe_load(mf)
+    else:
+        # Log the configuration issue if 'files' key is missing
+        logger.error("Configuration Error: 'files' section or 'map_file' key is missing in the configuration.")
 
     # Generate Yolink token if it doesn't exist
     token = config['yolink'].get('token')
     if not token:
-        token = generate_yolink_token(config['yolink'].get('uaid'), config['yolink'].get('secret_key'))
-    
+        token = generate_yolink_token(config['yolink'].get('uaid', ''), config['yolink'].get('secret_key', ''))
+
     # Check if required keys are available
     if 'base_url' not in config['yolink']:
+        logger.error("Configuration Error: 'base_url' key is missing in Yolink configuration.")
         return render_template('index.html', devices=[], mappings=mappings, config=config, error="Configuration Error: 'base_url' key is missing in Yolink configuration.")
 
     # Query Yolink homes
@@ -185,13 +194,11 @@ def get_logs():
     Fetch logs for displaying on the web interface.
     """
     try:
-        with open('application.log', 'r') as log_file:
-            logs = log_file.read()
+        with open(log_file, 'r') as log_file_obj:
+            logs = log_file_obj.read()
         return jsonify({"status": "success", "logs": logs})
     except FileNotFoundError:
         return jsonify({"status": "error", "message": "Log file not found."})
-
-# Other functions like test_chekt_api, save_mapping, and MQTT methods would also follow the same detailed logging structure for debugging.
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
