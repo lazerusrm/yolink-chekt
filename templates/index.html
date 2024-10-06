@@ -14,106 +14,34 @@
             background-color: #f8f8f8;
         }
 
-        form {
-            background-color: white;
-            padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-        }
-
-        label {
-            font-weight: bold;
-            display: block;
-            margin-top: 10px;
-        }
-
-        input {
-            width: 100%;
-            padding: 5px;
-            margin: 5px 0 15px;
-        }
-
-        button {
-            background-color: #007BFF;
-            color: white;
-            padding: 10px 15px;
-            border: none;
-            cursor: pointer;
-            border-radius: 5px;
-        }
-
-        button:hover {
-            background-color: #0056b3;
-        }
-
-        .navigation {
-            margin-bottom: 20px;
-        }
-
-        .navigation a {
-            text-decoration: none;
-            color: #007BFF;
-            margin-right: 10px;
-        }
-
-        .navigation a:hover {
-            text-decoration: underline;
-        }
-
         .log {
             background-color: #f1f1f1;
             padding: 15px;
             margin-top: 20px;
             border-radius: 10px;
-            height: 150px;
+            height: 300px;
             overflow-y: auto;
-        }
-
-        .status {
-            display: flex;
-            align-items: center;
-            margin-top: 10px;
-        }
-
-        .status img {
-            width: 20px;
-            height: 20px;
-            margin-right: 10px;
-        }
-
-        .hidden {
-            display: none;
         }
     </style>
 </head>
 
 <body>
-    <div class="navigation">
-        <a href="/">Home</a>
-        <a href="/config">Configuration</a>
-    </div>
     <div class="container">
         <h1>Yolink to CHEKT Mapping</h1>
 
-        <!-- Section for testing Yolink token generation -->
+        <!-- Test Yolink API -->
         <div class="mb-3">
-            <button type="button" id="test-token-btn" class="btn btn-primary">Test Yolink API Connection</button>
-            <div id="yolink-status" class="status">
-                <img src="" alt="" id="yolink-icon" class="hidden">
-                <span id="yolink-message"></span>
-            </div>
+            <button type="button" id="test-yolink-btn" class="btn btn-primary">Test Yolink API Connection</button>
+            <div id="yolink-status"></div>
         </div>
 
-        <!-- Section for testing CHEKT API -->
+        <!-- Test CHEKT API -->
         <div class="mb-3">
             <button type="button" id="test-chekt-btn" class="btn btn-secondary">Test CHEKT API Connection</button>
-            <div id="chekt-status" class="status">
-                <img src="" alt="" id="chekt-icon" class="hidden">
-                <span id="chekt-message"></span>
-            </div>
+            <div id="chekt-status"></div>
         </div>
 
-        <!-- Section to select a home and load devices -->
+        <!-- Load Homes -->
         <div class="mb-3">
             <button type="button" id="load-homes-btn" class="btn btn-info">Load Homes</button>
             <select id="home-select" class="form-select mt-3">
@@ -122,24 +50,7 @@
             <button type="button" id="load-devices-btn" class="btn btn-success mt-3">Load Devices for Selected Home</button>
         </div>
 
-        <!-- Section to list Yolink devices and map them to CHEKT zones -->
-        <form id="mapping-form">
-            <table class="table">
-                <thead>
-                    <tr>
-                        <th>Device Name</th>
-                        <th>Device ID</th>
-                        <th>CHEKT Zone</th>
-                    </tr>
-                </thead>
-                <tbody id="devices-table-body">
-                    <!-- Devices will be populated here -->
-                </tbody>
-            </table>
-            <button type="submit" class="btn btn-primary">Save Mapping</button>
-        </form>
-
-        <!-- Log area for messages -->
+        <!-- Log Area -->
         <div id="log-area" class="log"></div>
     </div>
 
@@ -150,150 +61,121 @@
             $('#log-area').scrollTop($('#log-area')[0].scrollHeight);
         }
 
-        function updateStatus(elementId, iconId, message, success) {
-            const icon = success ? 'https://img.icons8.com/color/48/000000/checkmark.png' : 'https://img.icons8.com/color/48/000000/cancel.png';
-            $('#' + iconId).attr('src', icon).removeClass('hidden');
-            $('#' + elementId).text(message);
+        function refreshLogs() {
+            $.ajax({
+                type: "GET",
+                url: "/get_logs",
+                success: function(response) {
+                    if (response.logs) {
+                        $('#log-area').empty();
+                        response.logs.forEach(function(log) {
+                            addToLog(log);
+                        });
+                    }
+                },
+                error: function(xhr, status, error) {
+                    addToLog('Error fetching logs: ' + xhr.responseText);
+                }
+            });
         }
 
-        $('#test-token-btn').on('click', function () {
-            $('#yolink-icon').addClass('hidden');
-            $('#yolink-message').text('Testing Yolink API connection...');
+        // Test Yolink API
+        $('#test-yolink-btn').on('click', function() {
             $.ajax({
                 type: "GET",
                 url: "/test_yolink_api",
-                success: function (response) {
+                success: function(response) {
                     if (response.status === "success") {
-                        updateStatus('yolink-message', 'yolink-icon', 'Yolink API connection successful.', true);
-                        addToLog("Yolink API connection successful: " + JSON.stringify(response.data, null, 2));
+                        addToLog("Yolink API connection successful.");
                     } else {
-                        updateStatus('yolink-message', 'yolink-icon', 'Failed to connect to Yolink API.', false);
                         addToLog("Failed to connect to Yolink API: " + response.message);
-                        if (response.response) {
-                            addToLog("Response Details: " + response.response);
-                        }
                     }
+                    refreshLogs();
                 },
-                error: function (xhr, status, error) {
-                    updateStatus('yolink-message', 'yolink-icon', 'Error connecting to Yolink API.', false);
+                error: function(xhr, status, error) {
                     addToLog('Error connecting to Yolink API: ' + xhr.responseText);
                     addToLog('Debug Status: ' + status + ', Error: ' + error);
+                    refreshLogs();
                 }
             });
         });
 
-        $('#test-chekt-btn').on('click', function () {
-            $('#chekt-icon').addClass('hidden');
-            $('#chekt-message').text('Testing CHEKT API connection...');
+        // Test CHEKT API
+        $('#test-chekt-btn').on('click', function() {
             $.ajax({
                 type: "GET",
                 url: "/test_chekt_api",
-                success: function (response) {
+                success: function(response) {
                     if (response.status === "success") {
-                        updateStatus('chekt-message', 'chekt-icon', 'CHEKT API connection successful.', true);
                         addToLog("CHEKT API connection successful.");
-                        addToLog("Debug Info: " + JSON.stringify(response.debug_info, null, 2));
                     } else {
-                        updateStatus('chekt-message', 'chekt-icon', 'Failed to connect to CHEKT API.', false);
                         addToLog("Failed to connect to CHEKT API: " + response.message);
-                        if (response.response) {
-                            addToLog("Response Details: " + response.response);
-                        }
                     }
+                    refreshLogs();
                 },
-                error: function (xhr, status, error) {
-                    updateStatus('chekt-message', 'chekt-icon', 'Error connecting to CHEKT API.', false);
+                error: function(xhr, status, error) {
                     addToLog('Error connecting to CHEKT API: ' + xhr.responseText);
                     addToLog('Debug Status: ' + status + ', Error: ' + error);
+                    refreshLogs();
                 }
             });
         });
 
-        // Function to load homes and populate the dropdown
-        $('#load-homes-btn').on('click', function () {
+        // Load Homes
+        $('#load-homes-btn').on('click', function() {
             $.ajax({
                 type: "GET",
                 url: "/get_homes",
-                success: function (response) {
+                success: function(response) {
                     if (response.status === "success") {
                         let homes = response.homes;
                         $('#home-select').empty().append('<option value="">Select a home...</option>');
-                        homes.forEach(function (home) {
+                        homes.forEach(function(home) {
                             $('#home-select').append('<option value="' + home.id + '">' + home.name + '</option>');
                         });
                         addToLog("Homes loaded successfully.");
                     } else {
                         addToLog("Failed to load homes: " + response.message);
                     }
+                    refreshLogs();
                 },
-                error: function (xhr, status, error) {
+                error: function(xhr, status, error) {
                     addToLog('Error loading homes: ' + xhr.responseText);
+                    refreshLogs();
                 }
             });
         });
 
-        // Load devices for selected home
-        $('#load-devices-btn').on('click', function () {
+        // Load Devices for Selected Home
+        $('#load-devices-btn').on('click', function() {
             const homeId = $('#home-select').val();
             if (!homeId) {
                 addToLog("Please select a home.");
                 return;
             }
 
-            $('#devices-table-body').empty();
             $.ajax({
                 type: "POST",
                 url: "/get_devices",
                 contentType: "application/json",
                 data: JSON.stringify({ "home_id": homeId }),
-                success: function (response) {
+                success: function(response) {
                     if (Array.isArray(response) && response.length > 0) {
-                        response.forEach(function (device) {
-                            $('#devices-table-body').append(`
-                                <tr>
-                                    <td>${device.name}</td>
-                                    <td>${device.id}</td>
-                                    <td>
-                                        <input type="text" name="chekt_zone" class="form-control" value="">
-                                        <input type="hidden" name="device_id" value="${device.id}">
-                                    </td>
-                                </tr>
-                            `);
-                        });
                         addToLog('Devices loaded successfully for selected home.');
                     } else {
                         addToLog('No devices found for selected home.');
                     }
+                    refreshLogs();
                 },
-                error: function (xhr, status, error) {
+                error: function(xhr, status, error) {
                     addToLog('Error loading devices: ' + xhr.responseText);
+                    refreshLogs();
                 }
             });
         });
 
-        // Handle the mapping form submission
-        $('#mapping-form').on('submit', function (e) {
-            e.preventDefault();
-            var mappings = {};
-            $('input[name="device_id"]').each(function (index) {
-                var deviceId = $(this).val();
-                var zone = $(this).closest('tr').find('input[name="chekt_zone"]').val();
-                mappings[deviceId] = zone;
-            });
-
-            $.ajax({
-                type: "POST",
-                url: "/save_mapping",
-                contentType: "application/json",
-                data: JSON.stringify(mappings),
-                success: function (response) {
-                    addToLog(response.message);
-                },
-                error: function (xhr, status, error) {
-                    addToLog('Error: ' + xhr.responseText);
-                }
-            });
-        });
+        // Refresh logs every 5 seconds
+        setInterval(refreshLogs, 5000);
     </script>
 </body>
 
