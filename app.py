@@ -34,7 +34,7 @@ def generate_yolink_token(uaid, secret_key):
     """
     Generate the Yolink access token using the UAID and Secret Key.
     """
-    url = f"{config_data['yolink']['base_url']}/open/yolink/token"
+    url = "https://api.yosmart.com/open/yolink/token"
     headers = {
         'Content-Type': 'application/x-www-form-urlencoded'
     }
@@ -45,19 +45,15 @@ def generate_yolink_token(uaid, secret_key):
     }
     
     try:
-        print(f"Attempting to obtain Yolink token from URL: {url}")
         response = requests.post(url, headers=headers, data=data)
         if response.status_code == 200:
-            response_data = response.json()
-            token = response_data.get("access_token")
+            token = response.json().get("access_token")
             if token:
                 config_data['yolink']['token'] = token
                 save_config(config_data)
-                print(f"Successfully obtained Yolink token: {token}")
                 return token
             else:
-                print("Failed to obtain token. Check UAID and Secret Key.")
-                print(f"Response: {response.text}")
+                print("Failed to obtain token, check UAID and Secret Key.")
                 return None
         else:
             print(f"Failed to generate Yolink token. Status code: {response.status_code}")
@@ -68,35 +64,56 @@ def generate_yolink_token(uaid, secret_key):
         return None
 
 class YoLinkDevice:
-    def __init__(self, base_url, token):
+    def __init__(self, base_url, token, serial_number, friendly_name="Unknown"):
         self.base_url = base_url
         self.token = token
+        self.serial_number = serial_number
+        self.friendly_name = friendly_name
+        self.device_data = {}
 
-    def get_device_list(self):
-        url = f"{self.base_url}/open/yolink/v2/api"
+    def build_device_api_request_data(self):
+        self.device_data = {
+            "method": "Home.getDeviceList",
+            "time": int(time.time() * 1000),
+        }
+
+    def enable_device_api(self):
         headers = {
             'Content-Type': 'application/json',
             'Authorization': f"Bearer {self.token}"
         }
-        data = {
-            "method": "Home.getDeviceList",
-            "time": int(time.time())
-        }
-
         try:
-            print(f"Attempting to access Yolink API at URL: {url}")
-            response = requests.post(url, json=data, headers=headers)
+            response = requests.post(self.base_url, json=self.device_data, headers=headers)
             if response.status_code == 200:
-                device_data = response.json().get('data', [])
-                print(f"Successfully accessed Yolink API. Device data: {device_data}")
-                return device_data
+                self.device_data = response.json().get('data', {})
+                self.friendly_name = self.device_data.get('name', 'Unknown')
             else:
-                print(f"Failed to access Yolink API. Status code: {response.status_code}")
-                print(f"Response: {response.text}")
-                return []
+                print(f"Failed to enable device API for {self.serial_number}. Status code: {response.status_code}")
         except Exception as e:
-            print(f"Error accessing Yolink API: {str(e)}")
-            return []
+            print(f"Error enabling device API for {self.serial_number}: {str(e)}")
+
+    def get_friendly_name(self):
+        return self.friendly_name
+
+    def get_id(self):
+        return self.device_data.get('deviceId', 'Unknown')
+
+    def get_type(self):
+        return self.device_data.get('type', 'Unknown')
+
+# Query Yolink devices (from the API)
+def query_yolink_devices(base_url, token, device_list):
+    devices = []
+    for device_data in device_list:
+        yolink_device = YoLinkDevice(base_url, token, device_data['serial_number'], "")
+        yolink_device.build_device_api_request_data()
+        yolink_device.enable_device_api()
+        devices.append({
+            'name': yolink_device.get_friendly_name(),
+            'id': yolink_device.get_id(),
+            'type': yolink_device.get_type()
+        })
+    return devices
 
 @app.route('/')
 def index():
@@ -114,18 +131,16 @@ def index():
             mappings = yaml.safe_load(mf)
 
     # Generate Yolink token if it doesn't exist
-    if not config['yolink'].get('token'):
+    token = config['yolink'].get('token')
+    if not token:
         token = generate_yolink_token(config['yolink'].get('uaid', ''), config['yolink'].get('secret_key', ''))
-    else:
-        token = config['yolink']['token']
-
+    
     # Check if required keys are available
     if 'base_url' not in config['yolink']:
-        return "Configuration Error: 'base_url' key is missing in Yolink configuration.", 500
+        return render_template('index.html', devices=[], mappings=mappings, config=config, error="Configuration Error: 'base_url' key is missing in Yolink configuration.")
 
     # Query Yolink devices
-    yolink_device_manager = YoLinkDevice(config['yolink']['base_url'], token)
-    yolink_devices = yolink_device_manager.get_device_list()
+    yolink_devices = query_yolink_devices(config['yolink']['base_url'], token, devices)
 
     return render_template('index.html', devices=yolink_devices, mappings=mappings, config=config)
 
@@ -196,13 +211,11 @@ def trigger_chekt_event(chekt_zone_id, event_state):
     }
     
     try:
-        print(f"Attempting to access CHEKT API at URL: {url}")
         response = requests.post(url, headers=headers, json=data)
         if response.status_code == 200:
             print(f"CHEKT zone {chekt_zone_id} updated successfully")
         else:
             print(f"Failed to update CHEKT zone {chekt_zone_id}. Status code: {response.status_code}")
-            print(f"Response: {response.text}")
     except Exception as e:
         print(f"Error communicating with CHEKT API: {str(e)}")
 
