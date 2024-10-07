@@ -203,19 +203,20 @@ def refresh_yolink_devices():
 
     yolink_api = YoLinkAPI(token)
 
-    # Fetch homes and devices
+    # Fetch homes and ensure they are retrieved correctly
     home_info = yolink_api.get_home_info()
     if not home_info or home_info.get("code") != "000000":
-        return jsonify({"status": "error", "message": "Failed to retrieve home info."})
+        return jsonify({"status": "error", "message": f"Failed to retrieve home info: {home_info.get('desc', 'Unknown error')}"})
 
+    # Fetch devices associated with the home(s)
     devices = yolink_api.get_device_list()
     if not devices or devices.get("code") != "000000":
-        return jsonify({"status": "error", "message": "Failed to retrieve devices."})
+        return jsonify({"status": "error", "message": f"Failed to retrieve devices: {devices.get('desc', 'Unknown error')}"})
 
     # Store homes and devices in devices.yaml
     data_to_save = {
-        "homes": home_info["data"],
-        "devices": devices["data"]["devices"]
+        "homes": home_info["data"],  # Save home information (ID, etc.)
+        "devices": devices["data"]["devices"]  # Save device list
     }
     save_to_yaml("devices.yaml", data_to_save)
 
