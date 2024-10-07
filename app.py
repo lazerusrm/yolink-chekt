@@ -33,10 +33,12 @@ def save_config(data):
         yaml.dump(data, file)
 
 def load_yaml(file_path):
-    with open(file_path, 'r') as yaml_file:
-        return yaml.safe_load(yaml_file)
+    if os.path.exists(file_path):
+        with open(file_path, 'r') as yaml_file:
+            return yaml.safe_load(yaml_file)
+    return {}
 
-def save_yaml(file_path, data):
+def save_to_yaml(file_path, data):
     with open(file_path, 'w') as yaml_file:
         yaml.dump(data, yaml_file)
 
@@ -197,12 +199,19 @@ class YoLinkAPI:
 
 @app.route('/save_mapping', methods=['POST'])
 def save_mapping():
-    try:
-        mappings_data = request.get_json()  # Get the mapping data from the front end
-        save_yaml('mappings.yaml', {'mappings': mappings_data})
-        return jsonify({"status": "success", "message": "Mapping saved successfully."})
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)})
+    # Logic to handle saving the mappings
+    mappings = request.get_json()
+
+    # Load existing mappings if available
+    existing_mappings = load_yaml('mappings.yaml') or {}
+    
+    # Update the mappings file with the new mappings
+    existing_mappings.update(mappings)
+    
+    # Save updated mappings
+    save_to_yaml("mappings.yaml", existing_mappings)
+    
+    return jsonify({"status": "success", "message": "Mapping saved successfully."})
 
 @app.route('/refresh_yolink_devices', methods=['GET'])
 def refresh_yolink_devices():
@@ -230,12 +239,14 @@ def save_to_yaml(file_path, data):
 
 @app.route('/')
 def index():
+    # Load devices and mappings from YAML files
     devices_data = load_yaml('devices.yaml')
-    devices = devices_data.get('devices', [])
-    mappings_data = load_yaml('mappings.yaml').get('mappings', [])
-    
-    return render_template('index.html', devices=devices, mappings=mappings_data)
+    mappings_data = load_yaml('mappings.yaml')
 
+    devices = devices_data.get('devices', [])
+    mappings = mappings_data if mappings_data else {}
+
+    return render_template('index.html', devices=devices, mappings=mappings)
 
 @app.route('/get_homes', methods=['GET'])
 def get_homes():

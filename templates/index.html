@@ -46,20 +46,6 @@
             background-color: #0056b3;
         }
 
-        .navigation {
-            margin-bottom: 20px;
-        }
-
-        .navigation a {
-            text-decoration: none;
-            color: #007BFF;
-            margin-right: 10px;
-        }
-
-        .navigation a:hover {
-            text-decoration: underline;
-        }
-
         .log {
             background-color: #f1f1f1;
             padding: 15px;
@@ -88,10 +74,6 @@
 </head>
 
 <body>
-    <div class="navigation">
-        <a href="/">Home</a>
-        <a href="/config">Configuration</a>
-    </div>
     <div class="container">
         <h1>Yolink to CHEKT Mapping</h1>
 
@@ -104,16 +86,7 @@
             </div>
         </div>
 
-        <!-- Section for testing CHEKT API -->
-        <div class="mb-3">
-            <button type="button" id="test-chekt-btn" class="btn btn-secondary">Test CHEKT API Connection</button>
-            <div id="chekt-status" class="status">
-                <img src="" alt="" id="chekt-icon" class="hidden">
-                <span id="chekt-message"></span>
-            </div>
-        </div>
-
-        <!-- Section to list Yolink devices and map them to CHEKT zones -->
+        <!-- Section for listing Yolink devices and mapping them to CHEKT zones -->
         <form id="mapping-form">
             <table class="table">
                 <thead>
@@ -124,7 +97,18 @@
                     </tr>
                 </thead>
                 <tbody id="devices-table-body">
-                    <!-- Devices will be populated here -->
+                    <!-- Devices will be populated here by the server -->
+                    {% for device in devices %}
+                    <tr>
+                        <td>{{ device['name'] }}</td>
+                        <td>{{ device['id'] }}</td>
+                        <td>
+                            <input type="text" name="chekt_zone" class="form-control"
+                                value="{{ mappings[device['id']] if device['id'] in mappings else '' }}">
+                            <input type="hidden" name="device_id" value="{{ device['id'] }}">
+                        </td>
+                    </tr>
+                    {% endfor %}
                 </tbody>
             </table>
             <button type="submit" class="btn btn-primary">Save Mapping</button>
@@ -150,47 +134,7 @@
             $('#' + elementId).text(message);
         }
 
-        // Refresh Yolink devices
-        $('#refresh-devices-btn').on('click', function () {
-            $('#yolink-icon').addClass('hidden');
-            $('#yolink-message').text('Refreshing Yolink devices...');
-            $.ajax({
-                type: "GET",
-                url: "/refresh_yolink_devices",
-                success: function (response) {
-                    if (response.status === "success") {
-                        updateStatus('yolink-message', 'yolink-icon', 'Yolink devices refreshed successfully.', true);
-                        addToLog("Yolink devices refreshed: " + JSON.stringify(response.data, null, 2));
-
-                        // Update the devices table with refreshed devices
-                        let devices = response.devices || [];
-                        $('#devices-table-body').empty();
-                        devices.forEach(function (device) {
-                            $('#devices-table-body').append(`
-                                <tr>
-                                    <td>${device.name}</td>
-                                    <td>${device.id}</td>
-                                    <td>
-                                        <input type="text" name="chekt_zone" class="form-control" value="">
-                                        <input type="hidden" name="device_id" value="${device.id}">
-                                    </td>
-                                </tr>
-                            `);
-                        });
-                    } else {
-                        updateStatus('yolink-message', 'yolink-icon', 'Failed to refresh Yolink devices.', false);
-                        addToLog("Failed to refresh Yolink devices: " + response.message);
-                    }
-                },
-                error: function (xhr, status, error) {
-                    updateStatus('yolink-message', 'yolink-icon', 'Error refreshing Yolink devices.', false);
-                    addToLog('Error refreshing Yolink devices: ' + xhr.responseText);
-                    addToLog('Debug Status: ' + status + ', Error: ' + error);
-                }
-            });
-        });
-
-        // Handle the mapping form submission
+        // Handle the form submission to save the mappings
         $('#mapping-form').on('submit', function (e) {
             e.preventDefault();
             var mappings = {};
@@ -214,7 +158,32 @@
             });
         });
 
-        // Load logs to the log area
+        // Refresh Yolink devices button
+        $('#refresh-devices-btn').on('click', function () {
+            $('#yolink-icon').addClass('hidden');
+            $('#yolink-message').text('Refreshing Yolink devices...');
+            $.ajax({
+                type: "GET",
+                url: "/refresh_yolink_devices",
+                success: function (response) {
+                    if (response.status === "success") {
+                        updateStatus('yolink-message', 'yolink-icon', 'Yolink devices refreshed successfully.', true);
+                        addToLog("Yolink devices refreshed.");
+                        // Reload the page to refresh the table
+                        location.reload();
+                    } else {
+                        updateStatus('yolink-message', 'yolink-icon', 'Failed to refresh Yolink devices.', false);
+                        addToLog("Failed to refresh Yolink devices: " + response.message);
+                    }
+                },
+                error: function (xhr, status, error) {
+                    updateStatus('yolink-message', 'yolink-icon', 'Error refreshing Yolink devices.', false);
+                    addToLog('Error refreshing Yolink devices: ' + xhr.responseText);
+                }
+            });
+        });
+
+        // Load logs
         $('#load-logs-btn').on('click', function () {
             $.ajax({
                 type: "GET",
