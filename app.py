@@ -164,7 +164,7 @@ class YoLinkAPI:
                 logger.error(f"Failed to retrieve homes. Status code: {response.status_code} - {response.text}")
         except Exception as e:
             logger.error(f"Error retrieving homes: {str(e)}")
-        return [].
+        return []
 
 def get_home_info(self):
     url = self.base_url
