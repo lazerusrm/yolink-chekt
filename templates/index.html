@@ -100,8 +100,9 @@
                     <!-- Devices will be populated here by the server -->
                     {% for device in devices %}
                     <tr>
-                        <td>{{ device['name'] }}</td>
-                        <td>{{ device['id'] }}</td>
+                        <td>{{ device.name }}</td>
+                        <td>{{ device.deviceId }}</td>
+						<td>{{ device.type }}</td>
                         <td>
                             <input type="text" name="chekt_zone" class="form-control"
                                 value="{{ mappings[device['id']] if device['id'] in mappings else '' }}">
