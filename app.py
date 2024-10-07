@@ -9,6 +9,8 @@ import threading
 import os
 import logging
 
+mqtt_client_instance = None  # Global variable to store the MQTT client instance
+
 app = Flask(__name__)
 
 # Configure logging
@@ -215,6 +217,7 @@ def save_mapping():
 
 @app.route('/refresh_yolink_devices', methods=['GET'])
 def refresh_yolink_devices():
+    global mqtt_client_instance  # Access the global instance
     config = load_config()
     token = config['yolink'].get('token')
 
@@ -223,19 +226,37 @@ def refresh_yolink_devices():
 
     yolink_api = YoLinkAPI(token)
 
-    # Fetch devices from the Yolink API
+    # Fetch home info
+    home_info = yolink_api.get_home_info()
+    if not home_info or home_info.get("code") != "000000":
+        return jsonify({"status": "error", "message": f"Failed to retrieve home info: {home_info.get('desc', 'Unknown error')}"})
+
+    home_id = home_info["data"]["id"]  # Extract the home ID
+
+    # Fetch devices
     devices = yolink_api.get_device_list()
     if not devices or devices.get("code") != "000000":
         return jsonify({"status": "error", "message": f"Failed to retrieve devices: {devices.get('desc', 'Unknown error')}"})
 
-    # Store devices in devices.yaml
-    save_to_yaml("devices.yaml", {"devices": devices["data"]["devices"]})
+    # Save home_id and devices in devices.yaml
+    data_to_save = {
+        "homes": {"id": home_id},  # Store home ID here
+        "devices": devices["data"]["devices"]
+    }
+    save_to_yaml("devices.yaml", data_to_save)
 
-    return jsonify({"status": "success", "message": "Yolink devices refreshed and saved."})
+    # Restart the MQTT client after successful device refresh
+    if mqtt_client_instance:
+        logger.info("Stopping existing MQTT client...")
+        mqtt_client_instance.disconnect()  # Disconnect the current client
+        mqtt_client_instance.loop_stop()  # Stop the current loop
 
-def save_to_yaml(file_path, data):
-    with open(file_path, 'w') as yaml_file:
-        yaml.dump(data, yaml_file)
+    logger.info("Restarting MQTT client with updated home_id...")
+    mqtt_thread = threading.Thread(target=run_mqtt_client)
+    mqtt_thread.daemon = True
+    mqtt_thread.start()
+
+    return jsonify({"status": "success", "message": "Yolink devices refreshed and MQTT client restarted."})
 
 @app.route('/')
 def index():
@@ -441,34 +462,50 @@ def test_chekt_api():
         return response
         
 def run_mqtt_client():
+    global mqtt_client_instance  # Store the MQTT client instance
     config = load_config()
     try:
+        # Load the home ID from devices.yaml
+        devices_data = load_yaml('devices.yaml')
+        home_id = devices_data.get('homes', {}).get('id')
+
+        if not home_id:
+            logger.error("Home ID not found in devices.yaml. Please refresh YoLink devices.")
+            return
+
         # Force new token and client ID
         token, client_id = force_generate_token_and_client()
         if not token:
             logger.error("Failed to obtain a valid Yolink token. MQTT client will not start.")
             return  # Exit if token generation fails
 
-        # Create the MQTT client and set up callbacks
-        mqtt_client = mqtt.Client(client_id=client_id, userdata={"topic": config['mqtt']['topic']})
-        mqtt_client.on_connect = on_connect
-        mqtt_client.on_message = on_message
+        # Create the MQTT client with a unique client ID
+        mqtt_client_instance = mqtt.Client(client_id=client_id, userdata={"topic": config['mqtt']['topic']})
+        mqtt_client_instance.on_connect = on_connect
+        mqtt_client_instance.on_message = on_message
 
         # Set up the MQTT credentials with the Yolink token
         logger.debug(f"Using access token for MQTT: {token[:10]}...(truncated)")
-        mqtt_client.username_pw_set(username=token, password=None)
+        mqtt_client_instance.username_pw_set(username=token, password=None)
 
-        # Connect to the MQTT broker
+        # Connect to the MQTT broker using the correct URL and port
         mqtt_broker_url = config['mqtt']['url'].replace("mqtt://", "")
         mqtt_broker_port = int(config['mqtt']['port'])
         logger.debug(f"Connecting to MQTT broker at {mqtt_broker_url} on port {mqtt_broker_port}")
-        mqtt_client.connect(mqtt_broker_url, mqtt_broker_port)
+        mqtt_client_instance.connect(mqtt_broker_url, mqtt_broker_port)
+
+        # Subscribe to the specific topic (format: yl-home/${home_id}/+/report)
+        topic = f"yl-home/{home_id}/+/report"
+        logger.info(f"Subscribing to topic: {topic}")
+        mqtt_client_instance.subscribe(topic)
 
         # Start the MQTT loop
-        mqtt_client.loop_forever()
+        mqtt_client_instance.loop_forever()
 
     except Exception as e:
         logger.error(f"MQTT client encountered an error: {str(e)}")
+
+
 
 # Start the MQTT client in a separate thread
 mqtt_thread = threading.Thread(target=run_mqtt_client)
