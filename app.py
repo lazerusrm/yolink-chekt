@@ -443,26 +443,47 @@ def on_connect(client, userdata, flags, rc):
 
 # Callback when a message is received
 def on_message(client, userdata, msg):
-    logger.info(f"Received message on topic {msg.topic}: {msg.payload}")
+    logger.info(f"Received message on topic {msg.topic}")
 
+    # Log the raw payload as string for debugging
+    logger.debug(f"Raw payload: {msg.payload.decode('utf-8')}")
+
+    # Load mappings from the YAML file
     if os.path.exists(config_data['files']['map_file']):
         with open(config_data['files']['map_file'], 'r') as mf:
             mappings = yaml.safe_load(mf)
+            logger.debug(f"Loaded mappings: {mappings}")
     else:
         mappings = {}
+        logger.warning(f"Mapping file {config_data['files']['map_file']} not found or empty.")
 
     try:
+        # Decode the JSON payload from the MQTT message
         payload = json.loads(msg.payload.decode("utf-8"))
-        device_id = payload['deviceId']
-        state = payload['data']['state']
+        logger.debug(f"Decoded payload: {json.dumps(payload, indent=2)}")
+
+        # Extract device ID and state (handle possible missing keys)
+        device_id = payload.get('deviceId')
+        state = payload.get('data', {}).get('state')
+
+        if not device_id:
+            logger.error("Device ID is missing in the payload.")
+            return
 
         if device_id in mappings:
             chekt_zone_id = mappings[device_id]
             logger.info(f"Triggering CHEKT for device {device_id} in zone {chekt_zone_id} with state {state}")
             trigger_chekt_event(chekt_zone_id, state)
+        else:
+            logger.warning(f"Device ID {device_id} not found in mappings.")
 
+    except json.JSONDecodeError as json_err:
+        logger.error(f"Failed to decode JSON payload: {str(json_err)}")
+    except KeyError as key_err:
+        logger.error(f"Missing key in payload: {str(key_err)}")
     except Exception as e:
         logger.error(f"Error processing message: {str(e)}")
+
         
 def test_chekt_api():
     with app.app_context():  # This creates the application context
