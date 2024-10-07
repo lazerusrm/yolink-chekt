@@ -139,34 +139,7 @@ class YoLinkAPI:
         self.base_url = "https://api.yosmart.com/open/yolink/v2/api"
         self.token = token
 
-    def get_homes(self):
-        url = self.base_url
-        headers = {
-            'Content-Type': 'application/json',
-            'Authorization': f"Bearer {self.token}"
-        }
-        data = {"method": "Home.getGeneralInfo", "time": int(time.time() * 1000)}
-
-        logger.debug(f"Sending get_homes request to URL: {url}")
-        try:
-            response = requests.post(url, json=data, headers=headers)
-            logger.debug(f"Response Code: {response.status_code}")
-            logger.debug(f"Response Body: {response.text}")
-
-            if response.status_code == 200:
-                response_data = response.json()
-                if response_data.get("desc") == "Invalid request: The token is expired":
-                    logger.warning("Token expired, attempting to refresh.")
-                    self.token = handle_token_expiry()
-                    return self.get_homes()  # Retry after getting a new token
-                return response_data.get('data', {}).get('homes', [])
-            else:
-                logger.error(f"Failed to retrieve homes. Status code: {response.status_code} - {response.text}")
-        except Exception as e:
-            logger.error(f"Error retrieving homes: {str(e)}")
-        return []
-
-ddef get_home_info(self):
+    def get_home_info(self):
         url = self.base_url
         headers = {
             'Content-Type': 'application/json',
@@ -179,6 +152,9 @@ ddef get_home_info(self):
 
         try:
             response = requests.post(url, json=data, headers=headers)
+            logger.debug(f"Response Code: {response.status_code}")
+            logger.debug(f"Response Body: {response.text}")
+
             if response.status_code == 200:
                 return response.json()
             else:
@@ -188,7 +164,7 @@ ddef get_home_info(self):
             logger.error(f"Error retrieving home info: {str(e)}")
             return None
 
-def get_device_list(self):
+    def get_device_list(self):
         url = self.base_url
         headers = {
             'Content-Type': 'application/json',
@@ -221,13 +197,13 @@ def save_mapping():
 @app.route('/')
 def index():
     config = load_config()
-    mappings = {}
-    # Handle configurations and mappings loading here...
     token = config['yolink'].get('token')
+    
     if not token:
         token = generate_yolink_token(config['yolink']['uaid'], config['yolink']['secret_key'])
+    
     yolink_api = YoLinkAPI(token)
-    homes = yolink_api.get_homes()
+    homes = yolink_api.get_home_info()  # Get homes info here
     return render_template('index.html', homes=homes)
 
 @app.route('/get_homes', methods=['GET'])
