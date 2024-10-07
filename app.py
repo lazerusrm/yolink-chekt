@@ -32,6 +32,15 @@ def save_config(data):
     with open(config_file, 'w') as file:
         yaml.dump(data, file)
 
+def load_yaml(file_path):
+    with open(file_path, 'r') as yaml_file:
+        return yaml.safe_load(yaml_file)
+
+def save_yaml(file_path, data):
+    with open(file_path, 'w') as yaml_file:
+        yaml.dump(data, yaml_file)
+
+
 def is_token_expired():
     """
     Check if the token is expired based on the current time and the stored expiry time.
@@ -188,10 +197,12 @@ class YoLinkAPI:
 
 @app.route('/save_mapping', methods=['POST'])
 def save_mapping():
-    # Logic to handle saving the mappings
-    data = request.get_json()
-    save_config(data)
-    return jsonify({"status": "success", "message": "Mapping saved successfully."})
+    try:
+        mappings_data = request.get_json()  # Get the mapping data from the front end
+        save_yaml('mappings.yaml', {'mappings': mappings_data})
+        return jsonify({"status": "success", "message": "Mapping saved successfully."})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)})
 
 @app.route('/refresh_yolink_devices', methods=['GET'])
 def refresh_yolink_devices():
@@ -203,22 +214,13 @@ def refresh_yolink_devices():
 
     yolink_api = YoLinkAPI(token)
 
-    # Fetch homes and ensure they are retrieved correctly
-    home_info = yolink_api.get_home_info()
-    if not home_info or home_info.get("code") != "000000":
-        return jsonify({"status": "error", "message": f"Failed to retrieve home info: {home_info.get('desc', 'Unknown error')}"})
-
-    # Fetch devices associated with the home(s)
+    # Fetch devices from the Yolink API
     devices = yolink_api.get_device_list()
     if not devices or devices.get("code") != "000000":
         return jsonify({"status": "error", "message": f"Failed to retrieve devices: {devices.get('desc', 'Unknown error')}"})
 
-    # Store homes and devices in devices.yaml
-    data_to_save = {
-        "homes": home_info["data"],  # Save home information (ID, etc.)
-        "devices": devices["data"]["devices"]  # Save device list
-    }
-    save_to_yaml("devices.yaml", data_to_save)
+    # Store devices in devices.yaml
+    save_to_yaml("devices.yaml", {"devices": devices["data"]["devices"]})
 
     return jsonify({"status": "success", "message": "Yolink devices refreshed and saved."})
 
@@ -229,15 +231,11 @@ def save_to_yaml(file_path, data):
 @app.route('/')
 def index():
     devices_data = load_yaml('devices.yaml')
-
-    homes = devices_data.get('homes', [])
     devices = devices_data.get('devices', [])
+    mappings_data = load_yaml('mappings.yaml').get('mappings', [])
+    
+    return render_template('index.html', devices=devices, mappings=mappings_data)
 
-    return render_template('index.html', homes=homes, devices=devices)
-
-def load_yaml(file_path):
-    with open(file_path, 'r') as yaml_file:
-        return yaml.safe_load(yaml_file)
 
 @app.route('/get_homes', methods=['GET'])
 def get_homes():
@@ -347,61 +345,52 @@ def on_connect(client, userdata, flags, rc):
         
 def on_message(client, userdata, msg):
     logger.info(f"Received message on topic {msg.topic}: {msg.payload.decode('utf-8')}")
-    
-    # Log file path for mappings
-    if os.path.exists(config_data['files']['map_file']):
-        logger.debug(f"Loading mappings from {config_data['files']['map_file']}")
-        with open(config_data['files']['map_file'], 'r') as mf:
-            mappings = yaml.safe_load(mf)
-    else:
-        mappings = {}
-        logger.error(f"Mappings file {config_data['files']['map_file']} not found.")
-    
+
+    # Load the mappings from mappings.yaml
+    mappings = load_yaml(config_data['files']['map_file']).get('mappings', {})
+
     try:
         payload = json.loads(msg.payload.decode("utf-8"))
         device_id = payload['deviceId']
         state = payload['data']['state']
 
-        if device_id in mappings:
-            chekt_zone_id = mappings[device_id]
-            logger.info(f"Triggering CHEKT for device {device_id} in zone {chekt_zone_id} with state {state}")
-            trigger_chekt_event(chekt_zone_id, state)
+        # Find the corresponding mapping for the device
+        mapping = next((m for m in mappings if m['yolink_device_id'] == device_id), None)
+        if mapping:
+            chekt_event = mapping['chekt_event']
+            chekt_channel = mapping['chekt_channel']
+            logger.info(f"Triggering CHEKT for device {device_id} in zone {chekt_channel} with event {chekt_event}")
+            trigger_chekt_event(chekt_channel, chekt_event)
         else:
-            logger.warning(f"Device ID {device_id} not found in mappings.")
+            logger.warning(f"No mapping found for device {device_id}")
     except Exception as e:
         logger.error(f"Error processing message: {str(e)}")
 
 
-def trigger_chekt_event(chekt_zone_id, event_state):
-    """
-    Trigger an event in the CHEKT system based on the zone ID and the event state.
-    """
+
+def trigger_chekt_event(chekt_channel, event_description):
     config = load_config()
-    url = f"http://{config['chekt']['ip']}:{config['chekt']['port']}/api/v1/zones/{chekt_zone_id}/events"
+    url = f"http://{config['chekt']['ip']}:{config['chekt']['port']}/api/v1/zones/{chekt_channel}/events"
 
     headers = {
         'Authorization': f"Bearer {config['chekt']['api_token']}",
         'Content-Type': 'application/json'
     }
 
-    # Create the payload for the CHEKT API
     data = {
-        "event": event_state,  # Send the state received from Yolink
+        "event_description": event_description,
         "timestamp": int(time.time())
     }
 
     try:
-        # Send the event to the CHEKT API
         response = requests.post(url, headers=headers, json=data)
         if response.status_code in [200, 202]:
-            logger.info(f"CHEKT zone {chekt_zone_id} updated successfully")
-            if response.status_code == 202:
-                logger.info(f"Request accepted for processing. Response: {response.text}")
+            logger.info(f"CHEKT zone {chekt_channel} updated successfully with event {event_description}")
         else:
-            logger.error(f"Failed to update CHEKT zone {chekt_zone_id}. Status code: {response.status_code}")
-            logger.error(f"Response: {response.text}")
+            logger.error(f"Failed to update CHEKT zone {chekt_channel}. Status: {response.status_code}, Response: {response.text}")
     except Exception as e:
         logger.error(f"Error communicating with CHEKT API: {str(e)}")
+
 
 # MQTT Callbacks and Client Handling
 def on_connect(client, userdata, flags, rc):

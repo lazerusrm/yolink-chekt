@@ -95,9 +95,9 @@
     <div class="container">
         <h1>Yolink to CHEKT Mapping</h1>
 
-        <!-- Section for getting / refreshing Yolink devices -->
+        <!-- Section for refreshing Yolink devices -->
         <div class="mb-3">
-            <button type="button" id="refresh-devices-btn" class="btn btn-primary">Get / Refresh Yolink Devices</button>
+            <button type="button" id="refresh-devices-btn" class="btn btn-primary">Refresh Yolink Devices</button>
             <div id="yolink-status" class="status">
                 <img src="" alt="" id="yolink-icon" class="hidden">
                 <span id="yolink-message"></span>
@@ -111,15 +111,6 @@
                 <img src="" alt="" id="chekt-icon" class="hidden">
                 <span id="chekt-message"></span>
             </div>
-        </div>
-
-        <!-- Section to select a home and load devices -->
-        <div class="mb-3">
-            <button type="button" id="load-homes-btn" class="btn btn-info">Load Homes</button>
-            <select id="home-select" class="form-select mt-3">
-                <option value="">Select a home...</option>
-            </select>
-            <button type="button" id="load-devices-btn" class="btn btn-success mt-3">Load Devices for Selected Home</button>
         </div>
 
         <!-- Section to list Yolink devices and map them to CHEKT zones -->
@@ -159,79 +150,22 @@
             $('#' + elementId).text(message);
         }
 
-        // Function to refresh Yolink devices
+        // Refresh Yolink devices
         $('#refresh-devices-btn').on('click', function () {
             $('#yolink-icon').addClass('hidden');
             $('#yolink-message').text('Refreshing Yolink devices...');
-            
             $.ajax({
                 type: "GET",
-                url: "/refresh_yolink_devices", // Backend endpoint
+                url: "/refresh_yolink_devices",
                 success: function (response) {
                     if (response.status === "success") {
                         updateStatus('yolink-message', 'yolink-icon', 'Yolink devices refreshed successfully.', true);
-                        addToLog("Yolink devices refreshed and saved to devices.yaml.");
-                        
-                        // Optionally refresh the homes dropdown
-                        let homes = response.homes;
-                        $('#home-select').empty().append('<option value="">Select a home...</option>');
-                        homes.forEach(function (home) {
-                            $('#home-select').append('<option value="' + home.id + '">' + home.name + '</option>');
-                        });
-                        addToLog("Homes loaded successfully.");
-                    } else {
-                        updateStatus('yolink-message', 'yolink-icon', 'Failed to refresh Yolink devices.', false);
-                        addToLog("Failed to refresh Yolink devices: " + response.message);
-                    }
-                },
-                error: function (xhr, status, error) {
-                    updateStatus('yolink-message', 'yolink-icon', 'Error refreshing Yolink devices.', false);
-                    addToLog('Error refreshing Yolink devices: ' + xhr.responseText);
-                    addToLog('Debug Status: ' + status + ', Error: ' + error);
-                }
-            });
-        });
+                        addToLog("Yolink devices refreshed: " + JSON.stringify(response.data, null, 2));
 
-        // Function to load homes and populate the dropdown
-        $('#load-homes-btn').on('click', function () {
-            $.ajax({
-                type: "GET",
-                url: "/get_homes",
-                success: function (response) {
-                    if (response.status === "success") {
-                        let homes = response.homes;
-                        $('#home-select').empty().append('<option value="">Select a home...</option>');
-                        homes.forEach(function (home) {
-                            $('#home-select').append('<option value="' + home.id + '">' + home.name + '</option>');
-                        });
-                        addToLog("Homes loaded successfully.");
-                    } else {
-                        addToLog("Failed to load homes: " + response.message);
-                    }
-                },
-                error: function (xhr, status, error) {
-                    addToLog('Error loading homes: ' + xhr.responseText);
-                }
-            });
-        });
-
-        // Load devices for selected home
-        $('#load-devices-btn').on('click', function () {
-            const homeId = $('#home-select').val();
-            if (!homeId) {
-                addToLog("Please select a home.");
-                return;
-            }
-
-            $('#devices-table-body').empty();
-            $.ajax({
-                type: "POST",
-                url: "/get_devices",
-                contentType: "application/json",
-                data: JSON.stringify({ "home_id": homeId }),
-                success: function (response) {
-                    if (Array.isArray(response) && response.length > 0) {
-                        response.forEach(function (device) {
+                        // Update the devices table with refreshed devices
+                        let devices = response.devices || [];
+                        $('#devices-table-body').empty();
+                        devices.forEach(function (device) {
                             $('#devices-table-body').append(`
                                 <tr>
                                     <td>${device.name}</td>
@@ -243,13 +177,15 @@
                                 </tr>
                             `);
                         });
-                        addToLog('Devices loaded successfully for selected home.');
                     } else {
-                        addToLog('No devices found for selected home.');
+                        updateStatus('yolink-message', 'yolink-icon', 'Failed to refresh Yolink devices.', false);
+                        addToLog("Failed to refresh Yolink devices: " + response.message);
                     }
                 },
                 error: function (xhr, status, error) {
-                    addToLog('Error loading devices: ' + xhr.responseText);
+                    updateStatus('yolink-message', 'yolink-icon', 'Error refreshing Yolink devices.', false);
+                    addToLog('Error refreshing Yolink devices: ' + xhr.responseText);
+                    addToLog('Debug Status: ' + status + ', Error: ' + error);
                 }
             });
         });
