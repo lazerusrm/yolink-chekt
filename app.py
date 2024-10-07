@@ -123,7 +123,7 @@ def force_generate_token_and_client():
     token = generate_yolink_token(config['yolink']['uaid'], config['yolink']['secret_key'])
     
     # Always generate a new client ID for MQTT
-    client_id = str(uuid.uuid4())  
+    client_id = str(uuid.uuid4())[:23]  
     logger.debug(f"Generated new Client ID for MQTT: {client_id}")
     
     return token, client_id
