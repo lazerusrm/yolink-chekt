@@ -1,10 +1,7 @@
 import os
-import subprocess
 import threading
-from prompt_toolkit import button_dialog
 from time import sleep
 import app  # Import your app.py module
-import logging
 
 log_file_path = 'application.log'  # The log file path used in app.py
 
@@ -41,27 +38,27 @@ def test_mqtt():
         print(f"Error: {str(e)}")
 
 def menu():
-    """Main menu for running tests"""
+    """Simple text-based menu for running tests"""
     while True:
-        choice = button_dialog(
-            title="YoLink-CHEKT Troubleshooting",
-            text="Select a test to run:",
-            buttons=[
-                ("Test YoLink API", 1),
-                ("Test CHEKT API", 2),
-                ("Test MQTT Connection", 3),
-                ("Exit", 4),
-            ],
-        ).run()
+        print("\nYoLink-CHEKT Troubleshooting Menu:")
+        print("1. Test YoLink API")
+        print("2. Test CHEKT API")
+        print("3. Test MQTT Connection")
+        print("4. Exit")
+        
+        choice = input("Select an option (1-4): ")
 
-        if choice == 1:
+        if choice == "1":
             test_yolink_api()
-        elif choice == 2:
+        elif choice == "2":
             test_chekt_api()
-        elif choice == 3:
+        elif choice == "3":
             test_mqtt()
-        elif choice == 4:
+        elif choice == "4":
+            print("Exiting...")
             break
+        else:
+            print("Invalid choice, please select a valid option.")
 
 if __name__ == "__main__":
     # Run the log display in a separate thread
