@@ -439,13 +439,16 @@ def on_message(client, userdata, msg):
     except Exception as e:
         logger.error(f"Error processing message: {str(e)}")
 
-def trigger_chekt_event(bridge_channel, event_description):
+ddef trigger_chekt_event(bridge_channel, event_description):
+    # For testing, override the event_description with a known working one
+    event_description = "Door opened"  # Known working event description
+
     chekt_api_url = f"http://{config_data['chekt']['ip']}:{config_data['chekt']['port']}/api/v1/channels/{bridge_channel}/events"
     logger.info(f"Attempting to post event to Chekt at URL: {chekt_api_url}")
 
-    # Minimal payload containing only the event description
+    # Payload containing the hardcoded event description
     chekt_payload = {
-        "event_description": event_description  # Description of the event (e.g., "motion detected", "door opened")
+        "event_description": event_description
     }
 
     headers = {
