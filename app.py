@@ -19,18 +19,11 @@ logger = logging.getLogger()
 config_file = "config.yaml"
 config_data = {}
 
+# Load configuration
 def load_config():
     global config_data
-    logger.debug(f"Attempting to load configuration from {config_file}")
-    
-    if os.path.exists(config_file):
-        logger.debug(f"Config file {config_file} found.")
-        with open(config_file, 'r') as file:
-            config_data = yaml.safe_load(file)
-        logger.debug(f"Loaded configuration: {config_data}")
-    else:
-        logger.error(f"Config file {config_file} not found!")
-    
+    with open(config_file, 'r') as file:
+        config_data = yaml.safe_load(file)
     return config_data
 
 def save_config(data):
@@ -106,6 +99,22 @@ def handle_token_expiry():
         logger.error("Failed to generate a new Yolink token.")
         return None
 
+def force_generate_token_and_client():
+    """
+    This function forces the generation of a new token and a new client ID each time the app starts.
+    """
+    logger.info("Forcing generation of new Yolink token and MQTT client ID on startup...")
+    config = load_config()
+    
+    # Always generate a new token
+    token = generate_yolink_token(config['yolink']['uaid'], config['yolink']['secret_key'])
+    
+    # Always generate a new client ID for MQTT
+    client_id = str(uuid.uuid4())  
+    logger.debug(f"Generated new Client ID for MQTT: {client_id}")
+    
+    return token, client_id
+    
 def yolink_api_test():
     # Load configuration to get token
     config = load_config()
@@ -234,12 +243,13 @@ def get_homes():
         
 @app.route('/test_yolink_api', methods=['GET'])
 def test_yolink_api():
-    result = yolink_api_test()
-    return jsonify(result)
+    with app.app_context():  # This creates the application context
+        response = yolink_api_test()
+        print(response)
+        return response
 
 @app.route('/test_chekt_api', methods=['GET'])
 def test_chekt_api():
-    # Load configuration to get CHEKT API settings
     config = load_config()
     chekt_ip = config['chekt'].get('ip')
     chekt_port = config['chekt'].get('port')
@@ -248,26 +258,22 @@ def test_chekt_api():
     if not chekt_ip or not chekt_port:
         return jsonify({"status": "error", "message": "CHEKT API configuration (IP or port) is missing."})
 
-    # Try to access the CHEKT API health endpoint to verify the connection
     url = f"http://{chekt_ip}:{chekt_port}/api/v1/"
     headers = {
         'Authorization': f"Bearer {api_token}",
         'Content-Type': 'application/json',
-        'Username': 'apikey'  # Fixed value "apikey" as the username
+        'Username': 'apikey'
     }
 
     try:
         logger.debug(f"Testing CHEKT API Connection to URL: {url}")
-        logger.debug(f"Request Headers: {json.dumps(headers, indent=2)}")
-
         response = requests.get(url, headers=headers)
-        logger.debug(f"CHEKT API Response Status Code: {response.status_code}")
-        logger.debug(f"CHEKT API Response: {response.text}")
+        logger.debug(f"CHEKT API Response: {response.status_code} - {response.text}")
 
         if response.status_code == 200:
             return jsonify({"status": "success", "message": "CHEKT API connection successful.", "debug_info": response.text})
         else:
-            return jsonify({"status": "error", "message": f"Failed to connect to CHEKT API. Status code: {response.status_code}", "response": response.text})
+            return jsonify({"status": "error", "message": f"Failed to connect to CHEKT API. Status code: {response.status_code}"})
     except Exception as e:
         logger.error(f"Error connecting to CHEKT API: {str(e)}")
         return jsonify({"status": "error", "message": str(e)})
@@ -280,7 +286,7 @@ def get_logs():
         return jsonify({"status": "success", "logs": logs})
     except FileNotFoundError:
         return jsonify({"status": "error", "message": "Log file not found."})
-
+        
 # MQTT Configuration and Callbacks
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
@@ -288,7 +294,7 @@ def on_connect(client, userdata, flags, rc):
         client.subscribe(userdata['topic'])
     else:
         logger.error(f"Failed to connect to MQTT broker. Return code: {rc}")
-
+        
 def on_message(client, userdata, msg):
     logger.info(f"Received message on topic {msg.topic}: {msg.payload.decode('utf-8')}")
     
@@ -377,24 +383,23 @@ def on_message(client, userdata, msg):
 
     except Exception as e:
         logger.error(f"Error processing message: {str(e)}")
-
+        
+def test_chekt_api():
+    with app.app_context():  # This creates the application context
+        response = chekt_api_test()
+        print(response)
+        return response
+        
 def run_mqtt_client():
     config = load_config()
     try:
-        # Ensure we have a valid token and refresh if expired
-        token = config['yolink'].get('token')
-        if not token or is_token_expired():
-            logger.info("Generating or refreshing Yolink token")
-            token = generate_yolink_token(config['yolink']['uaid'], config['yolink']['secret_key'])
-            if not token:
-                logger.error("Failed to obtain a valid Yolink token. MQTT client will not start.")
-                return  # Exit if token generation fails
-
-        # Generate a unique client ID using uuid
-        client_id = str(uuid.uuid4())  
+        # Force new token and client ID
+        token, client_id = force_generate_token_and_client()
+        if not token:
+            logger.error("Failed to obtain a valid Yolink token. MQTT client will not start.")
+            return  # Exit if token generation fails
 
         # Create the MQTT client and set up callbacks
-        logger.debug(f"Generated Client ID for MQTT connection: {client_id}")
         mqtt_client = mqtt.Client(client_id=client_id, userdata={"topic": config['mqtt']['topic']})
         mqtt_client.on_connect = on_connect
         mqtt_client.on_message = on_message
