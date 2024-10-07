@@ -138,18 +138,30 @@
         // Handle the form submission to save the mappings
         $('#mapping-form').on('submit', function (e) {
             e.preventDefault();
-            var mappings = {};
-            $('input[name="device_id"]').each(function (index) {
+            var mappingsArray = [];
+			
+			$('input[name="device_id"]').each(function (index) {
                 var deviceId = $(this).val();
                 var zone = $(this).closest('tr').find('input[name="chekt_zone"]').val();
-                mappings[deviceId] = zone;
-            });
-
+            
+			// Add each device mapping to the array
+			mappingsArray.push({
+				"yolink_device_id": deviceId,
+				"chekt_zone": zone
+			});
+		});
+		
+		// Prepare the data to be sent, wrapping it in the 'mappings' key
+		var mappingsData = {
+			"mappings": mappingsArray
+		};
+		
+		// Send the data to the server
             $.ajax({
                 type: "POST",
                 url: "/save_mapping",
                 contentType: "application/json",
-                data: JSON.stringify(mappings),
+                data: JSON.stringify(mappingsData),
                 success: function (response) {
                     addToLog(response.message);
                 },
