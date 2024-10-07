@@ -166,39 +166,30 @@ class YoLinkAPI:
             logger.error(f"Error retrieving homes: {str(e)}")
         return []
 
-    def get_device_list(self, home_id):
-        url = self.base_url  # No need to format
-        headers = {
-            'Content-Type': 'application/json',
-            'Authorization': f"Bearer {self.token}"
-        }
-        data = {
-            "method": "Home.getDeviceList",
-            "time": int(time.time() * 1000),
-            "homeId": home_id
-        }
+    def get_device_list(token):
+    """
+    Retrieve the list of devices using the provided access token.
+    """
+    url = "https://api.yosmart.com/open/yolink/v2/api"
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f"Bearer {token}"
+    }
+    data = {
+        "method": "Home.getDeviceList",
+        "time": int(time.time() * 1000)
+    }
 
-        logger.debug(f"Sending get_device_list request to URL: {url}")
-        logger.debug(f"Request Headers: {json.dumps(headers, indent=2)}")
-        logger.debug(f"Request Payload: {json.dumps(data, indent=2)}")
-
-        try:
-            response = requests.post(url, json=data, headers=headers)
-            logger.debug(f"Response Code: {response.status_code}")
-            logger.debug(f"Response Body: {response.text}")
-
-            if response.status_code == 200:
-                return response.json().get('data', {}).get('devices', [])
-            elif response.status_code == 401:
-                logger.warning("Unauthorized request. Token may be invalid or expired.")
-                self.token = handle_token_expiry()
-                return self.get_device_list(home_id)  # Retry after getting a new token
-            else:
-                logger.error(f"Failed to retrieve device list. Status code: {response.status_code} - {response.text}")
-        except Exception as e:
-            logger.error(f"Error retrieving device list: {str(e)}")
-
-        return []
+    try:
+        response = requests.post(url, json=data, headers=headers)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            logger.error(f"Failed to get device list. Status code: {response.status_code}, Response: {response.text}")
+            return None
+    except Exception as e:
+        logger.error(f"Error retrieving device list: {str(e)}")
+        return None
 
 @app.route('/save_mapping', methods=['POST'])
 def save_mapping():
@@ -243,10 +234,22 @@ def get_homes():
         
 @app.route('/test_yolink_api', methods=['GET'])
 def test_yolink_api():
-    with app.app_context():  # This creates the application context
-        response = yolink_api_test()
-        print(response)
-        return response
+    # Load configuration to get credentials
+    config = load_config()
+
+    # Generate a new token every time
+    token = generate_yolink_token(config['yolink']['uaid'], config['yolink']['secret_key'])
+
+    if not token:
+        return jsonify({"status": "error", "message": "Failed to generate token."})
+
+    # Test getting the device list
+    response = get_device_list(token)
+
+    if response and response.get("code") == "000000":
+        return jsonify({"status": "success", "data": response.get("data")})
+    else:
+        return jsonify({"status": "error", "message": "Failed to retrieve device list"})
 
 @app.route('/test_chekt_api', methods=['GET'])
 def test_chekt_api():
