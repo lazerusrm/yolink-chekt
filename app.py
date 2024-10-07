@@ -164,7 +164,29 @@ class YoLinkAPI:
                 logger.error(f"Failed to retrieve homes. Status code: {response.status_code} - {response.text}")
         except Exception as e:
             logger.error(f"Error retrieving homes: {str(e)}")
-        return []
+        return [].
+
+def get_home_info(self):
+    url = self.base_url
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f"Bearer {self.token}"
+    }
+    data = {
+        "method": "Home.getGeneralInfo",
+        "time": int(time.time() * 1000)
+    }
+
+    try:
+        response = requests.post(url, json=data, headers=headers)
+        if response.status_code == 200:
+            return response.json().get('data', {})
+        else:
+            logger.error(f"Failed to retrieve home info. Status code: {response.status_code}, Response: {response.text}")
+            return None
+    except Exception as e:
+        logger.error(f"Error retrieving home info: {str(e)}")
+        return None
 
 def get_device_list(token):
     url = "https://api.yosmart.com/open/yolink/v2/api"
@@ -210,24 +232,30 @@ def index():
 
 @app.route('/get_homes', methods=['GET'])
 def get_homes():
-    # Load device and mapping configurations
+    # Load configuration to get token
     config = load_config()
     token = config['yolink'].get('token')
 
     if not token:
         return jsonify({"status": "error", "message": "No token available. Please generate a token first."})
 
-    base_url = config['yolink'].get('base_url')
-    if not base_url:
-        return jsonify({"status": "error", "message": "'base_url' key is missing in Yolink configuration."})
-
     yolink_api = YoLinkAPI(token)
-    homes = yolink_api.get_homes()
 
-    if homes:
-        return jsonify({"status": "success", "data": homes})
-    else:
-        return jsonify({"status": "error", "message": "Failed to access Yolink API."})
+    # Get home info
+    home_info = yolink_api.get_home_info()
+    if not home_info:
+        return jsonify({"status": "error", "message": "Failed to retrieve home info from YoLink API."})
+
+    # Get device list for the home
+    devices = yolink_api.get_device_list()
+    if not devices:
+        return jsonify({"status": "error", "message": "Failed to retrieve device list from YoLink API."})
+
+    return jsonify({
+        "status": "success",
+        "home": home_info,
+        "devices": devices
+    })
         
 @app.route('/test_yolink_api', methods=['GET'])
 def test_yolink_api():
