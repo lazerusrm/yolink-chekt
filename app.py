@@ -106,6 +106,25 @@ def handle_token_expiry():
         logger.error("Failed to generate a new Yolink token.")
         return None
 
+def yolink_api_test():
+    # Load configuration to get token
+    config = load_config()
+    token = config['yolink'].get('token')
+
+    if not token:
+        return {"status": "error", "message": "No token available. Please generate a token first."}
+
+    base_url = config['yolink'].get('base_url')
+    if not base_url:
+        return {"status": "error", "message": "'base_url' key is missing in Yolink configuration."}
+
+    yolink_api = YoLinkAPI(token)
+    homes = yolink_api.get_homes()
+    if homes:
+        return {"status": "success", "data": homes}
+    else:
+        return {"status": "error", "message": "Failed to access Yolink API."}
+        
 class YoLinkAPI:
     def __init__(self, token):
         self.base_url = "https://api.yosmart.com/open/yolink/v2/api"
@@ -215,23 +234,8 @@ def get_homes():
         
 @app.route('/test_yolink_api', methods=['GET'])
 def test_yolink_api():
-    # Load configuration to get token
-    config = load_config()
-    token = config['yolink'].get('token')
-
-    if not token:
-        return jsonify({"status": "error", "message": "No token available. Please generate a token first."})
-
-    base_url = config['yolink'].get('base_url')
-    if not base_url:
-        return jsonify({"status": "error", "message": "'base_url' key is missing in Yolink configuration."})
-
-    yolink_api = YoLinkAPI(token)
-    homes = yolink_api.get_homes()
-    if homes:
-        return jsonify({"status": "success", "data": homes})
-    else:
-        return jsonify({"status": "error", "message": "Failed to access Yolink API."})
+    result = yolink_api_test()
+    return jsonify(result)
 
 @app.route('/test_chekt_api', methods=['GET'])
 def test_chekt_api():

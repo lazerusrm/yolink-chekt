@@ -17,9 +17,8 @@ def display_logs():
                 sleep(0.1)  # Poll every 0.1 seconds
 
 def test_yolink_api():
-    """Test the YoLink API and display result"""
     print("\nRunning YoLink API Test...\n")
-    response = app.test_yolink_api()
+    response = yolink_api_test()  # Directly call the test function from app.py
     print(response)
 
 def test_chekt_api():
