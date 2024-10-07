@@ -167,9 +167,6 @@ class YoLinkAPI:
         return []
 
     def get_device_list(token):
-    """
-    Retrieve the list of devices using the provided access token.
-    """
     url = "https://api.yosmart.com/open/yolink/v2/api"
     headers = {
         'Content-Type': 'application/json',
