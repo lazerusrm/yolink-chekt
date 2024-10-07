@@ -105,8 +105,8 @@
 						<td>{{ device.type }}</td>
                         <td>
                             <input type="text" name="chekt_zone" class="form-control"
-                                value="{{ mappings[device['id']] if device['id'] in mappings else '' }}">
-                            <input type="hidden" name="device_id" value="{{ device['id'] }}">
+                                value="{{ mappings.get(device['deviceId'], '') }}">
+                            <input type="hidden" name="device_id" value="{{ device['deviceId'] }}">
                         </td>
                     </tr>
                     {% endfor %}

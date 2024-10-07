@@ -401,7 +401,7 @@ def on_connect(client, userdata, flags, rc):
         
 def on_message(client, userdata, msg):
     logger.info(f"Received message on topic {msg.topic}")
-    
+
     try:
         # Log the raw payload first
         logger.info(f"Raw payload: {msg.payload.decode('utf-8')}")
@@ -414,23 +414,23 @@ def on_message(client, userdata, msg):
             logger.info(f"Device ID: {device_id}, State: {state}")
 
             # Load the mappings from mappings.yaml
-            mappings = load_yaml(config_data['files']['map_file']).get('mappings', {})
+            mappings = load_yaml(config_data['files']['map_file']).get('mappings', [])
+            logger.debug(f"Loaded mappings: {mappings}")
 
             # Find the corresponding mapping for the device
             mapping = next((m for m in mappings if m['yolink_device_id'] == device_id), None)
             if mapping:
-                chekt_event = mapping['chekt_event']
-                chekt_channel = mapping['chekt_channel']
+                chekt_event = mapping.get('chekt_event', 'Unknown Event')
+                chekt_channel = mapping.get('chekt_zone', 'Unknown Zone')
                 logger.info(f"Triggering CHEKT for device {device_id} in zone {chekt_channel} with event {chekt_event}")
                 trigger_chekt_event(chekt_channel, chekt_event)
             else:
-                logger.warning(f"No mapping found for device {device_id}")
+                logger.warning(f"No mapping found for device {device_id}. Device will not trigger any event.")
         else:
             logger.warning("Received message without device ID.")
 
     except Exception as e:
         logger.error(f"Error processing message: {str(e)}")
-
 
 def trigger_chekt_event(chekt_channel, event_description):
     config = load_config()
