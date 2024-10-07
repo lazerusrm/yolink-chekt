@@ -439,22 +439,28 @@ def on_message(client, userdata, msg):
     except Exception as e:
         logger.error(f"Error processing message: {str(e)}")
 
-def trigger_chekt_event(bridge_channel, event):
-    url = f"http://{config_data['chekt']['ip']}:{config_data['chekt']['port']}/channels/{bridge_channel}/events"
-    headers = {
-        'Authorization': f"Bearer {config_data['chekt']['api_token']}",
-        'Content-Type': 'application/json'
-    }
-    data = {
-        "event": event
+def trigger_chekt_event(bridge_channel, event_description):
+    chekt_api_url = f"http://{config_data['chekt']['ip']}:{config_data['chekt']['port']}/api/v1/channels/{bridge_channel}/events"
+    logger.info(f"Attempting to post event to Chekt at URL: {chekt_api_url}")
+
+    # Minimal payload containing only the event description
+    chekt_payload = {
+        "event_description": event_description  # Description of the event (e.g., "motion detected", "door opened")
     }
 
+    headers = {
+        "Authorization": f"Bearer {config_data['chekt']['api_token']}",
+        "Content-Type": "application/json"
+    }
+
+    logger.debug(f"Triggering CHEKT event with payload: {chekt_payload}")
+
     try:
-        response = requests.post(url, headers=headers, json=data)
+        response = requests.post(chekt_api_url, headers=headers, json=chekt_payload)
         if response.status_code == 200:
-            logger.info(f"Successfully triggered event {event} on bridge channel {bridge_channel}")
+            logger.info(f"Successfully triggered event '{event_description}' on bridge channel {bridge_channel}")
         else:
-            logger.error(f"Failed to trigger event {event} on bridge channel {bridge_channel}. Status code: {response.status_code}, Response: {response.text}")
+            logger.error(f"Failed to trigger event on bridge channel {bridge_channel}. Status code: {response.status_code}, Response: {response.text}")
     except Exception as e:
         logger.error(f"Error while triggering CHEKT event: {str(e)}")
 
