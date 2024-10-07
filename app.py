@@ -210,22 +210,34 @@ class YoLinkAPI:
 
 @app.route('/save_mapping', methods=['POST'])
 def save_mapping():
-    # Get the incoming mappings data from the POST request
-    new_mappings = request.get_json()
-    logger.debug(f"Received new mappings: {new_mappings}")
+    try:
+        # Get the incoming mappings data from the POST request
+        new_mappings = request.get_json()
+        if not new_mappings or 'mappings' not in new_mappings:
+            logger.error(f"Invalid or empty mappings received: {new_mappings}")
+            return jsonify({"status": "error", "message": "Invalid mappings data."}), 400
 
-    # Load the existing mappings from the file
-    existing_mappings = load_yaml('mappings.yaml') or {'mappings': []}
-    logger.debug(f"Existing mappings before update: {existing_mappings}")
+        logger.debug(f"Received new mappings: {new_mappings}")
 
-    # Append new mappings to the existing mappings list
-    existing_mappings['mappings'].extend(new_mappings['mappings'])
+        # Load the existing mappings from the file
+        existing_mappings = load_yaml('mappings.yaml') or {'mappings': []}
+        logger.debug(f"Existing mappings before update: {existing_mappings}")
 
-    # Save the updated mappings back to the file
-    save_to_yaml("mappings.yaml", existing_mappings)
-    logger.debug(f"Updated mappings: {existing_mappings}")
+        # Append new mappings to the existing mappings list
+        if 'mappings' in existing_mappings:
+            existing_mappings['mappings'].extend(new_mappings['mappings'])
+        else:
+            existing_mappings['mappings'] = new_mappings['mappings']
 
-    return jsonify({"status": "success", "message": "Mapping saved successfully."})
+        # Save the updated mappings back to the file
+        save_to_yaml("mappings.yaml", existing_mappings)
+        logger.debug(f"Updated mappings: {existing_mappings}")
+
+        return jsonify({"status": "success", "message": "Mapping saved successfully."})
+
+    except Exception as e:
+        logger.error(f"Error in save_mapping: {str(e)}", exc_info=True)
+        return jsonify({"status": "error", "message": "Internal Server Error"}), 500
 
 @app.route('/refresh_yolink_devices', methods=['GET'])
 def refresh_yolink_devices():
