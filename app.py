@@ -166,7 +166,7 @@ class YoLinkAPI:
             logger.error(f"Error retrieving homes: {str(e)}")
         return []
 
-    def get_device_list(token):
+   def get_device_list(token):
     url = "https://api.yosmart.com/open/yolink/v2/api"
     headers = {
         'Content-Type': 'application/json',
@@ -185,8 +185,7 @@ class YoLinkAPI:
             logger.error(f"Failed to get device list. Status code: {response.status_code}, Response: {response.text}")
             return None
     except Exception as e:
-        logger.error(f"Error retrieving device list: {str(e)}")
-        return None
+        logger.error(f"Error retrieving device
 
 @app.route('/save_mapping', methods=['POST'])
 def save_mapping():
