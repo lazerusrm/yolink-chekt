@@ -439,7 +439,7 @@ def on_message(client, userdata, msg):
     except Exception as e:
         logger.error(f"Error processing message: {str(e)}")
 
-ddef trigger_chekt_event(bridge_channel, event_description):
+def trigger_chekt_event(bridge_channel, event_description):
     # For testing, override the event_description with a known working one
     event_description = "Door opened"  # Known working event description
 
