@@ -193,18 +193,50 @@ def save_mapping():
     save_config(data)
     return jsonify({"status": "success", "message": "Mapping saved successfully."})
 
+@app.route('/refresh_yolink_devices', methods=['GET'])
+def refresh_yolink_devices():
+    config = load_config()
+    token = config['yolink'].get('token')
+
+    if not token:
+        return jsonify({"status": "error", "message": "No token available. Please generate a token first."})
+
+    yolink_api = YoLinkAPI(token)
+
+    # Fetch homes and devices
+    home_info = yolink_api.get_home_info()
+    if not home_info or home_info.get("code") != "000000":
+        return jsonify({"status": "error", "message": "Failed to retrieve home info."})
+
+    devices = yolink_api.get_device_list()
+    if not devices or devices.get("code") != "000000":
+        return jsonify({"status": "error", "message": "Failed to retrieve devices."})
+
+    # Store homes and devices in devices.yaml
+    data_to_save = {
+        "homes": home_info["data"],
+        "devices": devices["data"]["devices"]
+    }
+    save_to_yaml("devices.yaml", data_to_save)
+
+    return jsonify({"status": "success", "message": "Yolink devices refreshed and saved."})
+
+def save_to_yaml(file_path, data):
+    with open(file_path, 'w') as yaml_file:
+        yaml.dump(data, yaml_file)
 
 @app.route('/')
 def index():
-    config = load_config()
-    token = config['yolink'].get('token')
-    
-    if not token:
-        token = generate_yolink_token(config['yolink']['uaid'], config['yolink']['secret_key'])
-    
-    yolink_api = YoLinkAPI(token)
-    homes = yolink_api.get_home_info()  # Get homes info here
-    return render_template('index.html', homes=homes)
+    devices_data = load_yaml('devices.yaml')
+
+    homes = devices_data.get('homes', [])
+    devices = devices_data.get('devices', [])
+
+    return render_template('index.html', homes=homes, devices=devices)
+
+def load_yaml(file_path):
+    with open(file_path, 'r') as yaml_file:
+        return yaml.safe_load(yaml_file)
 
 @app.route('/get_homes', methods=['GET'])
 def get_homes():
