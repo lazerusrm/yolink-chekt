@@ -242,22 +242,28 @@ def get_homes():
         
 @app.route('/test_yolink_api', methods=['GET'])
 def test_yolink_api():
-    # Load configuration to get credentials
     config = load_config()
-
-    # Generate a new token every time
-    token = generate_yolink_token(config['yolink']['uaid'], config['yolink']['secret_key'])
+    token = config['yolink'].get('token')
 
     if not token:
-        return jsonify({"status": "error", "message": "Failed to generate token."})
+        return jsonify({"status": "error", "message": "No token available. Please generate a token first."})
 
-    # Test getting the device list
-    response = get_device_list(token)
+    yolink_api = YoLinkAPI(token)
 
-    if response and response.get("code") == "000000":
-        return jsonify({"status": "success", "data": response.get("data")})
-    else:
-        return jsonify({"status": "error", "message": "Failed to retrieve device list"})
+    # Test by calling get_home_info and get_device_list
+    home_info = yolink_api.get_home_info()
+    if not home_info:
+        return jsonify({"status": "error", "message": "Failed to retrieve home info from YoLink API."})
+
+    devices = yolink_api.get_device_list()
+    if not devices:
+        return jsonify({"status": "error", "message": "Failed to retrieve device list from YoLink API."})
+
+    return jsonify({
+        "status": "success",
+        "home_info": home_info,
+        "devices": devices
+    })
 
 @app.route('/test_chekt_api', methods=['GET'])
 def test_chekt_api():
