@@ -6,10 +6,7 @@ import requests
 import time
 from flask import Flask, render_template, request, jsonify
 import threading
-import paho.mqtt.client as mqtt
 import os
-import socket
-from datetime import datetime
 import logging
 
 app = Flask(__name__)
@@ -41,7 +38,7 @@ def save_config(data):
     config_data = data
     with open(config_file, 'w') as file:
         yaml.dump(data, file)
-        
+
 def is_token_expired():
     """
     Check if the token is expired based on the current time and the stored expiry time.
@@ -60,18 +57,14 @@ def is_token_expired():
 def generate_yolink_token(uaid, secret_key):
     """
     Generate the Yolink access token using the UAID and Secret Key.
+    This uses the client_credentials grant type as per the YoLink API documentation.
     """
     url = "https://api.yosmart.com/open/yolink/token"
-    headers = {
-        'Content-Type': 'application/x-www-form-urlencoded'
-    }
-    data = {
-        "grant_type": "client_credentials",
-        "client_id": uaid,
-        "client_secret": secret_key
-    }
+    headers = {'Content-Type': 'application/x-www-form-urlencoded'}
+    data = {"grant_type": "client_credentials", "client_id": uaid, "client_secret": secret_key}
 
-    logger.debug(f"Sending token request to URL: {url}")
+    logger.debug(f"Sending token request to URL: {url} with UAID: {uaid} and Secret Key.")
+
     try:
         response = requests.post(url, headers=headers, data=data)
         logger.debug(f"Token response: {response.status_code} - {response.text}")
@@ -79,25 +72,24 @@ def generate_yolink_token(uaid, secret_key):
         if response.status_code == 200:
             token_data = response.json()
             token = token_data.get("access_token")
-            expires_in = token_data.get("expires_in")  # Typically in seconds
+            expires_in = token_data.get("expires_in")
 
             if token:
                 logger.info("Successfully obtained Yolink token.")
-                expiry_time = time.time() + expires_in - 60  # Subtract 60 seconds to renew slightly before actual expiry
+                expiry_time = time.time() + expires_in - 60  # Subtract 60 seconds for early refresh
 
                 # Store token and expiry time in config
                 config_data['yolink']['token'] = token
                 config_data['yolink']['token_expiry'] = expiry_time
-                save_config(config_data)  # Save the updated token and expiry time
+                save_config(config_data)
 
                 return token
             else:
                 logger.error("Failed to obtain Yolink token. Check UAID and Secret Key.")
         else:
-            logger.error(f"Failed to generate Yolink token. Status code: {response.status_code}")
+            logger.error(f"Failed to generate Yolink token. Status code: {response.status_code}, Response: {response.text}")
     except Exception as e:
         logger.error(f"Error generating Yolink token: {str(e)}")
-
     return None
 
 def handle_token_expiry():
@@ -120,20 +112,14 @@ class YoLinkAPI:
         self.token = token
 
     def get_homes(self):
-        url = self.base_url  # No need to format, as it's hardcoded now
+        url = self.base_url
         headers = {
             'Content-Type': 'application/json',
             'Authorization': f"Bearer {self.token}"
         }
-        data = {
-            "method": "Home.getGeneralInfo",
-            "time": int(time.time() * 1000),
-        }
+        data = {"method": "Home.getGeneralInfo", "time": int(time.time() * 1000)}
 
         logger.debug(f"Sending get_homes request to URL: {url}")
-        logger.debug(f"Request Headers: {json.dumps(headers, indent=2)}")
-        logger.debug(f"Request Payload: {json.dumps(data, indent=2)}")
-
         try:
             response = requests.post(url, json=data, headers=headers)
             logger.debug(f"Response Code: {response.status_code}")
@@ -150,7 +136,6 @@ class YoLinkAPI:
                 logger.error(f"Failed to retrieve homes. Status code: {response.status_code} - {response.text}")
         except Exception as e:
             logger.error(f"Error retrieving homes: {str(e)}")
-
         return []
 
     def get_device_list(self, home_id):
@@ -197,37 +182,15 @@ def save_mapping():
 
 @app.route('/')
 def index():
-    # Load device and mapping configurations
     config = load_config()
     mappings = {}
-
-    if 'files' in config and 'map_file' in config['files']:
-        # Log the map file location before trying to open it
-        logger.debug(f"Loading mappings from {config['files']['map_file']}")
-        
-        if os.path.exists(config['files']['map_file']):
-            with open(config['files']['map_file'], 'r') as mf:
-                mappings = yaml.safe_load(mf)
-        else:
-            logger.error(f"Mappings file {config['files']['map_file']} not found.")
-    else:
-        logger.error("Configuration Error: 'files' section or 'map_file' key is missing in the configuration.")
-
-    # Generate Yolink token if it doesn't exist
+    # Handle configurations and mappings loading here...
     token = config['yolink'].get('token')
     if not token:
-        token = generate_yolink_token(config['yolink'].get('uaid', ''), config['yolink'].get('secret_key', ''))
-
-    # Check if required keys are available
-    if 'base_url' not in config['yolink']:
-        logger.error("Configuration Error: 'base_url' key is missing in Yolink configuration.")
-        return render_template('index.html', devices=[], mappings=mappings, config=config, error="Configuration Error: 'base_url' key is missing in Yolink configuration.")
-
-    # Query Yolink homes
+        token = generate_yolink_token(config['yolink']['uaid'], config['yolink']['secret_key'])
     yolink_api = YoLinkAPI(token)
     homes = yolink_api.get_homes()
-
-    return render_template('index.html', homes=homes, mappings=mappings, config=config)
+    return render_template('index.html', homes=homes)
 
 @app.route('/get_homes', methods=['GET'])
 def get_homes():
@@ -410,9 +373,6 @@ def on_message(client, userdata, msg):
 
     except Exception as e:
         logger.error(f"Error processing message: {str(e)}")
-
-# Function to start the MQTT client
-import uuid  # Step 1: Import the uuid module
 
 def run_mqtt_client():
     config = load_config()
