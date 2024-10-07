@@ -385,38 +385,37 @@ def on_connect(client, userdata, flags, rc):
         logger.error(f"Failed to connect to MQTT broker. Return code: {rc}")
         
 def on_message(client, userdata, msg):
+    logger.info(f"Received message on topic {msg.topic}")
+    
     try:
-        # Log the full message payload for debugging
-        logger.info(f"Received message on topic {msg.topic}: {msg.payload.decode('utf-8')}")
-
-        # Load the mappings from mappings.yaml
-        mappings = load_yaml(config_data['files']['map_file']).get('mappings', {})
-        logger.debug(f"Loaded mappings from {config_data['files']['map_file']}: {mappings}")
-
-        # Parse the message payload
+        # Log the raw payload first
+        logger.info(f"Raw payload: {msg.payload.decode('utf-8')}")
+        
         payload = json.loads(msg.payload.decode("utf-8"))
-        logger.debug(f"Parsed payload: {json.dumps(payload, indent=2)}")
+        device_id = payload.get('deviceId')
+        state = payload['data'].get('state', 'Unknown state')
 
-        # Extract the device ID and state from the payload
-        device_id = payload.get('deviceId', 'Unknown')
-        state = payload.get('data', {}).get('state', 'Unknown')
-        logger.info(f"Extracted device ID: {device_id}, State: {state}")
+        if device_id:
+            logger.info(f"Device ID: {device_id}, State: {state}")
 
-        # Find the corresponding mapping for the device
-        mapping = next((m for m in mappings if m.get('yolink_device_id') == device_id), None)
+            # Load the mappings from mappings.yaml
+            mappings = load_yaml(config_data['files']['map_file']).get('mappings', {})
 
-        if mapping:
-            chekt_event = mapping.get('chekt_event', 'Unknown')
-            chekt_channel = mapping.get('chekt_channel', 'Unknown')
-            logger.info(f"Found mapping for device {device_id}. Triggering CHEKT event '{chekt_event}' on channel '{chekt_channel}'")
-            # Trigger the CHEKT event
-            trigger_chekt_event(chekt_channel, chekt_event)
+            # Find the corresponding mapping for the device
+            mapping = next((m for m in mappings if m['yolink_device_id'] == device_id), None)
+            if mapping:
+                chekt_event = mapping['chekt_event']
+                chekt_channel = mapping['chekt_channel']
+                logger.info(f"Triggering CHEKT for device {device_id} in zone {chekt_channel} with event {chekt_event}")
+                trigger_chekt_event(chekt_channel, chekt_event)
+            else:
+                logger.warning(f"No mapping found for device {device_id}")
         else:
-            logger.warning(f"No mapping found for device {device_id}. Payload: {json.dumps(payload, indent=2)}")
-    except json.JSONDecodeError as json_err:
-        logger.error(f"JSON decode error: {str(json_err)}. Raw message payload: {msg.payload}")
+            logger.warning("Received message without device ID.")
+
     except Exception as e:
         logger.error(f"Error processing message: {str(e)}")
+
 
 def trigger_chekt_event(chekt_channel, event_description):
     config = load_config()
