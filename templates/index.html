@@ -95,7 +95,7 @@
     <div class="container">
         <h1>Yolink to CHEKT Mapping</h1>
 
-        <!-- Section for testing Yolink token generation -->
+        <!-- Section for getting / refreshing Yolink devices -->
         <div class="mb-3">
             <button type="button" id="refresh-devices-btn" class="btn btn-primary">Get / Refresh Yolink Devices</button>
             <div id="yolink-status" class="status">
@@ -159,54 +159,34 @@
             $('#' + elementId).text(message);
         }
 
-        $('#test-token-btn').on('click', function () {
+        // Function to refresh Yolink devices
+        $('#refresh-devices-btn').on('click', function () {
             $('#yolink-icon').addClass('hidden');
-            $('#yolink-message').text('Testing Yolink API connection...');
+            $('#yolink-message').text('Refreshing Yolink devices...');
+            
             $.ajax({
                 type: "GET",
-                url: "/test_yolink_api",
+                url: "/refresh_yolink_devices", // Backend endpoint
                 success: function (response) {
                     if (response.status === "success") {
-                        updateStatus('yolink-message', 'yolink-icon', 'Yolink API connection successful.', true);
-                        addToLog("Yolink API connection successful: " + JSON.stringify(response.data, null, 2));
+                        updateStatus('yolink-message', 'yolink-icon', 'Yolink devices refreshed successfully.', true);
+                        addToLog("Yolink devices refreshed and saved to devices.yaml.");
+                        
+                        // Optionally refresh the homes dropdown
+                        let homes = response.homes;
+                        $('#home-select').empty().append('<option value="">Select a home...</option>');
+                        homes.forEach(function (home) {
+                            $('#home-select').append('<option value="' + home.id + '">' + home.name + '</option>');
+                        });
+                        addToLog("Homes loaded successfully.");
                     } else {
-                        updateStatus('yolink-message', 'yolink-icon', 'Failed to connect to Yolink API.', false);
-                        addToLog("Failed to connect to Yolink API: " + response.message);
-                        if (response.response) {
-                            addToLog("Response Details: " + response.response);
-                        }
+                        updateStatus('yolink-message', 'yolink-icon', 'Failed to refresh Yolink devices.', false);
+                        addToLog("Failed to refresh Yolink devices: " + response.message);
                     }
                 },
                 error: function (xhr, status, error) {
-                    updateStatus('yolink-message', 'yolink-icon', 'Error connecting to Yolink API.', false);
-                    addToLog('Error connecting to Yolink API: ' + xhr.responseText);
-                    addToLog('Debug Status: ' + status + ', Error: ' + error);
-                }
-            });
-        });
-
-        $('#test-chekt-btn').on('click', function () {
-            $('#chekt-icon').addClass('hidden');
-            $('#chekt-message').text('Testing CHEKT API connection...');
-            $.ajax({
-                type: "GET",
-                url: "/test_chekt_api",
-                success: function (response) {
-                    if (response.status === "success") {
-                        updateStatus('chekt-message', 'chekt-icon', 'CHEKT API connection successful.', true);
-                        addToLog("CHEKT API connection successful.");
-                        addToLog("Debug Info: " + JSON.stringify(response.debug_info, null, 2));
-                    } else {
-                        updateStatus('chekt-message', 'chekt-icon', 'Failed to connect to CHEKT API.', false);
-                        addToLog("Failed to connect to CHEKT API: " + response.message);
-                        if (response.response) {
-                            addToLog("Response Details: " + response.response);
-                        }
-                    }
-                },
-                error: function (xhr, status, error) {
-                    updateStatus('chekt-message', 'chekt-icon', 'Error connecting to CHEKT API.', false);
-                    addToLog('Error connecting to CHEKT API: ' + xhr.responseText);
+                    updateStatus('yolink-message', 'yolink-icon', 'Error refreshing Yolink devices.', false);
+                    addToLog('Error refreshing Yolink devices: ' + xhr.responseText);
                     addToLog('Debug Status: ' + status + ', Error: ' + error);
                 }
             });
