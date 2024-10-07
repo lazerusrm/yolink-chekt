@@ -424,13 +424,13 @@ def on_message(client, userdata, msg):
             mapping = next((m for m in mappings if m['yolink_device_id'].strip() == device_id), None)
 
             if mapping:
-                chekt_zone = mapping.get('chekt_zone')
-                if chekt_zone and chekt_zone.strip():  # Ensure chekt_zone is not empty
+                chekt_bridge_channel = mapping.get('chekt_zone')  # Use this as the bridge channel
+                if chekt_bridge_channel and chekt_bridge_channel.strip():  # Ensure it's not empty
                     chekt_event = mapping.get('chekt_event', 'Unknown Event')
-                    logger.info(f"Triggering CHEKT for device {device_id} in zone {chekt_zone} with event {chekt_event}")
-                    trigger_chekt_event(chekt_zone, chekt_event)
+                    logger.info(f"Triggering CHEKT bridge channel {chekt_bridge_channel} for device {device_id} with event {chekt_event}")
+                    trigger_chekt_event(chekt_bridge_channel, chekt_event)
                 else:
-                    logger.info(f"Device {device_id} has no valid chekt_zone mapping. Skipping.")
+                    logger.info(f"Device {device_id} has no valid chekt_bridge_channel mapping. Skipping.")
             else:
                 logger.warning(f"No mapping found for device {device_id}")
         else:
@@ -439,29 +439,24 @@ def on_message(client, userdata, msg):
     except Exception as e:
         logger.error(f"Error processing message: {str(e)}")
 
-def trigger_chekt_event(chekt_channel, event_description):
-    config = load_config()
-    url = f"http://{config['chekt']['ip']}:{config['chekt']['port']}/api/v1/zones/{chekt_channel}/events"
-
+def trigger_chekt_event(bridge_channel, event):
+    url = f"http://{config_data['chekt']['ip']}:{config_data['chekt']['port']}/channels/{bridge_channel}/events"
     headers = {
-        'Authorization': f"Bearer {config['chekt']['api_token']}",
+        'Authorization': f"Bearer {config_data['chekt']['api_token']}",
         'Content-Type': 'application/json'
     }
-
     data = {
-        "event_description": event_description,
-        "timestamp": int(time.time())
+        "event": event
     }
 
     try:
         response = requests.post(url, headers=headers, json=data)
-        if response.status_code in [200, 202]:
-            logger.info(f"CHEKT zone {chekt_channel} updated successfully with event {event_description}")
+        if response.status_code == 200:
+            logger.info(f"Successfully triggered event {event} on bridge channel {bridge_channel}")
         else:
-            logger.error(f"Failed to update CHEKT zone {chekt_channel}. Status: {response.status_code}, Response: {response.text}")
+            logger.error(f"Failed to trigger event {event} on bridge channel {bridge_channel}. Status code: {response.status_code}, Response: {response.text}")
     except Exception as e:
-        logger.error(f"Error communicating with CHEKT API: {str(e)}")
-
+        logger.error(f"Error while triggering CHEKT event: {str(e)}")
 
 # MQTT Callbacks and Client Handling
 def on_connect(client, userdata, flags, rc):
