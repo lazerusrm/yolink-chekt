@@ -114,16 +114,25 @@ def handle_token_expiry():
 
 def force_generate_token_and_client():
     """
-    This function forces the generation of a new token and a new client ID each time the app starts.
+    This function generates a new MQTT client ID on startup and only generates a new token if the current one is expired.
     """
-    logger.info("Forcing generation of new Yolink token and MQTT client ID on startup...")
+    logger.info("Checking if a new Yolink token is needed and generating a new MQTT client ID on startup...")
+    
     config = load_config()
     
-    # Always generate a new token
-    token = generate_yolink_token(config['yolink']['uaid'], config['yolink']['secret_key'])
+    # Check if token is expired or missing
+    if is_token_expired():
+        logger.info("Yolink token is expired or missing. Generating a new token...")
+        token = generate_yolink_token(config['yolink']['uaid'], config['yolink']['secret_key'])
+        if not token:
+            logger.error("Failed to obtain a valid Yolink token. MQTT client will not start.")
+            return None, None
+    else:
+        token = config['yolink']['token']
+        logger.info("Yolink token is still valid.")
     
     # Always generate a new client ID for MQTT
-    client_id = str(uuid.uuid4())[:23]  
+    client_id = str(uuid.uuid4())  
     logger.debug(f"Generated new Client ID for MQTT: {client_id}")
     
     return token, client_id
@@ -492,50 +501,34 @@ def test_chekt_api():
         return response
         
 def run_mqtt_client():
-    global mqtt_client_instance  # Store the MQTT client instance
     config = load_config()
     try:
-        # Load the home ID from devices.yaml
-        devices_data = load_yaml('devices.yaml')
-        home_id = devices_data.get('homes', {}).get('id')
-
-        if not home_id:
-            logger.error("Home ID not found in devices.yaml. Please refresh YoLink devices.")
+        # Only refresh token if expired, always get a new client ID
+        token, client_id = force_generate_token_and_client()
+        if not token or not client_id:
+            logger.error("Failed to obtain Yolink token or generate a Client ID. MQTT client will not start.")
             return
 
-        # Force new token and client ID
-        token, client_id = force_generate_token_and_client()
-        if not token:
-            logger.error("Failed to obtain a valid Yolink token. MQTT client will not start.")
-            return  # Exit if token generation fails
-
-        # Create the MQTT client with a unique client ID
-        mqtt_client_instance = mqtt.Client(client_id=client_id, userdata={"topic": config['mqtt']['topic']})
-        mqtt_client_instance.on_connect = on_connect
-        mqtt_client_instance.on_message = on_message
+        # Create the MQTT client and set up callbacks
+        mqtt_client = mqtt.Client(client_id=client_id, userdata={"topic": config['mqtt']['topic']})
+        mqtt_client.on_connect = on_connect
+        mqtt_client.on_message = on_message
 
         # Set up the MQTT credentials with the Yolink token
         logger.debug(f"Using access token for MQTT: {token[:10]}...(truncated)")
-        mqtt_client_instance.username_pw_set(username=token, password=None)
+        mqtt_client.username_pw_set(username=token, password=None)
 
-        # Connect to the MQTT broker using the correct URL and port
+        # Connect to the MQTT broker
         mqtt_broker_url = config['mqtt']['url'].replace("mqtt://", "")
         mqtt_broker_port = int(config['mqtt']['port'])
         logger.debug(f"Connecting to MQTT broker at {mqtt_broker_url} on port {mqtt_broker_port}")
-        mqtt_client_instance.connect(mqtt_broker_url, mqtt_broker_port)
-
-        # Subscribe to the specific topic (format: yl-home/${home_id}/+/report)
-        topic = f"yl-home/{home_id}/+/report"
-        logger.info(f"Subscribing to topic: {topic}")
-        mqtt_client_instance.subscribe(topic)
+        mqtt_client.connect(mqtt_broker_url, mqtt_broker_port)
 
         # Start the MQTT loop
-        mqtt_client_instance.loop_forever()
+        mqtt_client.loop_forever()
 
     except Exception as e:
         logger.error(f"MQTT client encountered an error: {str(e)}")
-
-
 
 # Start the MQTT client in a separate thread
 mqtt_thread = threading.Thread(target=run_mqtt_client)
