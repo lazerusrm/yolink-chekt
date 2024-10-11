@@ -55,4 +55,6 @@ echo "Rebuilding Docker containers..."
 docker compose down || handle_error "Docker Compose down failed."
 docker compose up --build -d || handle_error "Docker Compose up failed."
 
+#update yolink devices automatically to restart services
+
 echo "Updates applied successfully!"
