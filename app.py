@@ -480,7 +480,7 @@ def get_chekt_zone(device_id):
     # For now, this could be hardcoded or pulled from another dynamic source, like a configuration or database
     return "1"  # Example: returning CHEKT zone 1, adjust logic as needed
 
-def trigger_chekt_event(bridge_channel, event_description, accessory_type):
+def trigger_chekt_event(bridge_channel, event_description):
     chekt_api_url = f"http://{config_data['chekt']['ip']}:{config_data['chekt']['port']}/api/v1/channels/{bridge_channel}/events"
     
     # Basic authentication setup
@@ -495,7 +495,6 @@ def trigger_chekt_event(bridge_channel, event_description, accessory_type):
     chekt_payload = {
         "target_channel": bridge_channel,
         "event_description": event_description,
-        "accessory_type": accessory_type
     }
 
     logger.info(f"Attempting to post event to CHEKT at URL: {chekt_api_url} with payload: {chekt_payload}")
