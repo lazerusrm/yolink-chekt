@@ -565,18 +565,7 @@ def test_chekt_api():
         response = chekt_api_test()
         print(response)
         return response
-        
-def refresh_and_save_devices():
-    logger.info("Refreshing YoLink devices on startup...")
-
-    # Refresh devices by directly calling the function
-    refresh_response = refresh_yolink_devices()
-    if isinstance(refresh_response, dict) and refresh_response.get('status') == 'success':
-        logger.info("YoLink devices refreshed successfully and saved.")
-    else:
-        logger.error("Failed to refresh YoLink devices.")
-
-        
+                
 def run_mqtt_client():
     config = load_config()
     try:
@@ -628,8 +617,4 @@ mqtt_thread.start()
 if __name__ == "__main__":
     load_config()
     
-    # Ensure Flask application context is active
-    with app.app_context():
-        refresh_and_save_devices()
-
     app.run(host='0.0.0.0', port=5000)
