@@ -608,6 +608,16 @@ def run_mqtt_client():
     except Exception as e:
         logger.error(f"MQTT client encountered an error: {str(e)}")
 
+def refresh_and_save_devices():
+    logger.info("Refreshing YoLink devices on startup...")
+
+    # Refresh devices by directly calling the function
+    refresh_response = refresh_yolink_devices()
+    
+    if isinstance(refresh_response, dict) and refresh_response.get('status') == 'success':
+        logger.info("YoLink devices refreshed successfully and saved.")
+    else:
+        logger.error(f"Failed to refresh YoLink devices. Response: {refresh_response}")
 
 # Start the MQTT client in a separate thread
 mqtt_thread = threading.Thread(target=run_mqtt_client)
