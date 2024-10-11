@@ -1,4 +1,5 @@
 import yaml
+import base64
 import uuid
 import paho.mqtt.client as mqtt
 import json
@@ -479,33 +480,40 @@ def get_chekt_zone(device_id):
     # For now, this could be hardcoded or pulled from another dynamic source, like a configuration or database
     return "1"  # Example: returning CHEKT zone 1, adjust logic as needed
 
-def trigger_chekt_event(bridge_channel, event_description):
-    # For testing, override the event_description with a known working one
-    event_description = "Door opened"  # Known working event description
-
+def trigger_chekt_event(bridge_channel, event_description, accessory_type):
     chekt_api_url = f"http://{config_data['chekt']['ip']}:{config_data['chekt']['port']}/api/v1/channels/{bridge_channel}/events"
-    logger.info(f"Attempting to post event to Chekt at URL: {chekt_api_url}")
-
-    # Payload containing the hardcoded event description
-    chekt_payload = {
-        "event_description": event_description
-    }
-
+    
+    # Basic authentication setup
+    api_key = config_data['chekt']['api_token']
+    auth_header = base64.b64encode(f"apikey:{api_key}".encode()).decode()
+    
     headers = {
-        "Authorization": f"Bearer {config_data['chekt']['api_token']}",
+        "Authorization": f"Basic {auth_header}",
         "Content-Type": "application/json"
     }
+    
+    chekt_payload = {
+        "target_channel": bridge_channel,
+        "event_description": event_description,
+        "accessory_type": accessory_type
+    }
 
-    logger.debug(f"Triggering CHEKT event with payload: {chekt_payload}")
-
+    logger.info(f"Attempting to post event to CHEKT at URL: {chekt_api_url} with payload: {chekt_payload}")
     try:
         response = requests.post(chekt_api_url, headers=headers, json=chekt_payload)
-        if response.status_code == 200:
-            logger.info(f"Successfully triggered event '{event_description}' on bridge channel {bridge_channel}")
+        response_data = response.json()  # Parse the response to JSON
+
+        if response.status_code == 200 or response.status_code == 202:
+            logger.info(f"Response: {response_data}")
+            print(f"Success: Event triggered on bridge channel {bridge_channel}.")
+            print(f"Response Data: {json.dumps(response_data, indent=2)}")
         else:
             logger.error(f"Failed to trigger event on bridge channel {bridge_channel}. Status code: {response.status_code}, Response: {response.text}")
+            print(f"Error: Failed to trigger event. Status code: {response.status_code}")
+            print(f"Response Text: {response.text}")
     except Exception as e:
         logger.error(f"Error while triggering CHEKT event: {str(e)}")
+        print(f"Error: {str(e)}")
 
 # MQTT Callbacks and Client Handling
 def on_connect(client, userdata, flags, rc):
