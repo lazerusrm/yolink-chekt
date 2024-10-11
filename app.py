@@ -628,7 +628,8 @@ mqtt_thread.start()
 if __name__ == "__main__":
     load_config()
     
-    # Call the refresh and save function on startup
-    refresh_and_save_devices()
+    # Ensure Flask application context is active
+    with app.app_context():
+        refresh_and_save_devices()
 
     app.run(host='0.0.0.0', port=5000)
