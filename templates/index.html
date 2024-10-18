@@ -27,7 +27,8 @@
             margin-top: 10px;
         }
 
-        input {
+        input,
+        select {
             width: 100%;
             padding: 5px;
             margin: 5px 0 15px;
@@ -94,25 +95,33 @@
                         <th>Device Name</th>
                         <th>Device ID</th>
                         <th>CHEKT Zone</th>
-                        <th>YoLink Event</th> <!-- New column for event -->
-                        <th>CHEKT Alert</th> <!-- New column for alert mapping -->
+                        <th>YoLink Event</th>
+                        <th>CHEKT Alert</th>
                     </tr>
                 </thead>
                 <tbody id="devices-table-body">
-                    <!-- Devices will be populated here by the server -->
                     {% for device in devices %}
                     <tr>
                         <td>{{ device.name }}</td>
                         <td>{{ device.deviceId }}</td>
                         <td>
-                            <input type="text" name="chekt_zone" class="form-control" value="{{ mappings.get(device['deviceId'], '') }}">
-                            <input type="hidden" name="device_id" value="{{ device['deviceId'] }}">
+                            <input type="text" name="chekt_zone" class="form-control chekt-zone"
+                                value="{{ mappings[device.deviceId]['chekt_zone'] if device.deviceId in mappings else '' }}">
+                            <input type="hidden" name="device_id" value="{{ device.deviceId }}">
                         </td>
                         <td>
-                            <input type="text" name="yolink_event" class="form-control" placeholder="door_open, alert, etc.">
+                            <select name="yolink_event" class="form-control">
+                                <option value="">Select YoLink Event</option>
+                                <option value="open" {% if mappings[device.deviceId]['yolink_event'] == 'open' %}selected{% endif %}>open</option>
+                                <option value="closed" {% if mappings[device.deviceId]['yolink_event'] == 'closed' %}selected{% endif %}>closed</option>
+                                <option value="alert" {% if mappings[device.deviceId]['yolink_event'] == 'alert' %}selected{% endif %}>alert</option>
+                            </select>
                         </td>
                         <td>
-                            <input type="text" name="chekt_alert" class="form-control" placeholder="Zone X Breach, etc.">
+                            <select name="chekt_alert" class="form-control chekt-alert">
+                                <option value="">Select CHEKT Alert</option>
+                                <!-- This will be dynamically updated based on the CHEKT Zone -->
+                            </select>
                         </td>
                     </tr>
                     {% endfor %}
@@ -145,13 +154,13 @@
         $('#mapping-form').on('submit', function (e) {
             e.preventDefault();
             var mappingsArray = [];
-            
+
             $('input[name="device_id"]').each(function (index) {
                 var deviceId = $(this).val();
                 var zone = $(this).closest('tr').find('input[name="chekt_zone"]').val();
-                var event = $(this).closest('tr').find('input[name="yolink_event"]').val();  // New event field
-                var alert = $(this).closest('tr').find('input[name="chekt_alert"]').val();  // New alert field
-                
+                var event = $(this).closest('tr').find('select[name="yolink_event"]').val();
+                var alert = $(this).closest('tr').find('select[name="chekt_alert"]').val();
+
                 // Add each device mapping to the array
                 mappingsArray.push({
                     "yolink_device_id": deviceId,
@@ -160,12 +169,12 @@
                     "chekt_alert": alert
                 });
             });
-            
+
             // Prepare the data to be sent, wrapping it in the 'mappings' key
             var mappingsData = {
                 "mappings": mappingsArray
             };
-            
+
             // Send the data to the server
             $.ajax({
                 type: "POST",
@@ -204,6 +213,21 @@
                     addToLog('Error refreshing Yolink devices: ' + xhr.responseText);
                 }
             });
+        });
+
+        // Update CHEKT Alert options based on the CHEKT Zone entered
+        $(document).on('input', '.chekt-zone', function () {
+            var chektZone = $(this).val();
+            var alertDropdown = $(this).closest('tr').find('select[name="chekt_alert"]');
+
+            // Clear existing options
+            alertDropdown.empty();
+            alertDropdown.append('<option value="">Select CHEKT Alert</option>');
+
+            // Add the new option based on the entered zone
+            if (chektZone) {
+                alertDropdown.append('<option value="Zone ' + chektZone + ' Breach">Zone ' + chektZone + ' Breach</option>');
+            }
         });
 
         // Load logs
