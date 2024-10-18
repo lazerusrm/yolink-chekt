@@ -106,21 +106,23 @@
                         <td>{{ device.deviceId }}</td>
                         <td>
                             <input type="text" name="chekt_zone" class="form-control chekt-zone"
-                                value="{{ mappings[device.deviceId]['chekt_zone'] if device.deviceId in mappings else '' }}">
+                                value="{{ mappings.get(device.deviceId) and mappings[device.deviceId].get('chekt_zone', '') }}">
                             <input type="hidden" name="device_id" value="{{ device.deviceId }}">
                         </td>
                         <td>
                             <select name="yolink_event" class="form-control">
                                 <option value="">Select YoLink Event</option>
-                                <option value="open" {% if mappings[device.deviceId]['yolink_event'] == 'open' %}selected{% endif %}>open</option>
-                                <option value="closed" {% if mappings[device.deviceId]['yolink_event'] == 'closed' %}selected{% endif %}>closed</option>
-                                <option value="alert" {% if mappings[device.deviceId]['yolink_event'] == 'alert' %}selected{% endif %}>alert</option>
+                                <option value="open" {% if mappings.get(device.deviceId) and mappings[device.deviceId].get('yolink_event') == 'open' %}selected{% endif %}>open</option>
+                                <option value="closed" {% if mappings.get(device.deviceId) and mappings[device.deviceId].get('yolink_event') == 'closed' %}selected{% endif %}>closed</option>
+                                <option value="alert" {% if mappings.get(device.deviceId) and mappings[device.deviceId].get('yolink_event') == 'alert' %}selected{% endif %}>alert</option>
                             </select>
                         </td>
                         <td>
                             <select name="chekt_alert" class="form-control chekt-alert">
                                 <option value="">Select CHEKT Alert</option>
-                                <!-- This will be dynamically updated based on the CHEKT Zone -->
+                                {% if mappings.get(device.deviceId) and mappings[device.deviceId].get('chekt_zone') %}
+                                <option value="Zone {{ mappings[device.deviceId].get('chekt_zone') }} Breach" {% if mappings[device.deviceId].get('chekt_alert') == 'Zone ' + mappings[device.deviceId].get('chekt_zone') + ' Breach' %}selected{% endif %}>Zone {{ mappings[device.deviceId].get('chekt_zone') }} Breach</option>
+                                {% endif %}
                             </select>
                         </td>
                     </tr>
