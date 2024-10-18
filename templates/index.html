@@ -230,6 +230,16 @@
             }
         });
 
+        // Ensure the CHEKT Alert options are pre-populated after the page loads
+        $('.chekt-zone').each(function () {
+            var chektZone = $(this).val();
+            var alertDropdown = $(this).closest('tr').find('select[name="chekt_alert"]');
+
+            if (chektZone) {
+                alertDropdown.append('<option value="Zone ' + chektZone + ' Breach" selected>Zone ' + chektZone + ' Breach</option>');
+            }
+        });
+
         // Load logs
         $('#load-logs-btn').on('click', function () {
             $.ajax({
