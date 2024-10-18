@@ -86,7 +86,7 @@
             </div>
         </div>
 
-        <!-- Section for listing Yolink devices and mapping them to CHEKT zones -->
+        <!-- Section for listing Yolink devices and mapping them to CHEKT zones and alerts -->
         <form id="mapping-form">
             <table class="table">
                 <thead>
@@ -94,6 +94,8 @@
                         <th>Device Name</th>
                         <th>Device ID</th>
                         <th>CHEKT Zone</th>
+                        <th>YoLink Event</th> <!-- New column for event -->
+                        <th>CHEKT Alert</th> <!-- New column for alert mapping -->
                     </tr>
                 </thead>
                 <tbody id="devices-table-body">
@@ -102,11 +104,15 @@
                     <tr>
                         <td>{{ device.name }}</td>
                         <td>{{ device.deviceId }}</td>
-						<td>{{ device.type }}</td>
                         <td>
-                            <input type="text" name="chekt_zone" class="form-control"
-                                value="{{ mappings.get(device['deviceId'], '') }}">
+                            <input type="text" name="chekt_zone" class="form-control" value="{{ mappings.get(device['deviceId'], '') }}">
                             <input type="hidden" name="device_id" value="{{ device['deviceId'] }}">
+                        </td>
+                        <td>
+                            <input type="text" name="yolink_event" class="form-control" placeholder="door_open, alert, etc.">
+                        </td>
+                        <td>
+                            <input type="text" name="chekt_alert" class="form-control" placeholder="Zone X Breach, etc.">
                         </td>
                     </tr>
                     {% endfor %}
@@ -139,24 +145,28 @@
         $('#mapping-form').on('submit', function (e) {
             e.preventDefault();
             var mappingsArray = [];
-			
-			$('input[name="device_id"]').each(function (index) {
+            
+            $('input[name="device_id"]').each(function (index) {
                 var deviceId = $(this).val();
                 var zone = $(this).closest('tr').find('input[name="chekt_zone"]').val();
+                var event = $(this).closest('tr').find('input[name="yolink_event"]').val();  // New event field
+                var alert = $(this).closest('tr').find('input[name="chekt_alert"]').val();  // New alert field
+                
+                // Add each device mapping to the array
+                mappingsArray.push({
+                    "yolink_device_id": deviceId,
+                    "chekt_zone": zone,
+                    "yolink_event": event,
+                    "chekt_alert": alert
+                });
+            });
             
-			// Add each device mapping to the array
-			mappingsArray.push({
-				"yolink_device_id": deviceId,
-				"chekt_zone": zone
-			});
-		});
-		
-		// Prepare the data to be sent, wrapping it in the 'mappings' key
-		var mappingsData = {
-			"mappings": mappingsArray
-		};
-		
-		// Send the data to the server
+            // Prepare the data to be sent, wrapping it in the 'mappings' key
+            var mappingsData = {
+                "mappings": mappingsArray
+            };
+            
+            // Send the data to the server
             $.ajax({
                 type: "POST",
                 url: "/save_mapping",
