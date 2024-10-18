@@ -320,9 +320,12 @@ def index():
     mappings_data = load_yaml('mappings.yaml')
 
     devices = devices_data.get('devices', [])
-    mappings = mappings_data if mappings_data else {}
+    mappings = mappings_data.get('mappings', {}) if mappings_data else {}
 
-    return render_template('index.html', devices=devices, mappings=mappings)
+    # Prepare a dictionary to easily access the mappings by device ID
+    device_mappings = {m['yolink_device_id']: m for m in mappings}
+
+    return render_template('index.html', devices=devices, mappings=device_mappings)
 
 @app.route('/get_homes', methods=['GET'])
 def get_homes():
