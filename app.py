@@ -295,6 +295,44 @@ def save_mapping():
         logger.error(f"Error in save_mapping: {str(e)}", exc_info=True)
         return jsonify({"status": "error", "message": "Internal Server Error"}), 500
 
+@app.route('/check_mqtt_status', methods=['GET'])
+def check_mqtt_status():
+    global mqtt_client_instance
+    try:
+        if mqtt_client_instance and mqtt_client_instance.is_connected():
+            return jsonify({"status": "success", "message": "MQTT connection is active."})
+        else:
+            return jsonify({"status": "error", "message": "MQTT connection is inactive."})
+    except Exception as e:
+        logger.error(f"Error checking MQTT status: {str(e)}")
+        return jsonify({"status": "error", "message": "Error checking MQTT status."})
+
+@app.route('/check_chekt_status', methods=['GET'])
+def check_chekt_status():
+    config = load_config()
+    chekt_ip = config['chekt'].get('ip')
+    chekt_port = config['chekt'].get('port')
+    api_token = config['chekt'].get('api_token')
+
+    if not chekt_ip or not chekt_port:
+        return jsonify({"status": "error", "message": "CHEKT API configuration is missing."})
+
+    url = f"http://{chekt_ip}:{chekt_port}/api/v1/"
+    headers = {
+        'Authorization': f"Bearer {api_token}",
+        'Content-Type': 'application/json',
+        'Username': 'apikey'
+    }
+
+    try:
+        response = requests.get(url, headers=headers)
+        if response.status_code == 200:
+            return jsonify({"status": "success", "message": "CHEKT server is alive and API key is valid."})
+        else:
+            return jsonify({"status": "error", "message": "Failed to connect to CHEKT server. Status code: " + str(response.status_code)})
+    except Exception as e:
+        logger.error(f"Error connecting to CHEKT server: {str(e)}")
+        return jsonify({"status": "error", "message": "Error connecting to CHEKT server."})
 
 @app.route('/refresh_yolink_devices', methods=['GET'])
 def refresh_yolink_devices():

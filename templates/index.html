@@ -92,6 +92,19 @@
     <div class="container">
         <h1>Yolink to CHEKT Configuration</h1>
 
+        <!-- Status check for MQTT and CHEKT -->
+        <div class="mb-3">
+            <h3>Status</h3>
+            <div id="mqtt-status" class="status">
+                <img src="" alt="" id="mqtt-icon" class="hidden">
+                <span id="mqtt-message">Checking MQTT connection...</span>
+            </div>
+            <div id="chekt-status" class="status">
+                <img src="" alt="" id="chekt-icon" class="hidden">
+                <span id="chekt-message">Checking CHEKT server status...</span>
+            </div>
+        </div>
+
         <!-- Form for Yolink and CHEKT Configuration -->
         <form id="config-form" class="form-section">
             <h2>Yolink Configuration</h2>
@@ -192,6 +205,29 @@
             $('#' + elementId).text(message);
         }
 
+        function checkStatus(url, elementId, iconId, successMessage, errorMessage) {
+            $.ajax({
+                type: "GET",
+                url: url,
+                success: function (response) {
+                    if (response.status === "success") {
+                        updateStatus(elementId, iconId, successMessage, true);
+                    } else {
+                        updateStatus(elementId, iconId, errorMessage, false);
+                    }
+                },
+                error: function (xhr, status, error) {
+                    updateStatus(elementId, iconId, errorMessage, false);
+                }
+            });
+        }
+
+        // Check MQTT and CHEKT statuses on page load
+        $(document).ready(function () {
+            checkStatus('/check_mqtt_status', 'mqtt-message', 'mqtt-icon', 'MQTT connection is active.', 'MQTT connection is inactive.');
+            checkStatus('/check_chekt_status', 'chekt-message', 'chekt-icon', 'CHEKT server is alive.', 'Failed to connect to CHEKT server.');
+        });
+
         // Save configuration form
         $('#config-form').on('submit', function (e) {
             e.preventDefault();
@@ -218,6 +254,9 @@
                 success: function (response) {
                     updateStatus('config-message', 'config-icon', 'Configuration saved successfully.', true);
                     addToLog(response.message);
+                    // Recheck statuses after saving
+                    checkStatus('/check_mqtt_status', 'mqtt-message', 'mqtt-icon', 'MQTT connection is active.', 'MQTT connection is inactive.');
+                    checkStatus('/check_chekt_status', 'chekt-message', 'chekt-icon', 'CHEKT server is alive.', 'Failed to connect to CHEKT server.');
                 },
                 error: function (xhr, status, error) {
                     updateStatus('config-message', 'config-icon', 'Failed to save configuration.', false);
@@ -258,6 +297,9 @@
                 data: JSON.stringify(mappingsData),
                 success: function (response) {
                     addToLog(response.message);
+                    // Recheck statuses after saving
+                    checkStatus('/check_mqtt_status', 'mqtt-message', 'mqtt-icon', 'MQTT connection is active.', 'MQTT connection is inactive.');
+                    checkStatus('/check_chekt_status', 'chekt-message', 'chekt-icon', 'CHEKT server is alive.', 'Failed to connect to CHEKT server.');
                 },
                 error: function (xhr, status, error) {
                     addToLog('Error: ' + xhr.responseText);
