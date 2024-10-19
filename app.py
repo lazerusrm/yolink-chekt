@@ -18,8 +18,11 @@ app = Flask(__name__)
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s', filename='application.log')
 logger = logging.getLogger()
 
-# Load configuration from file or memory
+# Fixed file paths
 config_file = "config.yaml"
+devices_file = "devices.yaml"
+mappings_file = "mappings.yaml"
+
 config_data = {}
 
 # Load configuration
@@ -29,22 +32,36 @@ def load_config():
         config_data = yaml.safe_load(file)
     return config_data
 
+# Save configuration
 def save_config(data):
     global config_data
     config_data = data
     with open(config_file, 'w') as file:
         yaml.dump(data, file)
 
+# Generic load function for other YAML files
 def load_yaml(file_path):
     if os.path.exists(file_path):
         with open(file_path, 'r') as yaml_file:
             return yaml.safe_load(yaml_file)
     return {}
 
+# Generic save function for other YAML files
 def save_to_yaml(file_path, data):
     with open(file_path, 'w') as yaml_file:
         yaml.dump(data, yaml_file)
 
+# Specifically load devices.yaml
+def load_devices():
+    return load_yaml(devices_file)
+
+# Specifically load mappings.yaml
+def load_mappings():
+    return load_yaml(mappings_file)
+
+# Specifically save mappings.yaml
+def save_mappings(data):
+    save_to_yaml(mappings_file, data)
 
 def is_token_expired():
     """
