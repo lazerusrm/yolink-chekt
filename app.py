@@ -115,12 +115,14 @@ def handle_token_expiry():
 
 def force_generate_token_and_client():
     """
-    This function generates a new MQTT client ID on startup and only generates a new token if the current one is expired.
+    This function generates a new MQTT client ID on startup and ensures a valid token is always used.
+    It generates a new token if the current one is expired or missing.
     """
     logger.info("Checking if a new Yolink token is needed and generating a new MQTT client ID on startup...")
     
+    # Load configuration
     config = load_config()
-    
+
     # Check if token is expired or missing
     if is_token_expired():
         logger.info("Yolink token is expired or missing. Generating a new token...")
@@ -131,9 +133,9 @@ def force_generate_token_and_client():
     else:
         token = config['yolink']['token']
         logger.info("Yolink token is still valid.")
-    
+
     # Always generate a new client ID for MQTT
-    client_id = str(uuid.uuid4())  
+    client_id = str(uuid.uuid4())
     logger.debug(f"Generated new Client ID for MQTT: {client_id}")
     
     return token, client_id
@@ -336,7 +338,7 @@ def check_chekt_status():
 
 @app.route('/refresh_yolink_devices', methods=['GET'])
 def refresh_yolink_devices():
-    global mqtt_client_instance  # Access the global instance
+    global mqtt_client_instance
     config = load_config()
     token = config['yolink'].get('token')
 
@@ -348,36 +350,23 @@ def refresh_yolink_devices():
     # Fetch home info
     home_info = yolink_api.get_home_info()
     if not home_info or home_info.get("code") != "000000":
-        logger.error(f"Failed to retrieve home info: {home_info.get('desc', 'Unknown error')}")
         return jsonify({"status": "error", "message": f"Failed to retrieve home info: {home_info.get('desc', 'Unknown error')}"})
 
-    home_id = home_info["data"]["id"]  # Extract the home ID
-    logger.info(f"Successfully retrieved Home ID: {home_id}")
-
+    home_id = home_info["data"]["id"]
+    
     # Fetch devices
     devices = yolink_api.get_device_list()
-
-    # Log the full response for debugging purposes
-    logger.debug(f"YoLink API device response: {devices}")
-
     if not devices or devices.get("code") != "000000":
-        logger.error(f"Failed to retrieve devices: {devices.get('desc', 'Unknown error')}")
         return jsonify({"status": "error", "message": f"Failed to retrieve devices: {devices.get('desc', 'Unknown error')}"})
-
-    # Check if devices list is empty
-    if not devices["data"]["devices"]:
-        logger.error("Device list is empty.")
-        return jsonify({"status": "error", "message": "Device list is empty."})
 
     # Save home_id and devices in devices.yaml
     data_to_save = {
-        "homes": {"id": home_id},  # Store home ID here
+        "homes": {"id": home_id},
         "devices": devices["data"]["devices"]
     }
     save_to_yaml("devices.yaml", data_to_save)
-    logger.info(f"Successfully saved {len(devices['data']['devices'])} devices.")
 
-    # After saving the devices, restart the MQTT client
+    # Restart the MQTT client after refreshing devices
     if mqtt_client_instance:
         logger.info("Stopping existing MQTT client...")
         mqtt_client_instance.disconnect()  # Disconnect the current client
@@ -680,15 +669,19 @@ def test_chekt_api():
         return response
                 
 def run_mqtt_client():
+    """
+    This function starts the MQTT client with the generated token and client ID.
+    """
     config = load_config()
+    
     try:
-        # Force new token and client ID
+        # Generate new token and client ID
         token, client_id = force_generate_token_and_client()
         if not token:
             logger.error("Failed to obtain a valid Yolink token. MQTT client will not start.")
             return  # Exit if token generation fails
 
-        # Fetch the Home ID from the devices.yaml file
+        # Load the Home ID from the devices.yaml file
         devices_data = load_yaml(config['files']['device_file'])
         home_id = devices_data.get('homes', {}).get('id')
 
@@ -696,17 +689,12 @@ def run_mqtt_client():
             logger.error("Home ID not found in devices.yaml. Please refresh YoLink devices.")
             return  # Exit if no Home ID is found
 
-        # Create the MQTT client and set up callbacks
+        # Set up the MQTT client and subscribe to the correct topic
         mqtt_client = mqtt.Client(client_id=client_id, userdata={"topic": f"yl-home/{home_id}/+/report"})
         mqtt_client.on_connect = on_connect
         mqtt_client.on_message = on_message
 
-        # Log the client ID, token, and Home ID being used for debugging
-        logger.info(f"MQTT Client ID: {client_id}")
-        logger.info(f"MQTT Access Token (truncated): {token[:10]}...")
-        logger.info(f"Subscribing to MQTT topic: yl-home/{home_id}/+/report")
-
-        # Set up the MQTT credentials with the Yolink token
+        # Set up MQTT credentials with the Yolink token
         mqtt_client.username_pw_set(username=token, password=None)
 
         # Connect to the MQTT broker
