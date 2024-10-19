@@ -72,10 +72,6 @@
         .hidden {
             display: none;
         }
-
-        .form-section {
-            margin-bottom: 40px;
-        }
     </style>
 </head>
 
@@ -105,9 +101,17 @@
             <button type="submit" class="btn btn-primary">Save Configuration</button>
         </form>
 
-        <!-- Section for mapping Yolink devices to CHEKT -->
+        <!-- Section for refreshing Yolink devices -->
+        <div class="mb-3">
+            <button type="button" id="refresh-devices-btn" class="btn btn-success">Refresh Yolink Devices</button>
+            <div id="yolink-status" class="status">
+                <img src="" alt="" id="yolink-icon" class="hidden">
+                <span id="yolink-message"></span>
+            </div>
+        </div>
+
+        <!-- Section for listing Yolink devices and mapping them to CHEKT zones and alerts -->
         <form id="mapping-form">
-            <h2>Yolink to CHEKT Mapping</h2>
             <table class="table">
                 <thead>
                     <tr>
