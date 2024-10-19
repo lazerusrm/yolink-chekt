@@ -222,6 +222,13 @@ def save_mapping():
 
         # Load the existing mappings from the file
         existing_mappings = load_yaml('mappings.yaml') or {'mappings': [], 'alert_mapping': []}
+        
+        # Initialize 'mappings' if not present
+        if 'mappings' not in existing_mappings:
+            existing_mappings['mappings'] = []
+        if 'alert_mapping' not in existing_mappings:
+            existing_mappings['alert_mapping'] = []
+
         logger.debug(f"Existing mappings before update: {existing_mappings}")
 
         # Iterate over the new mappings and update or append them to the existing mappings
@@ -235,14 +242,11 @@ def save_mapping():
             existing_mapping = next((m for m in existing_mappings['mappings'] if m['yolink_device_id'] == device_id), None)
 
             if existing_mapping:
-                # Update the existing mapping with the new zone and event/alert mappings
-                existing_mapping['chekt_zone'] = chekt_zone
+                # Update the existing mapping with the new zone
+                existing_mapping.update(new_mapping)  # This updates all fields in new_mapping
             else:
                 # Append new device mapping if it doesn't exist
-                existing_mappings['mappings'].append({
-                    'yolink_device_id': device_id,
-                    'chekt_zone': chekt_zone
-                })
+                existing_mappings['mappings'].append(new_mapping)
 
             # Handle the alert mapping
             if yolink_event and chekt_alert:
@@ -269,6 +273,7 @@ def save_mapping():
     except Exception as e:
         logger.error(f"Error in save_mapping: {str(e)}", exc_info=True)
         return jsonify({"status": "error", "message": "Internal Server Error"}), 500
+
 
 @app.route('/refresh_yolink_devices', methods=['GET'])
 def refresh_yolink_devices():
@@ -300,7 +305,7 @@ def refresh_yolink_devices():
     }
     save_to_yaml("devices.yaml", data_to_save)
 
-    # Restart the MQTT client after successful device refresh
+    # After saving the devices, restart the MQTT client
     if mqtt_client_instance:
         logger.info("Stopping existing MQTT client...")
         mqtt_client_instance.disconnect()  # Disconnect the current client
@@ -325,7 +330,10 @@ def index():
     # Prepare a dictionary to easily access the mappings by device ID
     device_mappings = {m['yolink_device_id']: m for m in mappings}
 
-    return render_template('index.html', devices=devices, mappings=device_mappings)
+    # Load configuration for pre-filling the form
+    config_data = load_config()
+
+    return render_template('index.html', devices=devices, mappings=device_mappings, config=config_data)
 
 @app.route('/get_homes', methods=['GET'])
 def get_homes():
@@ -644,13 +652,17 @@ def run_mqtt_client():
 def refresh_and_save_devices():
     logger.info("Refreshing YoLink devices on startup...")
 
-    # Refresh devices by directly calling the function
-    refresh_response = refresh_yolink_devices()
-    
-    if isinstance(refresh_response, dict) and refresh_response.get('status') == 'success':
-        logger.info("YoLink devices refreshed successfully and saved.")
-    else:
-        logger.error(f"Failed to refresh YoLink devices. Response: {refresh_response}")
+    try:
+        # Refresh devices by directly calling the function
+        refresh_response = refresh_yolink_devices()
+
+        if isinstance(refresh_response, dict) and refresh_response.get('status') == 'success':
+            logger.info("YoLink devices refreshed successfully and saved.")
+        else:
+            logger.error(f"Failed to refresh YoLink devices. Response: {refresh_response}")
+    except Exception as e:
+        logger.error(f"Error refreshing YoLink devices: {str(e)}")
+
 
 # Start the MQTT client in a separate thread
 mqtt_thread = threading.Thread(target=run_mqtt_client)

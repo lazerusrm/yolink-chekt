@@ -19,6 +19,7 @@
             padding: 20px;
             border-radius: 10px;
             box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            margin-bottom: 30px;
         }
 
         label {
@@ -71,24 +72,42 @@
         .hidden {
             display: none;
         }
+
+        .form-section {
+            margin-bottom: 40px;
+        }
     </style>
 </head>
 
 <body>
     <div class="container">
-        <h1>Yolink to CHEKT Mapping</h1>
+        <h1>Yolink to CHEKT Configuration</h1>
 
-        <!-- Section for refreshing Yolink devices -->
-        <div class="mb-3">
-            <button type="button" id="refresh-devices-btn" class="btn btn-primary">Refresh Yolink Devices</button>
-            <div id="yolink-status" class="status">
-                <img src="" alt="" id="yolink-icon" class="hidden">
-                <span id="yolink-message"></span>
-            </div>
-        </div>
+        <!-- Form for Yolink and CHEKT Configuration -->
+        <form id="config-form" class="form-section">
+            <h2>Yolink Configuration</h2>
+            <label for="uaid">UAID</label>
+            <input type="text" id="uaid" name="uaid" value="{{ config.yolink.uaid }}" required>
 
-        <!-- Section for listing Yolink devices and mapping them to CHEKT zones and alerts -->
+            <label for="secret_key">Secret Key</label>
+            <input type="text" id="secret_key" name="secret_key" value="{{ config.yolink.secret_key }}" required>
+
+            <h2>CHEKT Configuration</h2>
+            <label for="chekt_ip">CHEKT IP Address</label>
+            <input type="text" id="chekt_ip" name="chekt_ip" value="{{ config.chekt.ip }}" required>
+
+            <label for="chekt_port">CHEKT Port</label>
+            <input type="number" id="chekt_port" name="chekt_port" value="{{ config.chekt.port }}" required>
+
+            <label for="chekt_token">CHEKT API Token</label>
+            <input type="text" id="chekt_token" name="chekt_token" value="{{ config.chekt.api_token }}" required>
+
+            <button type="submit" class="btn btn-primary">Save Configuration</button>
+        </form>
+
+        <!-- Section for mapping Yolink devices to CHEKT -->
         <form id="mapping-form">
+            <h2>Yolink to CHEKT Mapping</h2>
             <table class="table">
                 <thead>
                     <tr>
@@ -151,6 +170,36 @@
             $('#' + iconId).attr('src', icon).removeClass('hidden');
             $('#' + elementId).text(message);
         }
+
+        // Save configuration form
+        $('#config-form').on('submit', function (e) {
+            e.preventDefault();
+
+            var configData = {
+                yolink: {
+                    uaid: $('#uaid').val(),
+                    secret_key: $('#secret_key').val()
+                },
+                chekt: {
+                    ip: $('#chekt_ip').val(),
+                    port: $('#chekt_port').val(),
+                    api_token: $('#chekt_token').val()
+                }
+            };
+
+            $.ajax({
+                type: "POST",
+                url: "/save_config",
+                contentType: "application/json",
+                data: JSON.stringify(configData),
+                success: function (response) {
+                    addToLog(response.message);
+                },
+                error: function (xhr, status, error) {
+                    addToLog('Error: ' + xhr.responseText);
+                }
+            });
+        });
 
         // Handle the form submission to save the mappings
         $('#mapping-form').on('submit', function (e) {
