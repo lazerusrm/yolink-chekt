@@ -675,7 +675,7 @@ def on_message(client, userdata, msg):
             logger.info(f"Device ID: {device_id}, State: {state}")
 
             # Load the mappings from mappings.yaml
-            mappings = load_yaml(config_data['files']['map_file']).get('mappings', [])
+            mappings = load_yaml(mappings_file).get('mappings', [])
             logger.debug(f"Loaded mappings: {mappings}")
 
             # Find the corresponding mapping for the device
