@@ -209,6 +209,27 @@ class YoLinkAPI:
             logger.error(f"Error retrieving device list: {str(e)}")
             return None
 
+@app.route('/save_config', methods=['POST'])
+def save_config_route():
+    try:
+        # Get the incoming configuration data from the POST request
+        config_data = request.get_json()
+        
+        if not config_data:
+            return jsonify({"status": "error", "message": "Invalid or empty configuration data."}), 400
+        
+        # Log the received configuration for debugging
+        logger.debug(f"Received configuration data: {config_data}")
+        
+        # Save the configuration to the config.yaml file
+        save_config(config_data)
+        
+        return jsonify({"status": "success", "message": "Configuration saved successfully."})
+    
+    except Exception as e:
+        logger.error(f"Error saving configuration: {str(e)}", exc_info=True)
+        return jsonify({"status": "error", "message": "Internal Server Error"}), 500
+
 @app.route('/save_mapping', methods=['POST'])
 def save_mapping():
     try:
