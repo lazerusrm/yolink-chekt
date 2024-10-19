@@ -35,9 +35,20 @@ def load_config():
 # Save configuration
 def save_config(data):
     global config_data
-    config_data = data
+    
+    # Merge incoming data with existing config, so static sections like 'mqtt' remain intact
+    config_data.update(data)
+
+    # Ensure MQTT section is populated with defaults if not present
+    if 'mqtt' not in config_data:
+        config_data['mqtt'] = {
+            'url': 'mqtt://api.yosmart.com',
+            'port': 8003,
+            'topic': 'yl-home/${Home ID}/+/report'
+        }
+    
     with open(config_file, 'w') as file:
-        yaml.dump(data, file)
+        yaml.dump(config_data, file)
 
 # Generic load function for other YAML files
 def load_yaml(file_path):
