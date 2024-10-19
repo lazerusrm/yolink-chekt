@@ -30,7 +30,16 @@ def load_config():
     global config_data
     with open(config_file, 'r') as file:
         config_data = yaml.safe_load(file)
+    
+    # Provide default MQTT configuration if not present
+    if 'mqtt' not in config_data:
+        config_data['mqtt'] = {
+            'url': 'mqtt://api.yosmart.com',
+            'port': 8003,
+            'topic': 'yl-home/${Home ID}/+/report'
+        }
     return config_data
+
 
 # Save configuration
 def save_config(data):
@@ -707,16 +716,27 @@ def run_mqtt_client():
             logger.error("Failed to obtain a valid Yolink token. MQTT client will not start.")
             return  # Exit if token generation fails
 
-        # Directly load the devices.yaml file
-        devices_data = load_yaml('devices.yaml')
-        
+        # Load Home ID from devices.yaml
+        devices_data = load_yaml(devices_file)
         home_id = devices_data.get('homes', {}).get('id')
         if not home_id:
             logger.error("Home ID not found in devices.yaml. Please refresh YoLink devices.")
             return  # Exit if no Home ID is found
 
+        # Fetch MQTT configuration
+        try:
+            mqtt_broker_url = config['mqtt']['url'].replace("mqtt://", "")
+            mqtt_broker_port = int(config['mqtt']['port'])
+            mqtt_topic = config['mqtt']['topic'].replace("${Home ID}", home_id)
+        except KeyError as e:
+            logger.error(f"Missing 'mqtt' configuration: {str(e)}")
+            return  # Exit if any MQTT configuration is missing
+
+        # Log the MQTT broker details
+        logger.debug(f"MQTT Broker URL: {mqtt_broker_url}, Port: {mqtt_broker_port}, Topic: {mqtt_topic}")
+
         # Set up the MQTT client and subscribe to the correct topic
-        mqtt_client = mqtt.Client(client_id=client_id, userdata={"topic": f"yl-home/{home_id}/+/report"})
+        mqtt_client = mqtt.Client(client_id=client_id, userdata={"topic": mqtt_topic})
         mqtt_client.on_connect = on_connect
         mqtt_client.on_message = on_message
 
@@ -724,8 +744,6 @@ def run_mqtt_client():
         mqtt_client.username_pw_set(username=token, password=None)
 
         # Connect to the MQTT broker
-        mqtt_broker_url = config['mqtt']['url'].replace("mqtt://", "")
-        mqtt_broker_port = int(config['mqtt']['port'])
         logger.info(f"Connecting to MQTT broker at {mqtt_broker_url} on port {mqtt_broker_port}")
         mqtt_client.connect(mqtt_broker_url, mqtt_broker_port)
 
