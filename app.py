@@ -310,14 +310,26 @@ def refresh_yolink_devices():
     # Fetch home info
     home_info = yolink_api.get_home_info()
     if not home_info or home_info.get("code") != "000000":
+        logger.error(f"Failed to retrieve home info: {home_info.get('desc', 'Unknown error')}")
         return jsonify({"status": "error", "message": f"Failed to retrieve home info: {home_info.get('desc', 'Unknown error')}"})
 
     home_id = home_info["data"]["id"]  # Extract the home ID
+    logger.info(f"Successfully retrieved Home ID: {home_id}")
 
     # Fetch devices
     devices = yolink_api.get_device_list()
+
+    # Log the full response for debugging purposes
+    logger.debug(f"YoLink API device response: {devices}")
+
     if not devices or devices.get("code") != "000000":
+        logger.error(f"Failed to retrieve devices: {devices.get('desc', 'Unknown error')}")
         return jsonify({"status": "error", "message": f"Failed to retrieve devices: {devices.get('desc', 'Unknown error')}"})
+
+    # Check if devices list is empty
+    if not devices["data"]["devices"]:
+        logger.error("Device list is empty.")
+        return jsonify({"status": "error", "message": "Device list is empty."})
 
     # Save home_id and devices in devices.yaml
     data_to_save = {
@@ -325,6 +337,7 @@ def refresh_yolink_devices():
         "devices": devices["data"]["devices"]
     }
     save_to_yaml("devices.yaml", data_to_save)
+    logger.info(f"Successfully saved {len(devices['data']['devices'])} devices.")
 
     # After saving the devices, restart the MQTT client
     if mqtt_client_instance:
