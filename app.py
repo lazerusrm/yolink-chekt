@@ -721,19 +721,10 @@ def run_mqtt_client():
         logger.error(f"MQTT client encountered an error: {str(e)}")
 
 def refresh_and_save_devices():
-    """
-    Refresh the YoLink devices, generate token if expired, and save devices list.
-    """
     logger.info("Refreshing YoLink devices on startup...")
 
     try:
-        # Ensure a valid token is generated or available
-        token = handle_token_expiry()
-        if not token:
-            logger.error("No valid token available. Exiting refresh process.")
-            return
-
-        # Proceed with refreshing devices
+        # Refresh devices by directly calling the function
         refresh_response = refresh_yolink_devices()
 
         if isinstance(refresh_response, dict) and refresh_response.get('status') == 'success':
@@ -741,7 +732,7 @@ def refresh_and_save_devices():
         else:
             logger.error(f"Failed to refresh YoLink devices. Response: {refresh_response}")
     except Exception as e:
-        logger.error(f"Error refreshing YoLink devices: {str(e)}")\
+        logger.error(f"Error refreshing YoLink devices: {str(e)}")
 
 # Start the MQTT client in a separate thread
 mqtt_thread = threading.Thread(target=run_mqtt_client)
