@@ -136,8 +136,8 @@ def force_generate_token_and_client():
     It generates a new token if the current one is expired or missing.
     """
     logger.info("Checking if a new Yolink token is needed and generating a new MQTT client ID on startup...")
-
-    # Load the configuration to get UAID and secret_key
+    
+    # Load configuration
     config = load_config()
 
     # Check if token is expired or missing
@@ -154,9 +154,9 @@ def force_generate_token_and_client():
     # Always generate a new client ID for MQTT
     client_id = str(uuid.uuid4())
     logger.debug(f"Generated new Client ID for MQTT: {client_id}")
-
-    return token, client_id
     
+    return token, client_id
+
 def yolink_api_test():
     # Load configuration to get token
     config = load_config()
@@ -684,34 +684,38 @@ def test_chekt_api():
         return response
                 
 def run_mqtt_client():
+    """
+    This function starts the MQTT client with the generated token and client ID.
+    """
     config = load_config()
-    
+
     try:
-        # Generate token and client ID
+        # Generate new token and client ID
         token, client_id = force_generate_token_and_client()
         if not token:
-            logger.error("Failed to obtain Yolink token. MQTT client will not start.")
-            return
+            logger.error("Failed to obtain a valid Yolink token. MQTT client will not start.")
+            return  # Exit if token generation fails
 
-        # Load the Home ID from devices.yaml
-        devices_data = load_yaml(config['files']['device_file'])
+        # Directly load the devices.yaml file
+        devices_data = load_yaml('devices.yaml')
+        
         home_id = devices_data.get('homes', {}).get('id')
-
         if not home_id:
             logger.error("Home ID not found in devices.yaml. Please refresh YoLink devices.")
-            return
+            return  # Exit if no Home ID is found
 
-        # Create the MQTT client and set up callbacks
+        # Set up the MQTT client and subscribe to the correct topic
         mqtt_client = mqtt.Client(client_id=client_id, userdata={"topic": f"yl-home/{home_id}/+/report"})
         mqtt_client.on_connect = on_connect
         mqtt_client.on_message = on_message
 
-        # Set up MQTT credentials
+        # Set up MQTT credentials with the Yolink token
         mqtt_client.username_pw_set(username=token, password=None)
 
         # Connect to the MQTT broker
         mqtt_broker_url = config['mqtt']['url'].replace("mqtt://", "")
         mqtt_broker_port = int(config['mqtt']['port'])
+        logger.info(f"Connecting to MQTT broker at {mqtt_broker_url} on port {mqtt_broker_port}")
         mqtt_client.connect(mqtt_broker_url, mqtt_broker_port)
 
         # Start the MQTT loop
