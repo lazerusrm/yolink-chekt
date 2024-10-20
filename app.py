@@ -179,21 +179,28 @@ def force_generate_token_and_client():
     return token, client_id
 
 def update_device_data(device_id, payload):
+    # Hardcoded path to the devices.yaml file
+    file_path = "devices.yaml"
+
     # Load the devices.yaml file
-    devices_data = load_yaml(devices_file)
+    devices_data = load_yaml(file_path)
 
     now = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S')
-    
+
     # Find the device in devices.yaml based on the device ID
-    for device in devices_data.get('devices', []):
+    for device in devices_data['devices']:
         if device['deviceId'] == device_id:
-            logger.info(f"Updating data for device {device_id}")
-            
-            # Update state, battery, and signal with new data if available
+            # Update the device's state
             device['state'] = payload['data'].get('state', device.get('state', 'unknown'))
+
+            # Update the device's battery if available
             device['battery'] = payload['data'].get('battery', device.get('battery', 'unknown'))
-            device['signal'] = payload['data'].get('loraInfo', {}).get('signal', device.get('signal', 'unknown'))
-            
+
+            # Update power-related information if applicable (specific to Outlet)
+            if 'power' in payload['data']:
+                device['power'] = payload['data'].get('power', device.get('power', 'unknown'))
+                device['watt'] = payload['data'].get('watt', device.get('watt', 'unknown'))
+
             # Convert temperature to Fahrenheit if available
             temperature_c = payload['data'].get('devTemperature')
             if temperature_c is not None:
@@ -201,17 +208,15 @@ def update_device_data(device_id, payload):
             else:
                 device['devTemperature'] = device.get('devTemperature', 'unknown')
 
-            # Update last_seen timestamp
-            device['last_seen'] = now
-            logger.debug(f"Device {device_id} updated: {device}")
+            # Update signal strength from LoRa info
+            lora_info = payload['data'].get('loraInfo', {})
+            device['signal'] = lora_info.get('signal', device.get('signal', 'unknown'))
 
-            break
-    else:
-        logger.warning(f"Device ID {device_id} not found in devices.yaml")
-    
+            # Update the last seen timestamp
+            device['last_seen'] = now
+
     # Save the updated devices.yaml
-    save_to_yaml(devices_file, devices_data)
-    logger.info(f"Devices file saved with updated data for {device_id}")
+    save_to_yaml(file_path, devices_data)
 
 def yolink_api_test():
     # Load configuration to get token
