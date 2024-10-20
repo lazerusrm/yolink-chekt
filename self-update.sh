@@ -75,7 +75,7 @@ docker compose down || handle_error "Docker Compose down failed."
 docker compose up --build -d || handle_error "Docker Compose up failed."
 
 # Check if the config.html file is in the container after the rebuild
-container_name=$(docker ps --format '{{.Names}}' | grep yolink_chekt_service)
+container_name=$(docker ps --filter "name=yolink_chekt" --format '{{.Names}}')
 if [ -z "$container_name" ]; then
   handle_error "Service container not found."
 fi
