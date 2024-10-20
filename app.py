@@ -616,32 +616,31 @@ def on_connect(client, userdata, flags, rc):
         logger.error(f"Failed to connect to MQTT broker. Return code: {rc}")
         
 def on_message(client, userdata, msg):
+    # Only log basic info about the message received
     logger.info(f"Received message on topic {msg.topic}")
 
     try:
-        # Log the raw payload first
-        payload_str = msg.payload.decode('utf-8')
-        logger.info(f"Raw payload: {payload_str}")
-
-        payload = json.loads(payload_str)
+        # Decode and parse the payload
+        payload = json.loads(msg.payload.decode("utf-8"))
         device_id = payload.get('deviceId')
-        event_type = payload.get('event', 'Unknown event').lower()  # Ensure event_type is case-insensitive
         state = payload['data'].get('state', 'Unknown state')
+        event_type = payload.get('event', 'Unknown event').lower()  # Ensure event_type is case-insensitive
 
         if device_id:
+            # Log key information about the device and event
             logger.info(f"Device ID: {device_id}, State: {state}, Event Type: {event_type}")
 
-            # Update device data with all relevant fields (battery, temperature, signal, etc.)
+            # Update device data (for both alerts and reports)
             update_device_data(device_id, payload)
 
-            # Check if the event is an alert (.Alert) to trigger the system
+            # Check if the event is an alert (".Alert" events trigger the system)
             if "alert" in event_type:
                 device_type = parse_device_type(event_type, payload)
 
                 if device_type:
-                    logger.info(f"Device {device_id} is identified as {device_type}")
+                    logger.info(f"Device {device_id} identified as {device_type}")
 
-                    # Determine if we should trigger an event based on the state and device type
+                    # Determine if an event should be triggered based on state and device type
                     if should_trigger_event(state, device_type):
                         chekt_bridge_channel = get_chekt_zone(device_id)  # Retrieve CHEKT zone dynamically
                         chekt_event = map_state_to_event(state, device_type)  # Map state to CHEKT event
@@ -650,16 +649,18 @@ def on_message(client, userdata, msg):
                             logger.info(f"Triggering CHEKT bridge channel {chekt_bridge_channel} for device {device_id} with event {chekt_event}")
                             trigger_chekt_event(chekt_bridge_channel, chekt_event)
                         else:
-                            logger.info(f"Device {device_id} has no valid CHEKT bridge channel mapping. Skipping.")
+                            logger.info(f"Device {device_id} has no valid chekt_bridge_channel mapping. Skipping.")
                     else:
                         logger.info(f"State {state} for device {device_id} does not trigger an event. Skipping.")
                 else:
-                    logger.warning(f"Device type could not be determined for device {device_id}. Skipping.")
+                    logger.warning(f"Could not determine device type for {device_id}. Skipping.")
             else:
-                logger.info(f"Received a report event ({event_type}). Data updated, no system trigger.")
+                logger.info(f"Received a report event ({event_type}). No system trigger, data updated.")
         else:
-            logger.warning("Received message without device ID.")
+            logger.warning("Message received without a valid device ID.")
 
+    except json.JSONDecodeError:
+        logger.error(f"Failed to decode JSON payload: {msg.payload}")
     except Exception as e:
         logger.error(f"Error processing message: {str(e)}")
 
@@ -760,7 +761,7 @@ def on_message(client, userdata, msg):
 
             # Load the mappings from mappings.yaml
             mappings = load_yaml(mappings_file).get('mappings', [])
-            logger.debug(f"Loaded mappings: {mappings}")
+            #logger.debug(f"Loaded mappings: {mappings}")
 
             # Find the corresponding mapping for the device
             mapping = next((m for m in mappings if m['yolink_device_id'] == device_id), None)
