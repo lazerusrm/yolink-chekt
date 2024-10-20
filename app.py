@@ -1,4 +1,5 @@
 import yaml
+from datetime import datetime
 import base64
 import uuid
 import paho.mqtt.client as mqtt
@@ -176,6 +177,32 @@ def force_generate_token_and_client():
     logger.debug(f"Generated new Client ID for MQTT: {client_id}")
     
     return token, client_id
+
+def update_device_data(device_id, payload):
+    with open('devices.yaml', 'r') as file:
+        devices_data = yaml.safe_load(file)
+
+    now = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S')
+    
+    # Find the device based on the serial number (device_id)
+    for device in devices_data['device_parameters']:
+        if device['serial_number'] == device_id:
+            
+            # Update fields with new data from the payload
+            device['state'] = payload['data'].get('state', device.get('state'))
+            device['battery'] = payload['data'].get('battery', device.get('battery'))
+            
+            # Convert temperature to Fahrenheit
+            temperature_c = payload['data'].get('devTemperature')
+            if temperature_c is not None:
+                device['devTemperature'] = celsius_to_fahrenheit(temperature_c)
+            
+            device['signal'] = payload['data']['loraInfo'].get('signal', device.get('signal'))
+            device['last_seen'] = now
+
+    # Save the updated devices.yaml
+    with open('devices.yaml', 'w') as file:
+        yaml.safe_dump(devices_data, file)
 
 def yolink_api_test():
     # Load configuration to get token
@@ -547,31 +574,37 @@ def on_message(client, userdata, msg):
         payload = json.loads(msg.payload.decode("utf-8"))
         device_id = payload.get('deviceId')
         state = payload['data'].get('state', 'Unknown state')
-        event_type = payload.get('event', 'Unknown event')
+        event_type = payload.get('event', 'Unknown event').lower()  # Ensure event_type is case-insensitive
 
         if device_id:
             logger.info(f"Device ID: {device_id}, State: {state}, Event Type: {event_type}")
 
-            # Determine the device type based on the event or other payload fields
-            device_type = parse_device_type(event_type, payload)
+            # Update device data (for both alerts and reports)
+            update_device_data(device_id, payload)
 
-            if device_type:
-                logger.info(f"Device {device_id} is identified as {device_type}")
+            # Check if the event is an alert (.Alert) to trigger the system
+            if "alert" in event_type:
+                device_type = parse_device_type(event_type, payload)
 
-                # Determine if we should trigger an event based on the state and device type
-                if should_trigger_event(state, device_type):
-                    chekt_bridge_channel = get_chekt_zone(device_id)  # Retrieve CHEKT zone dynamically
-                    chekt_event = map_state_to_event(state, device_type)  # Map state to CHEKT event
+                if device_type:
+                    logger.info(f"Device {device_id} is identified as {device_type}")
 
-                    if chekt_bridge_channel and chekt_bridge_channel.strip():  # Ensure it's not empty
-                        logger.info(f"Triggering CHEKT bridge channel {chekt_bridge_channel} for device {device_id} with event {chekt_event}")
-                        trigger_chekt_event(chekt_bridge_channel, chekt_event)
+                    # Determine if we should trigger an event based on the state and device type
+                    if should_trigger_event(state, device_type):
+                        chekt_bridge_channel = get_chekt_zone(device_id)  # Retrieve CHEKT zone dynamically
+                        chekt_event = map_state_to_event(state, device_type)  # Map state to CHEKT event
+
+                        if chekt_bridge_channel and chekt_bridge_channel.strip():  # Ensure it's not empty
+                            logger.info(f"Triggering CHEKT bridge channel {chekt_bridge_channel} for device {device_id} with event {chekt_event}")
+                            trigger_chekt_event(chekt_bridge_channel, chekt_event)
+                        else:
+                            logger.info(f"Device {device_id} has no valid chekt_bridge_channel mapping. Skipping.")
                     else:
-                        logger.info(f"Device {device_id} has no valid chekt_bridge_channel mapping. Skipping.")
+                        logger.info(f"State {state} for device {device_id} does not trigger an event. Skipping.")
                 else:
-                    logger.info(f"State {state} for device {device_id} does not trigger an event. Skipping.")
+                    logger.warning(f"Device type could not be determined for device {device_id}. Skipping.")
             else:
-                logger.warning(f"Device type could not be determined for device {device_id}. Skipping.")
+                logger.info(f"Received a report event ({event_type}). Data updated, no system trigger.")
         else:
             logger.warning("Received message without device ID.")
 
@@ -707,6 +740,8 @@ def run_mqtt_client():
     """
     This function starts the MQTT client with the generated token and client ID.
     """
+    global mqtt_client_instance  # Ensure the global variable is used
+    
     config = load_config()
 
     try:
@@ -742,6 +777,9 @@ def run_mqtt_client():
 
         # Set up MQTT credentials with the Yolink token
         mqtt_client.username_pw_set(username=token, password=None)
+
+        # Update the global variable for the MQTT client
+        mqtt_client_instance = mqtt_client
 
         # Connect to the MQTT broker
         logger.info(f"Connecting to MQTT broker at {mqtt_broker_url} on port {mqtt_broker_port}")

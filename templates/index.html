@@ -85,6 +85,18 @@
         table {
             background-color: #3a3a3a; /* Slightly lighter dark background for tables */
         }
+
+        /* Additional styling for sensor data */
+        .sensor-data {
+            background-color: #4a4a4a;
+            padding: 10px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+
+        .sensor-data p {
+            margin: 5px 0;
+        }
     </style>
 </head>
 
@@ -130,6 +142,16 @@
                 <span id="config-message"></span>
             </div>
         </form>
+
+        <!-- Sensor Data Section -->
+        <div class="sensor-data">
+            <h3>Sensor Data</h3>
+            <p>Sensor Name: <span id="sensor-name">Loading...</span></p>
+            <p>State: <span id="sensor-state">Loading...</span></p>
+            <p>Battery: <span id="sensor-battery">Loading...</span></p>
+            <p>Temperature: <span id="sensor-temperature">Loading...</span></p>
+            <p>Last Seen: <span id="sensor-last-seen">Loading...</span></p>
+        </div>
 
         <!-- Section for refreshing Yolink devices -->
         <div class="mb-3">
@@ -222,10 +244,29 @@
             });
         }
 
+        // Function to update sensor data dynamically
+        function updateSensorData(sensorData) {
+            $('#sensor-name').text(sensorData.name);
+            $('#sensor-state').text(sensorData.state);
+            $('#sensor-battery').text(sensorData.battery + '%');
+            $('#sensor-temperature').text(sensorData.devTemperature + '°F');
+            $('#sensor-last-seen').text(sensorData.last_seen);
+        }
+
         // Check MQTT and CHEKT statuses on page load
         $(document).ready(function () {
             checkStatus('/check_mqtt_status', 'mqtt-message', 'mqtt-icon', 'MQTT connection is active.', 'MQTT connection is inactive.');
             checkStatus('/check_chekt_status', 'chekt-message', 'chekt-icon', 'CHEKT server is alive.', 'Failed to connect to CHEKT server.');
+
+            // Example sensor data for testing
+            let sensorData = {
+                name: "Front Door Sensor",
+                state: "closed",
+                battery: 95,
+                devTemperature: 68,  // Converted to Fahrenheit
+                last_seen: "2024-10-20T06:57:04"
+            };
+            updateSensorData(sensorData);
         });
 
         // Save configuration form
