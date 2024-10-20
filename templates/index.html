@@ -84,6 +84,7 @@
             animation-name: slow-spin;
         }
 
+        /* Slow spin animation */
         @keyframes slow-spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
@@ -92,7 +93,7 @@
         /* Fast spin animation */
         .fast-spin {
             animation-name: fast-spin;
-            animation-duration: 2s;  /* Fast spin during data loading */
+            animation-duration: 1s;  /* Fast spin */
         }
 
         @keyframes fast-spin {
@@ -248,40 +249,35 @@
             return { percentage, icon };
         }
 
-        // Function to fetch sensor data and display it
+        // Fetch and update sensor data from the devices.yaml file
         function updateSensorData() {
             toggleSpinnerSpeed(true); // Fast spin when reloading
             $.ajax({
                 type: "GET",
-                url: "/get_sensor_data",  // Ensure this URL is correct
+                url: "/get_sensor_data",  // This endpoint will fetch data from devices.yaml
                 success: function (sensorData) {
                     const sensorList = $('#sensor-list');
                     sensorList.empty(); // Clear the current list
 
-                    // Check if sensor data is loaded correctly
-                    if (sensorData && sensorData.devices) {
-                        sensorData.devices.forEach(sensor => {
-                            const batteryInfo = getBatteryInfo(sensor.battery);
-                            const signalMeter = createSignalMeter(sensor.signal);
-                            
-                            const sensorHTML = `
-                                <div class="sensor">
-                                    <p class="sensor-name">${sensor.name}</p>
-                                    <p class="sensor-data-item">State: ${sensor.state || 'N/A'}</p>
-                                    <p class="sensor-data-item">
-                                        <img src="${batteryInfo.icon}" class="battery-icon" alt="Battery Icon"> 
-                                        Battery: ${batteryInfo.percentage}
-                                    </p>
-                                    <p class="sensor-data-item">Temperature: ${sensor.devTemperature || 'N/A'}°F</p>
-                                    <p class="sensor-data-item">Signal: ${signalMeter}</p>
-                                    <p class="sensor-data-item">Last Seen: ${sensor.last_seen || 'N/A'}</p>
-                                </div>
-                            `;
-                            sensorList.append(sensorHTML);
-                        });
-                    } else {
-                        sensorList.append('<p>No sensor data available.</p>');
-                    }
+                    sensorData.devices.forEach(sensor => {
+                        const batteryInfo = getBatteryInfo(sensor.battery);
+                        const signalMeter = createSignalMeter(sensor.signal);
+                        
+                        const sensorHTML = `
+                            <div class="sensor">
+                                <p class="sensor-name">${sensor.name}</p>
+                                <p class="sensor-data-item">State: ${sensor.state || 'N/A'}</p>
+                                <p class="sensor-data-item">
+                                    <img src="${batteryInfo.icon}" class="battery-icon" alt="Battery Icon"> 
+                                    Battery: ${batteryInfo.percentage}
+                                </p>
+                                <p class="sensor-data-item">Temperature: ${sensor.devTemperature || 'N/A'}°F</p>
+                                <p class="sensor-data-item">Signal: ${signalMeter}</p>
+                                <p class="sensor-data-item">Last Seen: ${sensor.last_seen || 'N/A'}</p>
+                            </div>
+                        `;
+                        sensorList.append(sensorHTML);
+                    });
 
                     toggleSpinnerSpeed(false); // Slow spin after data is updated
                 },
