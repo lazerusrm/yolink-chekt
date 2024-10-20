@@ -67,6 +67,29 @@
             text-decoration: none;
             color: #007BFF;
         }
+
+        /* Rotating loading indicator */
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-top: 4px solid #ffffff;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            margin-left: 10px;
+            vertical-align: middle;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Hide the spinner by default */
+        .hidden {
+            display: none;
+        }
     </style>
 </head>
 
@@ -76,7 +99,7 @@
 
         <!-- Status check for MQTT and CHEKT -->
         <div class="status">
-            <h2>Status</h2>
+            <h2>Status <span id="loading-spinner" class="spinner hidden"></span></h2>
             <div id="mqtt-status" class="status-item">
                 <img src="" alt="" id="mqtt-icon" class="hidden">
                 <span id="mqtt-message">Checking MQTT connection...</span>
@@ -100,6 +123,15 @@
 
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script>
+        // Function to show or hide the loading spinner
+        function toggleLoadingSpinner(show) {
+            if (show) {
+                $('#loading-spinner').removeClass('hidden');
+            } else {
+                $('#loading-spinner').addClass('hidden');
+            }
+        }
+
         // Status check and sensor data updates go here
         function updateStatus(elementId, iconId, message, success) {
             const icon = success ? 'https://img.icons8.com/color/48/000000/checkmark.png' : 'https://img.icons8.com/color/48/000000/cancel.png';
@@ -174,21 +206,31 @@
             return { percentage, icon };
         }
 
-        // Function to compare sensors by last seen time
-        function compareByLastSeen(a, b) {
+        // Function to compare sensors first by last seen and then by name
+        function compareSensors(a, b) {
             const timeA = new Date(a.last_seen).getTime();
             const timeB = new Date(b.last_seen).getTime();
-            return timeB - timeA; // Sort by most recent first
+
+            // First compare by last_seen (most recent first)
+            if (timeA !== timeB) {
+                return timeB - timeA;
+            }
+
+            // If last_seen times are equal, compare by name alphabetically
+            return a.name.localeCompare(b.name);
         }
 
-        // Function to convert to local time and format
+        // Function to convert UTC to local time and format
         function formatLocalTime(isoDateString) {
             const localTime = new Date(isoDateString);
+            // Adjusting by -6 hours for your timezone (offset)
+            localTime.setHours(localTime.getHours() - 6);
             return localTime.toLocaleString();  // Convert to user's local time and format
         }
 
         // Fetch and update sensor data from the devices.yaml file
         function updateSensorData() {
+            toggleLoadingSpinner(true); // Show the loading spinner
             $.ajax({
                 type: "GET",
                 url: "/get_sensor_data",  // This endpoint will fetch data from devices.yaml
@@ -196,7 +238,7 @@
                     const sensorList = $('#sensor-list');
                     sensorList.empty(); // Clear the current list
 
-                    sensorData.devices.sort(compareByLastSeen); // Sort sensors by last seen time
+                    sensorData.devices.sort(compareSensors); // Sort sensors by last seen and then by name
 
                     sensorData.devices.forEach(sensor => {
                         const signalQuality = getSignalQuality(sensor.signal);
@@ -219,9 +261,12 @@
                         `;
                         sensorList.append(sensorHTML);
                     });
+
+                    toggleLoadingSpinner(false); // Hide the loading spinner after data is updated
                 },
                 error: function () {
                     $('#sensor-list').html('<p>Error loading sensor data.</p>');
+                    toggleLoadingSpinner(false); // Hide the loading spinner if there's an error
                 }
             });
         }
