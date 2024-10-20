@@ -97,27 +97,34 @@
             });
         }
 
-        function updateSensorData(sensorData) {
-            $('#sensor-name').text(sensorData.name);
-            $('#sensor-state').text(sensorData.state);
-            $('#sensor-battery').text(sensorData.battery + '%');
-            $('#sensor-temperature').text(sensorData.devTemperature + '°F');
-            $('#sensor-last-seen').text(sensorData.last_seen);
+        // Fetch and update sensor data from the devices.yaml file
+        function updateSensorData() {
+            $.ajax({
+                type: "GET",
+                url: "/get_sensor_data",  // This endpoint will fetch data from devices.yaml
+                success: function (sensorData) {
+                    $('#sensor-name').text(sensorData.name);
+                    $('#sensor-state').text(sensorData.state);
+                    $('#sensor-battery').text(sensorData.battery + '%');
+                    $('#sensor-temperature').text(sensorData.devTemperature + '°F');
+                    $('#sensor-last-seen').text(sensorData.last_seen);
+                },
+                error: function () {
+                    $('#sensor-name').text('Error loading sensor data');
+                    $('#sensor-state').text('Error');
+                    $('#sensor-battery').text('Error');
+                    $('#sensor-temperature').text('Error');
+                    $('#sensor-last-seen').text('Error');
+                }
+            });
         }
 
         $(document).ready(function () {
             checkStatus('/check_mqtt_status', 'mqtt-message', 'mqtt-icon', 'MQTT connection is active.', 'MQTT connection is inactive.');
             checkStatus('/check_chekt_status', 'chekt-message', 'chekt-icon', 'CHEKT server is alive.', 'Failed to connect to CHEKT server.');
 
-            // Example sensor data
-            let sensorData = {
-                name: "Front Door Sensor",
-                state: "closed",
-                battery: 95,
-                devTemperature: 68,
-                last_seen: "2024-10-20T06:57:04"
-            };
-            updateSensorData(sensorData);
+            // Call function to update sensor data from devices.yaml
+            updateSensorData();
         });
     </script>
 </body>

@@ -385,6 +385,30 @@ def save_mapping():
         logger.error(f"Error in save_mapping: {str(e)}", exc_info=True)
         return jsonify({"status": "error", "message": "Internal Server Error"}), 500
 
+@app.route('/get_sensor_data', methods=['GET'])
+def get_sensor_data():
+    # Load the devices.yaml file directly
+    try:
+        with open(devices_file, 'r') as file:
+            devices_data = yaml.safe_load(file)
+    except FileNotFoundError:
+        return jsonify({'error': 'devices.yaml not found.'}), 404
+    except Exception as e:
+        return jsonify({'error': f'Failed to load devices.yaml: {str(e)}'}), 500
+
+    # Ensure there is data in the file and the devices list exists
+    if devices_data and 'devices' in devices_data and len(devices_data['devices']) > 0:
+        sensor_data = devices_data['devices'][0]  # Get the first sensor's data
+        return jsonify({
+            'name': sensor_data.get('name', 'Unknown'),
+            'state': sensor_data.get('state', 'Unknown'),
+            'battery': sensor_data.get('battery', 'Unknown'),
+            'devTemperature': sensor_data.get('devTemperature', 'Unknown'),
+            'last_seen': sensor_data.get('last_seen', 'Unknown')
+        })
+    else:
+        return jsonify({'error': 'No sensor data available.'}), 404
+
 @app.route('/check_mqtt_status', methods=['GET'])
 def check_mqtt_status():
     global mqtt_client_instance
