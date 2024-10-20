@@ -80,23 +80,18 @@
             cursor: pointer;
         }
 
-        /* Editable input for zone */
         .chekt-zone-input {
-            position: absolute;
-            top: 10px;
-            right: 10px;
             width: 40px;
+            text-align: center;
             font-size: 1.25rem;
             font-weight: bold;
             color: red;
+            background-color: transparent;
             border: none;
-            background: none;
-            text-align: right;
         }
 
         .chekt-zone-input:focus {
             outline: none;
-            background-color: #444;
         }
 
         /* Spinner */
@@ -173,97 +168,83 @@
             }
         }
 
-        // Function to enable editing of the CHEKT zone
-        function enableZoneEditing(chektZoneSpan, deviceId) {
-            const currentZone = chektZoneSpan.textContent.replace('Zone ', '').trim();
+        // Function to make the zone editable and handle the update
+        function makeZoneEditable(zoneSpan, deviceId) {
+            const currentZone = zoneSpan.textContent.replace('Zone ', '').trim();
             const input = document.createElement('input');
             input.type = 'text';
             input.value = currentZone;
-            input.className = 'chekt-zone-input';
+            input.classList.add('chekt-zone-input');
 
-            // Replace the span with the input field
-            chektZoneSpan.replaceWith(input);
+            // Replace the zoneSpan with an input field
+            zoneSpan.replaceWith(input);
             input.focus();
 
-            // When the user presses Enter, save the new zone number
+            // Handle Enter key to save the new zone value
             input.addEventListener('keydown', function (event) {
                 if (event.key === 'Enter') {
                     const newZone = input.value.trim();
-
                     if (newZone) {
-                        saveZoneChange(deviceId, newZone, function () {
-                            // Replace the input back with a span showing the new zone
-                            const newZoneSpan = document.createElement('span');
-                            newZoneSpan.textContent = 'Zone ' + newZone;
-                            newZoneSpan.className = 'chekt-zone';
-                            newZoneSpan.onclick = function () {
-                                enableZoneEditing(newZoneSpan, deviceId);
-                            };
-                            input.replaceWith(newZoneSpan);
-                        });
+                        saveZone(deviceId, newZone);
+                        input.replaceWith(zoneSpan);
+                        zoneSpan.textContent = `Zone ${newZone}`;
                     }
                 }
             });
 
-            // Handle focus loss (clicking outside) to cancel editing
+            // Cancel editing if the input loses focus
             input.addEventListener('blur', function () {
-                input.replaceWith(chektZoneSpan);
+                input.replaceWith(zoneSpan);
             });
         }
 
-        // Function to save zone changes via AJAX
-        function saveZoneChange(deviceId, newZone, callback) {
+        // Function to save the zone via AJAX
+        function saveZone(deviceId, newZone) {
             $.ajax({
-                type: "POST",
-                url: "/save_zone_change",
+                type: 'POST',
+                url: '/save_zone_change',
                 data: JSON.stringify({ device_id: deviceId, chekt_zone: newZone }),
-                contentType: "application/json",
+                contentType: 'application/json',
                 success: function () {
-                    console.log("Zone change saved for device " + deviceId);
-                    if (callback) callback();
+                    console.log('Zone saved successfully.');
                 },
                 error: function () {
-                    console.log("Error saving zone change for device " + deviceId);
+                    console.error('Failed to save the zone.');
                 }
             });
         }
 
-        // Function to fetch and update sensor data from devices.yaml and mappings.yaml
+        // Function to fetch and update sensor data
         function updateSensorData() {
-            toggleSpinnerSpeed(true); // Fast spin when reloading
+            toggleSpinnerSpeed(true); // Fast spin when loading
             $.ajax({
                 type: "GET",
-                url: "/get_sensor_data",  // Fetch data from devices.yaml and mappings.yaml
+                url: "/get_sensor_data",  // Load devices and mappings
                 success: function (sensorData) {
                     const sensorList = $('#sensor-list');
-                    sensorList.empty(); // Clear the current list
+                    sensorList.empty(); // Clear existing sensor list
 
-                    if (sensorData && sensorData.devices) {
-                        sensorData.devices.forEach(sensor => {
-                            const mapping = sensorData.mappings[sensor.deviceId]; // Get mapping for the device
-                            const chektZone = mapping && mapping.chekt_zone ? mapping.chekt_zone : 'N/A';
+                    sensorData.devices.forEach(sensor => {
+                        const mapping = sensorData.mappings[sensor.deviceId];
+                        const chektZone = mapping ? mapping.chekt_zone : 'N/A';
 
-                            const sensorHTML = `
-                                <div class="sensor">
-                                    <span class="chekt-zone" onclick="enableZoneEditing(this, '${sensor.deviceId}')">Zone ${chektZone}</span>
-                                    <p class="sensor-name">${sensor.name}</p>
-                                    <p class="sensor-data-item">State: ${sensor.state || 'N/A'}</p>
-                                    <p class="sensor-data-item">
-                                        <img src="${sensor.batteryIcon}" class="battery-icon" alt="Battery Icon"> 
-                                        Battery: ${sensor.battery || 'N/A'}
-                                    </p>
-                                    <p class="sensor-data-item">Temperature: ${sensor.temperature || 'N/A'}°F</p>
-                                    <p class="sensor-data-item">Signal: ${sensor.signal || 'N/A'} dBm</p>
-                                    <p class="sensor-data-item">Last Seen: ${sensor.last_seen || 'N/A'}</p>
-                                </div>
-                            `;
-                            sensorList.append(sensorHTML);
-                        });
-                    } else {
-                        sensorList.append('<p>No sensor data available.</p>');
-                    }
+                        const sensorHTML = `
+                            <div class="sensor">
+                                <span class="chekt-zone" onclick="makeZoneEditable(this, '${sensor.deviceId}')">Zone ${chektZone}</span>
+                                <p class="sensor-name">${sensor.name}</p>
+                                <p class="sensor-data-item">State: ${sensor.state || 'N/A'}</p>
+                                <p class="sensor-data-item">
+                                    <img src="${sensor.batteryIcon}" class="battery-icon" alt="Battery Icon">
+                                    Battery: ${sensor.battery || 'N/A'}
+                                </p>
+                                <p class="sensor-data-item">Temperature: ${sensor.temperature || 'N/A'}°F</p>
+                                <p class="sensor-data-item">Last Seen: ${sensor.last_seen || 'N/A'}</p>
+                            </div>
+                        `;
+                        sensorList.append(sensorHTML);
+                    });
 
-                    toggleSpinnerSpeed(false); // Slow spin after data is updated
+                    toggleSpinnerSpeed(false); // Slow spin after data is loaded
                 },
                 error: function () {
                     $('#sensor-list').html('<p>Error loading sensor data.</p>');
@@ -276,11 +257,11 @@
             checkStatus('/check_mqtt_status', 'mqtt-message', 'mqtt-icon', 'MQTT connection is active.', 'MQTT connection is inactive.');
             checkStatus('/check_chekt_status', 'chekt-message', 'chekt-icon', 'CHEKT server is alive.', 'Failed to connect to CHEKT server.');
 
-            // Call function to update sensor data from devices.yaml and mappings.yaml
+            // Fetch sensor data initially
             updateSensorData();
 
-            // Auto-update sensor data every 10 seconds
-            setInterval(updateSensorData, 10000);  // 10000 ms = 10 seconds
+            // Refresh sensor data every 10 seconds
+            setInterval(updateSensorData, 10000);
         });
     </script>
 </body>
