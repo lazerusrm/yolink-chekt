@@ -179,29 +179,26 @@ def force_generate_token_and_client():
     return token, client_id
 
 def update_device_data(device_id, payload):
-    # Hardcoded path to the devices.yaml file
-    file_path = "devices.yaml"
-
     # Load the devices.yaml file
-    devices_data = load_yaml(file_path)
+    devices_data = load_yaml(devices_file)
 
     now = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S')
 
     # Find the device in devices.yaml based on the device ID
     for device in devices_data['devices']:
         if device['deviceId'] == device_id:
-            # Update the device's state
+            # Update the device's state, battery, temperature, and signal fields with new data
             device['state'] = payload['data'].get('state', device.get('state', 'unknown'))
 
-            # Update the device's battery if available
+            # Update battery level if available
             device['battery'] = payload['data'].get('battery', device.get('battery', 'unknown'))
 
-            # Update power-related information if applicable (specific to Outlet)
+            # Update power-related information if available (for Outlet devices)
             if 'power' in payload['data']:
                 device['power'] = payload['data'].get('power', device.get('power', 'unknown'))
                 device['watt'] = payload['data'].get('watt', device.get('watt', 'unknown'))
 
-            # Convert temperature to Fahrenheit if available
+            # Convert and update temperature if available
             temperature_c = payload['data'].get('devTemperature')
             if temperature_c is not None:
                 device['devTemperature'] = celsius_to_fahrenheit(temperature_c)
@@ -209,11 +206,14 @@ def update_device_data(device_id, payload):
                 device['devTemperature'] = device.get('devTemperature', 'unknown')
 
             # Update signal strength from LoRa info
-            lora_info = payload['data'].get('loraInfo', {})
-            device['signal'] = lora_info.get('signal', device.get('signal', 'unknown'))
+            device['signal'] = payload['data']['loraInfo'].get('signal', device.get('signal', 'unknown'))
 
             # Update the last seen timestamp
             device['last_seen'] = now
+
+    # Save the updated devices.yaml
+    save_to_yaml(devices_file, devices_data)
+    logger.info(f"Device data for {device_id} updated successfully in devices.yaml.")
 
     # Save the updated devices.yaml
     save_to_yaml(file_path, devices_data)
@@ -616,7 +616,6 @@ def on_connect(client, userdata, flags, rc):
         logger.error(f"Failed to connect to MQTT broker. Return code: {rc}")
         
 def on_message(client, userdata, msg):
-    # Only log basic info about the message received
     logger.info(f"Received message on topic {msg.topic}")
 
     try:
@@ -624,28 +623,28 @@ def on_message(client, userdata, msg):
         payload = json.loads(msg.payload.decode("utf-8"))
         device_id = payload.get('deviceId')
         state = payload['data'].get('state', 'Unknown state')
-        event_type = payload.get('event', 'Unknown event').lower()  # Ensure event_type is case-insensitive
+        event_type = payload.get('event', 'Unknown event').lower()
 
         if device_id:
-            # Log key information about the device and event
-            logger.info(f"Device ID: {device_id}, State: {state}, Event Type: {event_type}")
-
-            # Update device data (for both alerts and reports)
+            # Log the parsed state, battery, and signal strength for debugging
+            logger.info(f"Device ID: {device_id}, State: {state}")
+            logger.info(f"Battery: {payload['data'].get('battery', 'unknown')}, Signal: {payload['data']['loraInfo'].get('signal', 'unknown')}")
+            
+            # Update device data (this handles battery, signal, temperature, etc.)
             update_device_data(device_id, payload)
 
-            # Check if the event is an alert (".Alert" events trigger the system)
+            # Handle alerts or events if applicable
             if "alert" in event_type:
                 device_type = parse_device_type(event_type, payload)
-
                 if device_type:
                     logger.info(f"Device {device_id} identified as {device_type}")
-
-                    # Determine if an event should be triggered based on state and device type
+                    
                     if should_trigger_event(state, device_type):
-                        chekt_bridge_channel = get_chekt_zone(device_id)  # Retrieve CHEKT zone dynamically
-                        chekt_event = map_state_to_event(state, device_type)  # Map state to CHEKT event
+                        chekt_bridge_channel = get_chekt_zone(device_id)
+                        chekt_event = map_state_to_event(state, device_type)
+                        logger.info(f"Mapped CHEKT event: {chekt_event}")
 
-                        if chekt_bridge_channel and chekt_bridge_channel.strip():  # Ensure it's not empty
+                        if chekt_bridge_channel and chekt_bridge_channel.strip():
                             logger.info(f"Triggering CHEKT bridge channel {chekt_bridge_channel} for device {device_id} with event {chekt_event}")
                             trigger_chekt_event(chekt_bridge_channel, chekt_event)
                         else:
@@ -655,7 +654,7 @@ def on_message(client, userdata, msg):
                 else:
                     logger.warning(f"Could not determine device type for {device_id}. Skipping.")
             else:
-                logger.info(f"Received a report event ({event_type}). No system trigger, data updated.")
+                logger.info(f"Received a report event ({event_type}). Data updated, no system trigger.")
         else:
             logger.warning("Message received without a valid device ID.")
 
