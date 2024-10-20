@@ -54,6 +54,13 @@
             margin: 5px 0;
         }
 
+        .battery-icon {
+            width: 24px;
+            height: 24px;
+            margin-right: 10px;
+            vertical-align: middle;
+        }
+
         .link {
             display: block;
             margin-top: 20px;
@@ -133,6 +140,41 @@
             }
         }
 
+        // Function to map battery level to percentage and get battery icon
+        function getBatteryInfo(batteryLevel) {
+            let percentage;
+            let icon;
+
+            switch (batteryLevel) {
+                case 0:
+                    percentage = "0%";
+                    icon = "https://img.icons8.com/color/48/000000/empty-battery.png";
+                    break;
+                case 1:
+                    percentage = "25%";
+                    icon = "https://img.icons8.com/color/48/000000/low-battery.png";
+                    break;
+                case 2:
+                    percentage = "50%";
+                    icon = "https://img.icons8.com/color/48/000000/medium-battery.png";
+                    break;
+                case 3:
+                    percentage = "75%";
+                    icon = "https://img.icons8.com/color/48/000000/medium-full-battery.png";
+                    break;
+                case 4:
+                    percentage = "100%";
+                    icon = "https://img.icons8.com/color/48/000000/full-battery.png";
+                    break;
+                default:
+                    percentage = "N/A";
+                    icon = "https://img.icons8.com/color/48/000000/question-mark.png";
+                    break;
+            }
+
+            return { percentage, icon };
+        }
+
         // Fetch and update sensor data from the devices.yaml file
         function updateSensorData() {
             $.ajax({
@@ -144,11 +186,16 @@
 
                     sensorData.devices.forEach(sensor => {
                         const signalQuality = getSignalQuality(sensor.signal);
+                        const batteryInfo = getBatteryInfo(sensor.battery);
+                        
                         const sensorHTML = `
                             <div class="sensor">
                                 <p class="sensor-name">${sensor.name}</p>
                                 <p class="sensor-data-item">State: ${sensor.state || 'N/A'}</p>
-                                <p class="sensor-data-item">Battery: ${sensor.battery || 'N/A'} (Level ${sensor.battery})</p>
+                                <p class="sensor-data-item">
+                                    <img src="${batteryInfo.icon}" class="battery-icon" alt="Battery Icon"> 
+                                    Battery: ${batteryInfo.percentage} (Level ${sensor.battery})
+                                </p>
                                 <p class="sensor-data-item">Temperature: ${sensor.devTemperature || 'N/A'}°F</p>
                                 <p class="sensor-data-item">Signal: ${sensor.signal || 'N/A'} dBm (${signalQuality})</p>
                                 <p class="sensor-data-item">Last Seen: ${sensor.last_seen || 'N/A'}</p>
