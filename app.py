@@ -478,26 +478,67 @@ def config():
 @app.route('/save_mapping', methods=['POST'])
 def save_mapping():
     try:
+        # Get the incoming mappings data from the POST request
         new_mappings = request.get_json()
         if not new_mappings or 'mappings' not in new_mappings:
-            logger.error("Invalid or empty mappings received.")
+            logger.error(f"Invalid or empty mappings received: {new_mappings}")
             return jsonify({"status": "error", "message": "Invalid mappings data."}), 400
 
-        existing_mappings = load_yaml(mappings_file)
-        if not existing_mappings:
-            existing_mappings = {'mappings': [], 'alert_mapping': []}
+        logger.debug(f"Received new mappings: {new_mappings}")
 
-        # Update mappings
-        for mapping in new_mappings['mappings']:
-            existing_mappings['mappings'].append(mapping)
+        # Load the existing mappings from the file
+        existing_mappings = load_yaml('mappings.yaml') or {'mappings': [], 'alert_mapping': []}
+        
+        # Initialize 'mappings' if not present
+        if 'mappings' not in existing_mappings:
+            existing_mappings['mappings'] = []
+        if 'alert_mapping' not in existing_mappings:
+            existing_mappings['alert_mapping'] = []
 
-        save_to_yaml(mappings_file, existing_mappings)
+        logger.debug(f"Existing mappings before update: {existing_mappings}")
+
+        # Iterate over the new mappings and update or append them to the existing mappings
+        for new_mapping in new_mappings['mappings']:
+            device_id = new_mapping.get('yolink_device_id')
+            chekt_zone = new_mapping.get('chekt_zone')
+            yolink_event = new_mapping.get('yolink_event')
+            chekt_alert = new_mapping.get('chekt_alert')
+
+            # Check if the device already exists in the mappings
+            existing_mapping = next((m for m in existing_mappings['mappings'] if m['yolink_device_id'] == device_id), None)
+
+            if existing_mapping:
+                # Update the existing mapping with the new zone
+                existing_mapping.update(new_mapping)  # This updates all fields in new_mapping
+            else:
+                # Append new device mapping if it doesn't exist
+                existing_mappings['mappings'].append(new_mapping)
+
+            # Handle the alert mapping
+            if yolink_event and chekt_alert:
+                # Check if the event mapping already exists
+                existing_alert_mapping = next((a for a in existing_mappings['alert_mapping'] if a['yolink_event'] == yolink_event and a['yolink_device_id'] == device_id), None)
+                
+                if existing_alert_mapping:
+                    # Update the existing alert mapping
+                    existing_alert_mapping['chekt_alert'] = chekt_alert
+                else:
+                    # Append new alert mapping
+                    existing_mappings['alert_mapping'].append({
+                        'yolink_device_id': device_id,
+                        'yolink_event': yolink_event,
+                        'chekt_alert': chekt_alert
+                    })
+
+        # Save the updated mappings back to the file
+        save_to_yaml("mappings.yaml", existing_mappings)
+        logger.debug(f"Updated mappings: {existing_mappings}")
 
         return jsonify({"status": "success", "message": "Mapping saved successfully."})
-    except Exception as e:
-        logger.error(f"Error saving mapping: {str(e)}")
-        return jsonify({"status": "error", "message": "Internal Server Error"}), 500
 
+    except Exception as e:
+        logger.error(f"Error in save_mapping: {str(e)}", exc_info=True)
+        return jsonify({"status": "error", "message": "Internal Server Error"}), 500
 
 @app.route('/refresh_yolink_devices', methods=['GET'])
 def refresh_yolink_devices():
