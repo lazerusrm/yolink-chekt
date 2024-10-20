@@ -520,6 +520,26 @@ def refresh_yolink_devices():
 
     return jsonify({"status": "success", "message": "YoLink devices refreshed and MQTT client restarted."})
 
+@app.route('/save_zone_change', methods=['POST'])
+def save_zone_change():
+    data = request.json
+    device_id = data.get('device_id')
+    chekt_zone = data.get('chekt_zone')
+
+    # Load the mappings.yaml file
+    mappings_data = load_yaml('mappings.yaml')
+
+    # Find the correct mapping for the device
+    for mapping in mappings_data['mappings']:
+        if mapping['yolink_device_id'] == device_id:
+            mapping['chekt_zone'] = chekt_zone
+            break
+
+    # Save the updated mappings back to the file
+    save_yaml('mappings.yaml', mappings_data)
+
+    return jsonify({"status": "success"})
+
 @app.route('/')
 def index():
     # Load devices and mappings from YAML files
