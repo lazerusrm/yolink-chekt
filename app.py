@@ -179,31 +179,35 @@ def force_generate_token_and_client():
     return token, client_id
 
 def update_device_data(device_id, payload):
+    logger.info(f"Updating device data for Device ID: {device_id}")
+
     # Load the devices.yaml file
-    devices_data = load_yaml(devices_file)
+    try:
+        devices_data = load_yaml(devices_file)
+        logger.info(f"Loaded devices.yaml successfully.")
+    except Exception as e:
+        logger.error(f"Failed to load devices.yaml: {str(e)}")
+        return
 
     now = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S')
 
     # Find the device in devices.yaml based on the device ID
+    device_found = False
     for device in devices_data['devices']:
         if device['deviceId'] == device_id:
-            # Update the device's state, battery, temperature, and signal fields with new data
+            device_found = True
+            logger.info(f"Device {device_id} found in devices.yaml. Updating data...")
+
+            # Update device fields
             device['state'] = payload['data'].get('state', device.get('state', 'unknown'))
-
-            # Update battery level if available
             device['battery'] = payload['data'].get('battery', device.get('battery', 'unknown'))
+            device['power'] = payload['data'].get('power', device.get('power', 'unknown'))
+            device['watt'] = payload['data'].get('watt', device.get('watt', 'unknown'))
 
-            # Update power-related information if available (for Outlet devices)
-            if 'power' in payload['data']:
-                device['power'] = payload['data'].get('power', device.get('power', 'unknown'))
-                device['watt'] = payload['data'].get('watt', device.get('watt', 'unknown'))
-
-            # Convert and update temperature if available
+            # Convert temperature to Fahrenheit
             temperature_c = payload['data'].get('devTemperature')
             if temperature_c is not None:
                 device['devTemperature'] = celsius_to_fahrenheit(temperature_c)
-            else:
-                device['devTemperature'] = device.get('devTemperature', 'unknown')
 
             # Update signal strength from LoRa info
             device['signal'] = payload['data']['loraInfo'].get('signal', device.get('signal', 'unknown'))
@@ -211,12 +215,18 @@ def update_device_data(device_id, payload):
             # Update the last seen timestamp
             device['last_seen'] = now
 
-    # Save the updated devices.yaml
-    save_to_yaml(devices_file, devices_data)
-    logger.info(f"Device data for {device_id} updated successfully in devices.yaml.")
+            logger.info(f"Updated device data: {device}")
+            break
+
+    if not device_found:
+        logger.warning(f"Device {device_id} not found in devices.yaml.")
 
     # Save the updated devices.yaml
-    save_to_yaml(file_path, devices_data)
+    try:
+        save_to_yaml(devices_file, devices_data)
+        logger.info(f"Devices.yaml updated successfully for Device ID: {device_id}")
+    except Exception as e:
+        logger.error(f"Failed to save devices.yaml: {str(e)}")
 
 def yolink_api_test():
     # Load configuration to get token
@@ -619,47 +629,41 @@ def on_message(client, userdata, msg):
     logger.info(f"Received message on topic {msg.topic}")
 
     try:
-        # Decode and parse the payload
+        # Log the raw payload first
+        logger.info(f"Raw payload: {msg.payload.decode('utf-8')}")
+
         payload = json.loads(msg.payload.decode("utf-8"))
         device_id = payload.get('deviceId')
         state = payload['data'].get('state', 'Unknown state')
         event_type = payload.get('event', 'Unknown event').lower()
 
+        logger.info(f"Parsed Device ID: {device_id}, State: {state}, Event Type: {event_type}")
+
         if device_id:
-            # Log the parsed state, battery, and signal strength for debugging
-            logger.info(f"Device ID: {device_id}, State: {state}")
-            logger.info(f"Battery: {payload['data'].get('battery', 'unknown')}, Signal: {payload['data']['loraInfo'].get('signal', 'unknown')}")
-            
-            # Update device data (this handles battery, signal, temperature, etc.)
+            logger.info(f"Calling update_device_data for Device ID: {device_id}")
+
+            # Explicitly call update_device_data and log the payload
             update_device_data(device_id, payload)
 
-            # Handle alerts or events if applicable
+            # Check if the event is an alert (.Alert) to trigger the system
             if "alert" in event_type:
                 device_type = parse_device_type(event_type, payload)
-                if device_type:
-                    logger.info(f"Device {device_id} identified as {device_type}")
-                    
-                    if should_trigger_event(state, device_type):
-                        chekt_bridge_channel = get_chekt_zone(device_id)
-                        chekt_event = map_state_to_event(state, device_type)
-                        logger.info(f"Mapped CHEKT event: {chekt_event}")
+                logger.info(f"Device {device_id} identified as {device_type}")
 
-                        if chekt_bridge_channel and chekt_bridge_channel.strip():
-                            logger.info(f"Triggering CHEKT bridge channel {chekt_bridge_channel} for device {device_id} with event {chekt_event}")
-                            trigger_chekt_event(chekt_bridge_channel, chekt_event)
-                        else:
-                            logger.info(f"Device {device_id} has no valid chekt_bridge_channel mapping. Skipping.")
+                if device_type and should_trigger_event(state, device_type):
+                    chekt_bridge_channel = get_chekt_zone(device_id)
+                    chekt_event = map_state_to_event(state, device_type)
+
+                    if chekt_bridge_channel and chekt_bridge_channel.strip():
+                        logger.info(f"Triggering CHEKT bridge channel {chekt_bridge_channel} for device {device_id} with event {chekt_event}")
+                        trigger_chekt_event(chekt_bridge_channel, chekt_event)
                     else:
-                        logger.info(f"State {state} for device {device_id} does not trigger an event. Skipping.")
-                else:
-                    logger.warning(f"Could not determine device type for {device_id}. Skipping.")
+                        logger.info(f"No valid CHEKT bridge channel for device {device_id}. Skipping.")
             else:
-                logger.info(f"Received a report event ({event_type}). Data updated, no system trigger.")
+                logger.info(f"Received report event: {event_type}, data updated.")
         else:
-            logger.warning("Message received without a valid device ID.")
+            logger.warning("Message without device ID.")
 
-    except json.JSONDecodeError:
-        logger.error(f"Failed to decode JSON payload: {msg.payload}")
     except Exception as e:
         logger.error(f"Error processing message: {str(e)}")
 
