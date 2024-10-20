@@ -458,6 +458,10 @@ def index():
 
     return render_template('index.html', devices=devices, mappings=device_mappings, config=config_data)
 
+@app.route('/config.html')
+def config():
+    return render_template('config.html')
+
 @app.route('/get_homes', methods=['GET'])
 def get_homes():
     # Load configuration to get the Yolink token
