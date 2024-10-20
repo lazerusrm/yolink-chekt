@@ -458,24 +458,44 @@ def index():
 
     return render_template('index.html', devices=devices, mappings=device_mappings, config=config_data)
 
-@app.route('/config.html')
-def config():
+@app.route('/save_mapping', methods=['POST'])
+def save_mapping():
     try:
-        # Load the configuration data from config.yaml
-        config_data = load_config()
+        new_mappings = request.get_json()
+        if not new_mappings or 'mappings' not in new_mappings:
+            logger.error("Invalid or empty mappings received.")
+            return jsonify({"status": "error", "message": "Invalid mappings data."}), 400
 
-        # Ensure yolink section exists
-        if 'yolink' not in config_data:
-            config_data['yolink'] = {
-                'uaid': '',
-                'secret_key': ''
-            }
+        existing_mappings = load_yaml(mappings_file)
+        if not existing_mappings:
+            existing_mappings = {'mappings': [], 'alert_mapping': []}
 
-        # Pass only the config data to the template
-        return render_template('config.html', config=config_data)
+        # Update mappings
+        for mapping in new_mappings['mappings']:
+            existing_mappings['mappings'].append(mapping)
+
+        save_to_yaml(mappings_file, existing_mappings)
+
+        return jsonify({"status": "success", "message": "Mapping saved successfully."})
     except Exception as e:
-        logger.error(f"Error serving config.html: {str(e)}")
-        return jsonify({"status": "error", "message": "Error serving config.html"}), 500
+        logger.error(f"Error saving mapping: {str(e)}")
+        return jsonify({"status": "error", "message": "Internal Server Error"}), 500
+
+
+@app.route('/refresh_yolink_devices', methods=['GET'])
+def refresh_yolink_devices():
+    try:
+        # Logic to refresh devices
+        refreshed_devices = some_refresh_function()
+
+        # Save refreshed devices
+        save_to_yaml(devices_file, refreshed_devices)
+
+        return jsonify({"status": "success", "message": "Devices refreshed successfully."})
+    except Exception as e:
+        logger.error(f"Error refreshing devices: {str(e)}")
+        return jsonify({"status": "error", "message": "Error refreshing devices."}), 500
+
 
 @app.route('/get_homes', methods=['GET'])
 def get_homes():
