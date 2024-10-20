@@ -501,18 +501,44 @@ def save_mapping():
 
 @app.route('/refresh_yolink_devices', methods=['GET'])
 def refresh_yolink_devices():
-    try:
-        # Logic to refresh devices
-        refreshed_devices = some_refresh_function()
+    global mqtt_client_instance
+    config = load_config()
+    token = config['yolink'].get('token')
 
-        # Save refreshed devices
-        save_to_yaml(devices_file, refreshed_devices)
+    if not token:
+        return jsonify({"status": "error", "message": "No token available. Please generate a token first."})
 
-        return jsonify({"status": "success", "message": "Devices refreshed successfully."})
-    except Exception as e:
-        logger.error(f"Error refreshing devices: {str(e)}")
-        return jsonify({"status": "error", "message": "Error refreshing devices."}), 500
+    yolink_api = YoLinkAPI(token)
 
+    # Fetch home info
+    home_info = yolink_api.get_home_info()
+    if not home_info or home_info.get("code") != "000000":
+        return jsonify({"status": "error", "message": f"Failed to retrieve home info: {home_info.get('desc', 'Unknown error')}"})
+
+    home_id = home_info["data"]["id"]
+
+    # Fetch devices
+    devices = yolink_api.get_device_list()
+    if not devices or devices.get("code") != "000000":
+        return jsonify({"status": "error", "message": f"Failed to retrieve devices: {devices.get('desc', 'Unknown error')}"})
+
+    # Save home_id and devices in devices.yaml
+    data_to_save = {
+        "homes": {"id": home_id},
+        "devices": devices["data"]["devices"]
+    }
+    save_to_yaml("devices.yaml", data_to_save)
+
+    # Restart the MQTT client after refreshing devices
+    if mqtt_client_instance:
+        mqtt_client_instance.disconnect()
+        mqtt_client_instance.loop_stop()
+
+    mqtt_thread = threading.Thread(target=run_mqtt_client)
+    mqtt_thread.daemon = True
+    mqtt_thread.start()
+
+    return jsonify({"status": "success", "message": "Yolink devices refreshed and MQTT client restarted."})
 
 @app.route('/get_homes', methods=['GET'])
 def get_homes():
