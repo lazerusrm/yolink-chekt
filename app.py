@@ -767,6 +767,10 @@ def on_message(client, userdata, msg):
         if device_id:
             logger.info(f"Device ID: {device_id}, State: {state}")
 
+            # Update device data in devices.yaml
+            logger.info(f"Updating device data for device {device_id}")
+            update_device_data(device_id, payload)  # Call function to update the device's data
+
             # Load the mappings directly from mappings.yaml
             try:
                 mappings_data = load_yaml(mappings_file)
@@ -793,7 +797,6 @@ def on_message(client, userdata, msg):
 
     except Exception as e:
         logger.error(f"Error processing message: {str(e)}")
-        
 def test_chekt_api():
     with app.app_context():  # This creates the application context
         response = chekt_api_test()
