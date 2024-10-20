@@ -11,15 +11,32 @@
             font-family: Arial, sans-serif;
             margin: 20px;
             padding: 20px;
-            background-color: #2e2e2e;
-            color: #ffffff;
+            background-color: #2e2e2e; /* Dark gray background */
+            color: #ffffff; /* White text */
         }
 
-        form, .log {
-            background-color: #3a3a3a;
+        form {
+            background-color: #3a3a3a; /* Slightly lighter dark background for forms */
             padding: 20px;
             border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
             margin-bottom: 30px;
+        }
+
+        label {
+            font-weight: bold;
+            display: block;
+            margin-top: 10px;
+        }
+
+        input,
+        select {
+            width: 100%;
+            padding: 5px;
+            margin: 5px 0 15px;
+            background-color: #4a4a4a; /* Darker input fields */
+            color: #ffffff; /* White text */
+            border: 1px solid #5a5a5a; /* Subtle border */
         }
 
         button {
@@ -36,26 +53,69 @@
         }
 
         .log {
+            background-color: #4a4a4a; /* Darker log area */
+            padding: 15px;
+            margin-top: 20px;
+            border-radius: 10px;
             height: 300px;
             overflow-y: auto;
+            color: #ffffff;
         }
 
-        a.link {
-            display: block;
+        .status {
+            display: flex;
+            align-items: center;
+            margin-top: 10px;
+        }
+
+        .status img {
+            width: 20px;
+            height: 20px;
+            margin-right: 10px;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        th, td {
+            color: #ffffff; /* White text for table */
+        }
+
+        table {
+            background-color: #3a3a3a; /* Slightly lighter dark background for tables */
+        }
+
+        /* Additional styling for sensor data */
+        .sensor-data {
+            background-color: #4a4a4a;
+            padding: 10px;
+            border-radius: 8px;
             margin-top: 20px;
-            color: #007BFF;
-            text-decoration: none;
         }
 
-        a.link:hover {
-            text-decoration: underline;
+        .sensor-data p {
+            margin: 5px 0;
         }
     </style>
 </head>
 
 <body>
     <div class="container">
-        <h1>Yolink to CHEKT Configuration & Logs</h1>
+        <h1>Yolink to CHEKT Configuration</h1>
+
+        <!-- Status check for MQTT and CHEKT -->
+        <div class="mb-3">
+            <h3>Status</h3>
+            <div id="mqtt-status" class="status">
+                <img src="" alt="" id="mqtt-icon" class="hidden">
+                <span id="mqtt-message">Checking MQTT connection...</span>
+            </div>
+            <div id="chekt-status" class="status">
+                <img src="" alt="" id="chekt-icon" class="hidden">
+                <span id="chekt-message">Checking CHEKT server status...</span>
+            </div>
+        </div>
 
         <!-- Form for Yolink and CHEKT Configuration -->
         <form id="config-form" class="form-section">
@@ -76,61 +136,137 @@
             <label for="chekt_token">CHEKT API Token</label>
             <input type="text" id="chekt_token" name="chekt_token" value="{{ config.chekt.api_token }}" required>
 
-            <button type="submit">Save Configuration</button>
+            <button type="submit" class="btn btn-primary">Save Configuration</button>
+            <div id="config-status" class="status">
+                <img src="" alt="" id="config-icon" class="hidden">
+                <span id="config-message"></span>
+            </div>
         </form>
 
-        <!-- Log Area -->
-        <div class="log">
-            <button id="load-logs-btn" class="btn btn-dark">Load Logs</button>
-            <div id="log-area"></div>
+        <!-- Section for refreshing Yolink devices -->
+        <div class="mb-3">
+            <button type="button" id="refresh-devices-btn" class="btn btn-success">Refresh Yolink Devices</button>
+            <div id="yolink-status" class="status">
+                <img src="" alt="" id="yolink-icon" class="hidden">
+                <span id="yolink-message"></span>
+            </div>
         </div>
 
-        <!-- Link back to the main page -->
-        <a href="index.html" class="link">Back to Status & Sensor Data</a>
+        <!-- Section for listing Yolink devices and mapping them to CHEKT zones and alerts -->
+        <form id="mapping-form">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Device Name</th>
+                        <th>Device ID</th>
+                        <th>CHEKT Zone</th>
+                        <th>YoLink Event</th>
+                        <th>CHEKT Alert</th>
+                    </tr>
+                </thead>
+                <tbody id="devices-table-body">
+                    {% for device in devices %}
+                    <tr>
+                        <td>{{ device.name }}</td>
+                        <td>{{ device.deviceId }}</td>
+                        <td>
+                            <input type="text" name="chekt_zone" class="form-control chekt-zone"
+                                value="{{ mappings.get(device.deviceId) and mappings[device.deviceId].get('chekt_zone', '') }}">
+                            <input type="hidden" name="device_id" value="{{ device.deviceId }}">
+                        </td>
+                        <td>
+                            <select name="yolink_event" class="form-control">
+                                <option value="">Select YoLink Event</option>
+                                <option value="open" {% if mappings.get(device.deviceId) and mappings[device.deviceId].get('yolink_event') == 'open' %}selected{% endif %}>open</option>
+                                <option value="closed" {% if mappings.get(device.deviceId) and mappings[device.deviceId].get('yolink_event') == 'closed' %}selected{% endif %}>closed</option>
+                                <option value="alert" {% if mappings.get(device.deviceId) and mappings[device.deviceId].get('yolink_event') == 'alert' %}selected{% endif %}>alert</option>
+                            </select>
+                        </td>
+                        <td>
+                            <select name="chekt_alert" class="form-control chekt-alert">
+                                <option value="">Select CHEKT Alert</option>
+                                {% if mappings.get(device.deviceId) and mappings[device.deviceId].get('chekt_zone') %}
+                                <option value="Zone {{ mappings[device.deviceId].get('chekt_zone') }} Breach" {% if mappings[device.deviceId].get('chekt_alert') == 'Zone ' + mappings[device.deviceId].get('chekt_zone') + ' Breach' %}selected{% endif %}>Zone {{ mappings[device.deviceId].get('chekt_zone') }} Breach</option>
+                                {% endif %}
+                            </select>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <button type="submit" class="btn btn-primary">Save Mapping</button>
+        </form>
+
+        <!-- Log area for messages -->
+        <div class="mb-3">
+            <button type="button" id="load-logs-btn" class="btn btn-dark">Load Logs</button>
+        </div>
+        <div id="log-area" class="log"></div>
     </div>
 
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script>
-        // Config form submit
-        $('#config-form').on('submit', function (e) {
-            e.preventDefault();
-
-            var configData = {
-                yolink: {
-                    uaid: $('#uaid').val(),
-                    secret_key: $('#secret_key').val()
-                },
-                chekt: {
-                    ip: $('#chekt_ip').val(),
-                    port: $('#chekt_port').val(),
-                    api_token: $('#chekt_token').val()
-                }
-            };
-
+        // Reuse all previous JavaScript functionality from index.html
+        
+        // Add the refresh Yolink devices and save mappings logic back
+        $('#refresh-devices-btn').on('click', function () {
+            $('#yolink-icon').addClass('hidden');
+            $('#yolink-message').text('Refreshing Yolink devices...');
             $.ajax({
-                type: "POST",
-                url: "/save_config",
-                contentType: "application/json",
-                data: JSON.stringify(configData),
+                type: "GET",
+                url: "/refresh_yolink_devices",
                 success: function (response) {
-                    alert('Configuration saved successfully.');
+                    if (response.status === "success") {
+                        updateStatus('yolink-message', 'yolink-icon', 'Yolink devices refreshed successfully.', true);
+                        addToLog("Yolink devices refreshed.");
+                        // Reload the page to refresh the table
+                        location.reload();
+                    } else {
+                        updateStatus('yolink-message', 'yolink-icon', 'Failed to refresh Yolink devices.', false);
+                        addToLog("Failed to refresh Yolink devices: " + response.message);
+                    }
                 },
-                error: function (xhr) {
-                    alert('Error: ' + xhr.responseText);
+                error: function (xhr, status, error) {
+                    updateStatus('yolink-message', 'yolink-icon', 'Error refreshing Yolink devices.', false);
+                    addToLog('Error refreshing Yolink devices: ' + xhr.responseText);
                 }
             });
         });
 
-        // Load logs
-        $('#load-logs-btn').on('click', function () {
+        // Handle the form submission to save the mappings
+        $('#mapping-form').on('submit', function (e) {
+            e.preventDefault();
+            var mappingsArray = [];
+
+            $('input[name="device_id"]').each(function (index) {
+                var deviceId = $(this).val();
+                var zone = $(this).closest('tr').find('input[name="chekt_zone"]').val();
+                var event = $(this).closest('tr').find('select[name="yolink_event"]').val();
+                var alert = $(this).closest('tr').find('select[name="chekt_alert"]').val();
+
+                mappingsArray.push({
+                    "yolink_device_id": deviceId,
+                    "chekt_zone": zone,
+                    "yolink_event": event,
+                    "chekt_alert": alert
+                });
+            });
+
+            // Prepare the data to be sent
+            var mappingsData = {
+                "mappings": mappingsArray
+            };
+
             $.ajax({
-                type: "GET",
-                url: "/get_logs",
+                type: "POST",
+                url: "/save_mapping",
+                contentType: "application/json",
+                data: JSON.stringify(mappingsData),
                 success: function (response) {
-                    $('#log-area').text(response.logs);
+                    addToLog(response.message);
                 },
-                error: function () {
-                    $('#log-area').text('Error loading logs.');
+                error: function (xhr, status, error) {
+                    addToLog('Error: ' + xhr.responseText);
                 }
             });
         });
