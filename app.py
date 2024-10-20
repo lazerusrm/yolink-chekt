@@ -475,47 +475,6 @@ def config():
 
     return render_template('config.html', devices=devices, mappings=device_mappings, config=config_data)
 
-@app.route('/refresh_yolink_devices', methods=['GET'])
-def refresh_yolink_devices():
-    global mqtt_client_instance
-    config = load_config()
-    token = config['yolink'].get('token')
-
-    if not token:
-        return jsonify({"status": "error", "message": "No token available. Please generate a token first."})
-
-    yolink_api = YoLinkAPI(token)
-
-    # Fetch home info
-    home_info = yolink_api.get_home_info()
-    if not home_info or home_info.get("code") != "000000":
-        return jsonify({"status": "error", "message": f"Failed to retrieve home info: {home_info.get('desc', 'Unknown error')}"})
-
-    home_id = home_info["data"]["id"]
-
-    # Fetch devices
-    devices = yolink_api.get_device_list()
-    if not devices or devices.get("code") != "000000":
-        return jsonify({"status": "error", "message": f"Failed to retrieve devices: {devices.get('desc', 'Unknown error')}"})
-
-    # Save home_id and devices in devices.yaml
-    data_to_save = {
-        "homes": {"id": home_id},
-        "devices": devices["data"]["devices"]
-    }
-    save_to_yaml("devices.yaml", data_to_save)
-
-    # Restart the MQTT client after refreshing devices
-    if mqtt_client_instance:
-        mqtt_client_instance.disconnect()
-        mqtt_client_instance.loop_stop()
-
-    mqtt_thread = threading.Thread(target=run_mqtt_client)
-    mqtt_thread.daemon = True
-    mqtt_thread.start()
-
-    return jsonify({"status": "success", "message": "Yolink devices refreshed and MQTT client restarted."})
-
 @app.route('/get_homes', methods=['GET'])
 def get_homes():
     # Load configuration to get the Yolink token
