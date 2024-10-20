@@ -208,7 +208,7 @@
             // Create the signal meter HTML
             let meterHTML = `<div class="signal-meter ${signalClass}">`;
             for (let i = 1; i <= bars; i++) {
-                meterHTML += `<div class="bar bar-${i}"></div>`;
+                meterHTML += `<span class="bar bar-${i}"></span>`;
             }
             meterHTML += `</div>`;
             return meterHTML;
