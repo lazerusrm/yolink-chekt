@@ -185,23 +185,33 @@ def update_device_data(device_id, payload):
     now = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S')
     
     # Find the device in devices.yaml based on the device ID
-    for device in devices_data['devices']:
+    for device in devices_data.get('devices', []):
         if device['deviceId'] == device_id:
+            logger.info(f"Updating data for device {device_id}")
             
-            # Update the device's state, battery, temperature, and last_seen fields with new data
-            device['state'] = payload['data'].get('state', device.get('state'))
-            device['battery'] = payload['data'].get('battery', device.get('battery'))
+            # Update state, battery, and signal with new data if available
+            device['state'] = payload['data'].get('state', device.get('state', 'unknown'))
+            device['battery'] = payload['data'].get('battery', device.get('battery', 'unknown'))
+            device['signal'] = payload['data'].get('loraInfo', {}).get('signal', device.get('signal', 'unknown'))
             
             # Convert temperature to Fahrenheit if available
             temperature_c = payload['data'].get('devTemperature')
             if temperature_c is not None:
                 device['devTemperature'] = celsius_to_fahrenheit(temperature_c)
-            
-            device['signal'] = payload['data']['loraInfo'].get('signal', device.get('signal'))
-            device['last_seen'] = now
+            else:
+                device['devTemperature'] = device.get('devTemperature', 'unknown')
 
+            # Update last_seen timestamp
+            device['last_seen'] = now
+            logger.debug(f"Device {device_id} updated: {device}")
+
+            break
+    else:
+        logger.warning(f"Device ID {device_id} not found in devices.yaml")
+    
     # Save the updated devices.yaml
     save_to_yaml(devices_file, devices_data)
+    logger.info(f"Devices file saved with updated data for {device_id}")
 
 def yolink_api_test():
     # Load configuration to get token
@@ -605,17 +615,18 @@ def on_message(client, userdata, msg):
 
     try:
         # Log the raw payload first
-        logger.info(f"Raw payload: {msg.payload.decode('utf-8')}")
+        payload_str = msg.payload.decode('utf-8')
+        logger.info(f"Raw payload: {payload_str}")
 
-        payload = json.loads(msg.payload.decode("utf-8"))
+        payload = json.loads(payload_str)
         device_id = payload.get('deviceId')
-        state = payload['data'].get('state', 'Unknown state')
         event_type = payload.get('event', 'Unknown event').lower()  # Ensure event_type is case-insensitive
+        state = payload['data'].get('state', 'Unknown state')
 
         if device_id:
             logger.info(f"Device ID: {device_id}, State: {state}, Event Type: {event_type}")
 
-            # Update device data (for both alerts and reports)
+            # Update device data with all relevant fields (battery, temperature, signal, etc.)
             update_device_data(device_id, payload)
 
             # Check if the event is an alert (.Alert) to trigger the system
@@ -634,7 +645,7 @@ def on_message(client, userdata, msg):
                             logger.info(f"Triggering CHEKT bridge channel {chekt_bridge_channel} for device {device_id} with event {chekt_event}")
                             trigger_chekt_event(chekt_bridge_channel, chekt_event)
                         else:
-                            logger.info(f"Device {device_id} has no valid chekt_bridge_channel mapping. Skipping.")
+                            logger.info(f"Device {device_id} has no valid CHEKT bridge channel mapping. Skipping.")
                     else:
                         logger.info(f"State {state} for device {device_id} does not trigger an event. Skipping.")
                 else:
@@ -656,7 +667,6 @@ def parse_device_type(event_type, payload):
     elif "LeakSensor" in event_type:
         return 'leak_sensor'
     return None
-
 
 # Helper function to determine if an event should trigger based on state and device type
 def should_trigger_event(state, device_type):
