@@ -181,6 +181,12 @@
             return timeB - timeA; // Sort by most recent first
         }
 
+        // Function to convert to local time and format
+        function formatLocalTime(isoDateString) {
+            const localTime = new Date(isoDateString);
+            return localTime.toLocaleString();  // Convert to user's local time and format
+        }
+
         // Fetch and update sensor data from the devices.yaml file
         function updateSensorData() {
             $.ajax({
@@ -196,6 +202,8 @@
                         const signalQuality = getSignalQuality(sensor.signal);
                         const batteryInfo = getBatteryInfo(sensor.battery);
                         
+                        const lastSeenLocal = formatLocalTime(sensor.last_seen); // Convert last_seen to local time
+
                         const sensorHTML = `
                             <div class="sensor">
                                 <p class="sensor-name">${sensor.name}</p>
@@ -206,7 +214,7 @@
                                 </p>
                                 <p class="sensor-data-item">Temperature: ${sensor.devTemperature || 'N/A'}°F</p>
                                 <p class="sensor-data-item">Signal: ${sensor.signal || 'N/A'} dBm (${signalQuality})</p>
-                                <p class="sensor-data-item">Last Seen: ${sensor.last_seen || 'N/A'}</p>
+                                <p class="sensor-data-item">Last Seen: ${lastSeenLocal}</p>
                             </div>
                         `;
                         sensorList.append(sensorHTML);

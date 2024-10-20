@@ -209,12 +209,16 @@ def update_device_data(device_id, payload):
             if temperature_c is not None:
                 device['devTemperature'] = celsius_to_fahrenheit(temperature_c)
 
-            # Update signal strength from LoRa info
-            device['signal'] = payload['data']['loraInfo'].get('signal', device.get('signal', 'unknown'))
+            # Update signal strength from LoRa info, with logging for troubleshooting
+            lora_info = payload['data'].get('loraInfo', {})
+            if 'signal' in lora_info:
+                device['signal'] = lora_info.get('signal')
+                logger.info(f"Updated signal strength for device {device_id}: {device['signal']}")
+            else:
+                logger.warning(f"No signal information for device {device_id}, keeping existing value.")
 
             # Update the last seen timestamp
             device['last_seen'] = now
-
             logger.info(f"Updated device data: {device}")
             break
 
