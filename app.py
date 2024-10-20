@@ -458,6 +458,23 @@ def index():
 
     return render_template('index.html', devices=devices, mappings=device_mappings, config=config_data)
 
+@app.route('/config.html')
+def config():
+    # Load devices and mappings from YAML files
+    devices_data = load_yaml('devices.yaml')
+    mappings_data = load_yaml('mappings.yaml')
+
+    devices = devices_data.get('devices', [])
+    mappings = mappings_data.get('mappings', {}) if mappings_data else {}
+
+    # Prepare a dictionary to easily access the mappings by device ID
+    device_mappings = {m['yolink_device_id']: m for m in mappings}
+
+    # Load configuration for pre-filling the form
+    config_data = load_config()
+
+    return render_template('config.html', devices=devices, mappings=device_mappings, config=config_data)
+
 @app.route('/save_mapping', methods=['POST'])
 def save_mapping():
     try:
