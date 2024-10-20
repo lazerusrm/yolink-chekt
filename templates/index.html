@@ -93,7 +93,7 @@
         /* Fast spin animation */
         .fast-spin {
             animation-name: fast-spin;
-            animation-duration: 1s;  /* Fast spin */
+            animation-duration: 3s;  /* Fast spin lasting 2-3 seconds */
         }
 
         @keyframes fast-spin {
@@ -101,6 +101,52 @@
             100% { transform: rotate(360deg); }
         }
 
+        /* Signal strength meter */
+        .signal-meter {
+            display: inline-block;
+            height: 20px;
+            width: 50px;
+            background-color: #999;
+            margin-left: 10px;
+            position: relative;
+        }
+
+        .bar {
+            width: 10px;
+            background-color: #ff0000; /* Red by default for low signal */
+            display: inline-block;
+            height: 5px;
+            margin-left: 2px;
+            vertical-align: bottom;
+        }
+
+        .bar.bar-1 {
+            height: 8px;
+        }
+
+        .bar.bar-2 {
+            height: 12px;
+        }
+
+        .bar.bar-3 {
+            height: 16px;
+        }
+
+        .bar.bar-4 {
+            height: 20px;
+        }
+
+        .high-signal .bar {
+            background-color: #00ff00; /* Green for high signal */
+        }
+
+        .medium-signal .bar {
+            background-color: #ffff00; /* Yellow for medium signal */
+        }
+
+        .low-signal .bar {
+            background-color: #ff0000; /* Red for low signal */
+        }
     </style>
 </head>
 
@@ -143,43 +189,29 @@
             }
         }
 
-        // Status check and sensor data updates go here
-        function updateStatus(elementId, iconId, message, success) {
-            const icon = success ? 'https://img.icons8.com/color/48/000000/checkmark.png' : 'https://img.icons8.com/color/48/000000/cancel.png';
-            $('#' + iconId).attr('src', icon).removeClass('hidden');
-            $('#' + elementId).text(message);
-        }
+        // Function to dynamically determine signal quality and create a signal meter
+        function createSignalMeter(signal) {
+            let signalClass = "low-signal"; // Default to low signal
+            let bars = 1;
 
-        function checkStatus(url, elementId, iconId, successMessage, errorMessage) {
-            $.ajax({
-                type: "GET",
-                url: url,
-                success: function (response) {
-                    if (response.status === "success") {
-                        updateStatus(elementId, iconId, successMessage, true);
-                    } else {
-                        updateStatus(elementId, iconId, errorMessage, false);
-                    }
-                },
-                error: function () {
-                    updateStatus(elementId, iconId, errorMessage, false);
-                }
-            });
-        }
-
-        // Function to dynamically determine signal quality
-        function getSignalQuality(signal) {
             if (signal >= -70) {
-                return "Excellent";
+                signalClass = "high-signal";
+                bars = 4;
             } else if (signal >= -90) {
-                return "High";
+                signalClass = "medium-signal";
+                bars = 3;
             } else if (signal >= -110) {
-                return "Good";
-            } else if (signal >= -130) {
-                return "Poor";
-            } else {
-                return "Very Poor";
+                signalClass = "low-signal";
+                bars = 2;
             }
+
+            // Create the signal meter HTML
+            let meterHTML = `<div class="signal-meter ${signalClass}">`;
+            for (let i = 1; i <= bars; i++) {
+                meterHTML += `<div class="bar bar-${i}"></div>`;
+            }
+            meterHTML += `</div>`;
+            return meterHTML;
         }
 
         // Function to map battery level to percentage and get battery icon
@@ -260,8 +292,8 @@
                     sensorData.devices.sort(compareSensors); // Sort sensors by last seen and then by name
 
                     sensorData.devices.forEach(sensor => {
-                        const signalQuality = getSignalQuality(sensor.signal);
                         const batteryInfo = getBatteryInfo(sensor.battery);
+                        const signalMeter = createSignalMeter(sensor.signal);
                         
                         const lastSeenLocal = formatLocalTime(sensor.last_seen); // Convert last_seen to local time
 
@@ -274,7 +306,7 @@
                                     Battery: ${batteryInfo.percentage} (Level ${sensor.battery})
                                 </p>
                                 <p class="sensor-data-item">Temperature: ${sensor.devTemperature || 'N/A'}°F</p>
-                                <p class="sensor-data-item">Signal: ${sensor.signal || 'N/A'} dBm (${signalQuality})</p>
+                                <p class="sensor-data-item">Signal: ${signalMeter}</p>
                                 <p class="sensor-data-item">Last Seen: ${lastSeenLocal}</p>
                             </div>
                         `;
