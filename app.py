@@ -398,14 +398,20 @@ def get_sensor_data():
 
     # Ensure there is data in the file and the devices list exists
     if devices_data and 'devices' in devices_data and len(devices_data['devices']) > 0:
-        sensor_data = devices_data['devices'][0]  # Get the first sensor's data
-        return jsonify({
-            'name': sensor_data.get('name', 'Unknown'),
-            'state': sensor_data.get('state', 'Unknown'),
-            'battery': sensor_data.get('battery', 'Unknown'),
-            'devTemperature': sensor_data.get('devTemperature', 'Unknown'),
-            'last_seen': sensor_data.get('last_seen', 'Unknown')
-        })
+        # Prepare a list of all sensor data
+        all_sensors = []
+        for sensor in devices_data['devices']:
+            all_sensors.append({
+                'name': sensor.get('name', 'Unknown'),
+                'state': sensor.get('state', 'Unknown'),
+                'battery': sensor.get('battery', 'Unknown'),
+                'devTemperature': sensor.get('devTemperature', 'Unknown'),
+                'signal': sensor.get('signal', 'Unknown'),
+                'last_seen': sensor.get('last_seen', 'Unknown')
+            })
+        
+        # Return all sensor data as a JSON response
+        return jsonify({'devices': all_sensors})
     else:
         return jsonify({'error': 'No sensor data available.'}), 404
 
