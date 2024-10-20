@@ -193,7 +193,7 @@ def update_device_data(device_id, payload):
 
     # Find the device in devices.yaml based on the device ID
     device_found = False
-    for device in devices_data['devices']:
+    for device in devices_data.get('devices', []):
         if device['deviceId'] == device_id:
             device_found = True
             logger.info(f"Device {device_id} found in devices.yaml. Updating data...")
@@ -201,8 +201,10 @@ def update_device_data(device_id, payload):
             # Update device fields
             device['state'] = payload['data'].get('state', device.get('state', 'unknown'))
             device['battery'] = payload['data'].get('battery', device.get('battery', 'unknown'))
-            
-            # Update temperature (if available)
+            device['power'] = payload['data'].get('power', device.get('power', 'unknown'))
+            device['watt'] = payload['data'].get('watt', device.get('watt', 'unknown'))
+
+            # Convert temperature to Fahrenheit if available
             temperature_c = payload['data'].get('devTemperature')
             if temperature_c is not None:
                 device['devTemperature'] = celsius_to_fahrenheit(temperature_c)
