@@ -10,7 +10,7 @@ apt-get update || { echo "apt-get update failed."; exit 1; }
 
 # Install required dependencies
 echo "Installing required dependencies..."
-apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release unzip software-properties-common rsync || { echo "Dependency installation failed."; exit 1; }
+apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release unzip software-properties-common rsync jq || { echo "Dependency installation failed."; exit 1; }
 
 # Install Docker if not already installed
 if ! [ -x "$(command -v docker)" ]; then
@@ -115,6 +115,21 @@ bash -c "cat <<EOT > $SELF_UPDATE_SCRIPT
 # Define variables
 REPO_URL='https://github.com/lazerusrm/yolink-chekt/archive/refs/heads/main.zip'
 APP_DIR='/opt/yolink-chekt'
+VERSION_FILE='/opt/yolink-chekt/.version'
+LATEST_COMMIT_URL='https://api.github.com/repos/lazerusrm/yolink-chekt/commits/main'
+
+# Fetch the latest commit hash
+LATEST_COMMIT_HASH=\$(curl -s \$LATEST_COMMIT_URL | jq -r '.sha')
+
+# Check if the version file exists and matches the latest commit hash
+if [ -f "\$VERSION_FILE" ]; then
+  CURRENT_COMMIT_HASH=\$(cat "\$VERSION_FILE")
+
+  if [ "\$CURRENT_COMMIT_HASH" == "\$LATEST_COMMIT_HASH" ]; then
+    echo "Already up-to-date. Skipping update."
+    exit 0
+  fi
+fi
 
 # Navigate to the app directory
 cd \"\$APP_DIR\" || { echo 'Failed to navigate to app directory.'; exit 1; }
@@ -127,20 +142,8 @@ rsync -a \"\$APP_DIR/yolink-chekt-main/\" \"\$APP_DIR/\" || { echo 'Move extract
 rm -rf \"\$APP_DIR/yolink-chekt-main\"
 rm \"\$APP_DIR/repo.zip\"
 
-# Create config.yaml if it doesn't exist
-if [ ! -f /opt/yolink-chekt/config.yaml ]; then
-cat <<EOT > /opt/yolink-chekt/config.yaml
-yolink:
-  url: "http://localhost"
-  csid: "12345"
-  csseckey: "abcdef"
-chekt:
-  api_token: ""
-mqtt:
-  url: "mqtt://localhost"
-  port: 1883
-EOT
-fi
+# Save the latest commit hash locally
+echo "\$LATEST_COMMIT_HASH" > "\$VERSION_FILE"
 
 # Rebuild the Docker containers with the latest code
 echo 'Rebuilding Docker containers...'

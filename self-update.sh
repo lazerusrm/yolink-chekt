@@ -7,6 +7,8 @@ CONFIG_FILE="$APP_DIR/config.yaml"
 CONFIG_BACKUP="$APP_DIR/config.yaml.bak"
 MAPPINGS_FILE="$APP_DIR/mappings.yaml"
 MAPPINGS_BACKUP="$APP_DIR/mappings.yaml.bak"
+TEMPLATES_DIR="$APP_DIR/templates"  # Folder where HTML files like config.html are stored
+DOCKER_COMPOSE_FILE="$APP_DIR/docker-compose.yml"
 
 # Function to handle errors
 handle_error() {
@@ -71,5 +73,18 @@ rm "$APP_DIR/repo.zip"
 echo "Rebuilding Docker containers..."
 docker compose down || handle_error "Docker Compose down failed."
 docker compose up --build -d || handle_error "Docker Compose up failed."
+
+# Check if the config.html file is in the container after the rebuild
+container_name=$(docker ps --format '{{.Names}}' | grep yolink_chekt_service)
+if [ -z "$container_name" ]; then
+  handle_error "Service container not found."
+fi
+
+# Verify config.html inside container
+if docker exec "$container_name" test -f "/app/templates/config.html"; then
+  echo "config.html successfully copied into the container."
+else
+  handle_error "config.html not found in the container."
+fi
 
 echo "Updates applied successfully!"
