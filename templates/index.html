@@ -21,12 +21,6 @@
             margin-bottom: 30px;
         }
 
-        .status img {
-            width: 20px;
-            height: 20px;
-            margin-right: 10px;
-        }
-
         h1, h2 {
             color: #ffffff;
         }
@@ -50,26 +44,6 @@
             color: #00ff00;
         }
 
-        .sensor-data-item {
-            font-size: 1rem;
-            margin: 5px 0;
-        }
-
-        .battery-icon {
-            width: 24px;
-            height: 24px;
-            margin-right: 10px;
-            vertical-align: middle;
-        }
-
-        .link {
-            display: block;
-            margin-top: 20px;
-            text-decoration: none;
-            color: #007BFF;
-        }
-
-        /* CHEKT Zone styling */
         .chekt-zone {
             position: absolute;
             top: 10px;
@@ -93,39 +67,6 @@
         .chekt-zone-input:focus {
             outline: none;
         }
-
-        /* Spinner */
-        .spinner {
-            border: 4px solid rgba(255, 255, 255, 0.3);
-            border-top: 4px solid #ffffff;
-            border-radius: 50%;
-            width: 24px;
-            height: 24px;
-            display: inline-block;
-            margin-left: 10px;
-            vertical-align: middle;
-            animation-duration: 5s;  /* Slow spin by default */
-            animation-timing-function: linear;
-            animation-iteration-count: infinite;
-            animation-name: slow-spin;
-        }
-
-        /* Slow spin animation */
-        @keyframes slow-spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        /* Fast spin animation */
-        .fast-spin {
-            animation-name: fast-spin;
-            animation-duration: 1s;  /* Fast spin */
-        }
-
-        @keyframes fast-spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
     </style>
 </head>
 
@@ -135,17 +76,7 @@
 
         <!-- Status check for MQTT and CHEKT -->
         <div class="status">
-            <h2>Status <span id="loading-spinner" class="spinner"></span></h2> <!-- Spinner always visible -->
-            <div id="mqtt-status" class="status-item">
-                <img src="" alt="" id="mqtt-icon" class="hidden">
-                <span id="mqtt-message">Checking MQTT connection...</span>
-            </div>
-            <div id="chekt-status" class="status-item">
-                <img src="" alt="" id="chekt-icon" class="hidden">
-                <span id="chekt-message">Checking CHEKT server status...</span>
-            </div>
-            <!-- Link to Configuration page -->
-            <a href="config.html" class="link">Go to Configuration & Logs</a>
+            <h2>Status</h2> 
         </div>
 
         <!-- Sensor Data Section -->
@@ -159,16 +90,7 @@
 
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script>
-        // Function to toggle spinner speed between slow and fast
-        function toggleSpinnerSpeed(fast) {
-            if (fast) {
-                $('#loading-spinner').addClass('fast-spin');  // Fast spin
-            } else {
-                $('#loading-spinner').removeClass('fast-spin');  // Slow spin
-            }
-        }
-
-        // Function to make the zone editable and handle the update
+        // Function to handle CHEKT zone editing
         function makeZoneEditable(zoneSpan, deviceId) {
             const currentZone = zoneSpan.textContent.replace('Zone ', '').trim();
             const input = document.createElement('input');
@@ -176,11 +98,9 @@
             input.value = currentZone;
             input.classList.add('chekt-zone-input');
 
-            // Replace the zoneSpan with an input field
             zoneSpan.replaceWith(input);
             input.focus();
 
-            // Handle Enter key to save the new zone value
             input.addEventListener('keydown', function (event) {
                 if (event.key === 'Enter') {
                     const newZone = input.value.trim();
@@ -192,13 +112,12 @@
                 }
             });
 
-            // Cancel editing if the input loses focus
             input.addEventListener('blur', function () {
                 input.replaceWith(zoneSpan);
             });
         }
 
-        // Function to save the zone via AJAX
+        // Function to save the new zone via AJAX
         function saveZone(deviceId, newZone) {
             $.ajax({
                 type: 'POST',
@@ -214,15 +133,14 @@
             });
         }
 
-        // Function to fetch and update sensor data
+        // Function to fetch sensor data and mappings
         function updateSensorData() {
-            toggleSpinnerSpeed(true); // Fast spin when loading
             $.ajax({
-                type: "GET",
-                url: "/get_sensor_data",  // Load devices and mappings
+                type: 'GET',
+                url: '/get_sensor_data',
                 success: function (sensorData) {
                     const sensorList = $('#sensor-list');
-                    sensorList.empty(); // Clear existing sensor list
+                    sensorList.empty();
 
                     sensorData.devices.forEach(sensor => {
                         const mapping = sensorData.mappings[sensor.deviceId];
@@ -233,35 +151,21 @@
                                 <span class="chekt-zone" onclick="makeZoneEditable(this, '${sensor.deviceId}')">Zone ${chektZone}</span>
                                 <p class="sensor-name">${sensor.name}</p>
                                 <p class="sensor-data-item">State: ${sensor.state || 'N/A'}</p>
-                                <p class="sensor-data-item">
-                                    <img src="${sensor.batteryIcon}" class="battery-icon" alt="Battery Icon">
-                                    Battery: ${sensor.battery || 'N/A'}
-                                </p>
-                                <p class="sensor-data-item">Temperature: ${sensor.temperature || 'N/A'}°F</p>
                                 <p class="sensor-data-item">Last Seen: ${sensor.last_seen || 'N/A'}</p>
                             </div>
                         `;
                         sensorList.append(sensorHTML);
                     });
-
-                    toggleSpinnerSpeed(false); // Slow spin after data is loaded
                 },
                 error: function () {
                     $('#sensor-list').html('<p>Error loading sensor data.</p>');
-                    toggleSpinnerSpeed(false); // Slow spin if there's an error
                 }
             });
         }
 
         $(document).ready(function () {
-            checkStatus('/check_mqtt_status', 'mqtt-message', 'mqtt-icon', 'MQTT connection is active.', 'MQTT connection is inactive.');
-            checkStatus('/check_chekt_status', 'chekt-message', 'chekt-icon', 'CHEKT server is alive.', 'Failed to connect to CHEKT server.');
-
-            // Fetch sensor data initially
             updateSensorData();
-
-            // Refresh sensor data every 10 seconds
-            setInterval(updateSensorData, 10000);
+            setInterval(updateSensorData, 10000);  // Refresh every 10 seconds
         });
     </script>
 </body>

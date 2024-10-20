@@ -535,7 +535,6 @@ def save_zone_change():
     save_yaml('mappings.yaml', mappings_data)
     return jsonify({"status": "success"})
 
-
 @app.route('/')
 def index():
     # Load devices and mappings from YAML files
