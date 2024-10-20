@@ -143,6 +143,16 @@
             </div>
         </form>
 
+        <!-- Sensor Data Section -->
+        <div class="sensor-data">
+            <h3>Sensor Data</h3>
+            <p>Sensor Name: <span id="sensor-name">Loading...</span></p>
+            <p>State: <span id="sensor-state">Loading...</span></p>
+            <p>Battery: <span id="sensor-battery">Loading...</span></p>
+            <p>Temperature: <span id="sensor-temperature">Loading...</span></p>
+            <p>Last Seen: <span id="sensor-last-seen">Loading...</span></p>
+        </div>
+
         <!-- Section for refreshing Yolink devices -->
         <div class="mb-3">
             <button type="button" id="refresh-devices-btn" class="btn btn-success">Refresh Yolink Devices</button>
@@ -206,9 +216,139 @@
 
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script>
-        // Reuse all previous JavaScript functionality from index.html
-        
-        // Add the refresh Yolink devices and save mappings logic back
+        function addToLog(message) {
+            $('#log-area').append('<div>' + new Date().toLocaleString() + ': ' + message + '</div>');
+            $('#log-area').scrollTop($('#log-area')[0].scrollHeight);
+        }
+
+        function updateStatus(elementId, iconId, message, success) {
+            const icon = success ? 'https://img.icons8.com/color/48/000000/checkmark.png' : 'https://img.icons8.com/color/48/000000/cancel.png';
+            $('#' + iconId).attr('src', icon).removeClass('hidden');
+            $('#' + elementId).text(message);
+        }
+
+        function checkStatus(url, elementId, iconId, successMessage, errorMessage) {
+            $.ajax({
+                type: "GET",
+                url: url,
+                success: function (response) {
+                    if (response.status === "success") {
+                        updateStatus(elementId, iconId, successMessage, true);
+                    } else {
+                        updateStatus(elementId, iconId, errorMessage, false);
+                    }
+                },
+                error: function (xhr, status, error) {
+                    updateStatus(elementId, iconId, errorMessage, false);
+                }
+            });
+        }
+
+        // Function to update sensor data dynamically
+        function updateSensorData(sensorData) {
+            $('#sensor-name').text(sensorData.name);
+            $('#sensor-state').text(sensorData.state);
+            $('#sensor-battery').text(sensorData.battery + '%');
+            $('#sensor-temperature').text(sensorData.devTemperature + '°F');
+            $('#sensor-last-seen').text(sensorData.last_seen);
+        }
+
+        // Check MQTT and CHEKT statuses on page load
+        $(document).ready(function () {
+            checkStatus('/check_mqtt_status', 'mqtt-message', 'mqtt-icon', 'MQTT connection is active.', 'MQTT connection is inactive.');
+            checkStatus('/check_chekt_status', 'chekt-message', 'chekt-icon', 'CHEKT server is alive.', 'Failed to connect to CHEKT server.');
+
+            // Example sensor data for testing
+            let sensorData = {
+                name: "Front Door Sensor",
+                state: "closed",
+                battery: 95,
+                devTemperature: 68,  // Converted to Fahrenheit
+                last_seen: "2024-10-20T06:57:04"
+            };
+            updateSensorData(sensorData);
+        });
+
+        // Save configuration form
+        $('#config-form').on('submit', function (e) {
+            e.preventDefault();
+
+            var configData = {
+                yolink: {
+                    uaid: $('#uaid').val(),
+                    secret_key: $('#secret_key').val()
+                },
+                chekt: {
+                    ip: $('#chekt_ip').val(),
+                    port: $('#chekt_port').val(),
+                    api_token: $('#chekt_token').val()
+                }
+            };
+
+            $('#config-icon').addClass('hidden');
+            $('#config-message').text('Saving configuration...');
+            $.ajax({
+                type: "POST",
+                url: "/save_config",
+                contentType: "application/json",
+                data: JSON.stringify(configData),
+                success: function (response) {
+                    updateStatus('config-message', 'config-icon', 'Configuration saved successfully.', true);
+                    addToLog(response.message);
+                    // Recheck statuses after saving
+                    checkStatus('/check_mqtt_status', 'mqtt-message', 'mqtt-icon', 'MQTT connection is active.', 'MQTT connection is inactive.');
+                    checkStatus('/check_chekt_status', 'chekt-message', 'chekt-icon', 'CHEKT server is alive.', 'Failed to connect to CHEKT server.');
+                },
+                error: function (xhr, status, error) {
+                    updateStatus('config-message', 'config-icon', 'Failed to save configuration.', false);
+                    addToLog('Error: ' + xhr.responseText);
+                }
+            });
+        });
+
+        // Handle the form submission to save the mappings
+        $('#mapping-form').on('submit', function (e) {
+            e.preventDefault();
+            var mappingsArray = [];
+
+            $('input[name="device_id"]').each(function (index) {
+                var deviceId = $(this).val();
+                var zone = $(this).closest('tr').find('input[name="chekt_zone"]').val();
+                var event = $(this).closest('tr').find('select[name="yolink_event"]').val();
+                var alert = $(this).closest('tr').find('select[name="chekt_alert"]').val();
+
+                // Add each device mapping to the array
+                mappingsArray.push({
+                    "yolink_device_id": deviceId,
+                    "chekt_zone": zone,
+                    "yolink_event": event,
+                    "chekt_alert": alert
+                });
+            });
+
+            // Prepare the data to be sent, wrapping it in the 'mappings' key
+            var mappingsData = {
+                "mappings": mappingsArray
+            };
+
+            $.ajax({
+                type: "POST",
+                url: "/save_mapping",
+                contentType: "application/json",
+                data: JSON.stringify(mappingsData),
+                success: function (response) {
+                    addToLog(response.message);
+                    // Recheck statuses after saving
+                    checkStatus('/check_mqtt_status', 'mqtt-message', 'mqtt-icon', 'MQTT connection is active.', 'MQTT connection is inactive.');
+                    checkStatus('/check_chekt_status', 'chekt-message', 'chekt-icon', 'CHEKT server is alive.', 'Failed to connect to CHEKT server.');
+                },
+                error: function (xhr, status, error) {
+                    addToLog('Error: ' + xhr.responseText);
+                }
+            });
+        });
+
+        // Refresh Yolink devices button
         $('#refresh-devices-btn').on('click', function () {
             $('#yolink-icon').addClass('hidden');
             $('#yolink-message').text('Refreshing Yolink devices...');
@@ -233,40 +373,45 @@
             });
         });
 
-        // Handle the form submission to save the mappings
-        $('#mapping-form').on('submit', function (e) {
-            e.preventDefault();
-            var mappingsArray = [];
+        // Update CHEKT Alert options based on the CHEKT Zone entered
+        $(document).on('input', '.chekt-zone', function () {
+            var chektZone = $(this).val();
+            var alertDropdown = $(this).closest('tr').find('select[name="chekt_alert"]');
 
-            $('input[name="device_id"]').each(function (index) {
-                var deviceId = $(this).val();
-                var zone = $(this).closest('tr').find('input[name="chekt_zone"]').val();
-                var event = $(this).closest('tr').find('select[name="yolink_event"]').val();
-                var alert = $(this).closest('tr').find('select[name="chekt_alert"]').val();
+            // Clear existing options
+            alertDropdown.empty();
+            alertDropdown.append('<option value="">Select CHEKT Alert</option>');
 
-                mappingsArray.push({
-                    "yolink_device_id": deviceId,
-                    "chekt_zone": zone,
-                    "yolink_event": event,
-                    "chekt_alert": alert
-                });
-            });
+            // Add the new option based on the entered zone
+            if (chektZone) {
+                alertDropdown.append('<option value="Zone ' + chektZone + ' Breach">Zone ' + chektZone + ' Breach</option>');
+            }
+        });
 
-            // Prepare the data to be sent
-            var mappingsData = {
-                "mappings": mappingsArray
-            };
+        // Ensure the CHEKT Alert options are pre-populated after the page loads
+        $('.chekt-zone').each(function () {
+            var chektZone = $(this).val();
+            var alertDropdown = $(this).closest('tr').find('select[name="chekt_alert"]');
 
+            if (chektZone) {
+                alertDropdown.append('<option value="Zone ' + chektZone + ' Breach" selected>Zone ' + chektZone + ' Breach</option>');
+            }
+        });
+
+        // Load logs
+        $('#load-logs-btn').on('click', function () {
             $.ajax({
-                type: "POST",
-                url: "/save_mapping",
-                contentType: "application/json",
-                data: JSON.stringify(mappingsData),
+                type: "GET",
+                url: "/get_logs",
                 success: function (response) {
-                    addToLog(response.message);
+                    if (response.status === "success") {
+                        $('#log-area').text(response.logs);
+                    } else {
+                        addToLog("Failed to load logs: " + response.message);
+                    }
                 },
                 error: function (xhr, status, error) {
-                    addToLog('Error: ' + xhr.responseText);
+                    addToLog('Error loading logs: ' + xhr.responseText);
                 }
             });
         });
