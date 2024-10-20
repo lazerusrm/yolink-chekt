@@ -417,15 +417,35 @@ def refresh_yolink_devices():
 
     home_id = home_info["data"]["id"]
 
-    # Fetch devices
+    # Fetch devices from YoLink API
     devices = yolink_api.get_device_list()
     if not devices or devices.get("code") != "000000":
         return jsonify({"status": "error", "message": f"Failed to retrieve devices: {devices.get('desc', 'Unknown error')}"})
 
-    # Save home_id and devices in devices.yaml
+    # Load the existing devices.yaml
+    existing_devices_data = load_yaml(devices_file)
+    existing_devices = {device['deviceId']: device for device in existing_devices_data.get('devices', [])}
+
+    # Merge new device list with existing devices to retain dynamic fields
+    new_devices = []
+    for device in devices["data"]["devices"]:
+        device_id = device["deviceId"]
+        
+        if device_id in existing_devices:
+            # Preserve dynamic fields (state, battery, etc.)
+            existing_device = existing_devices[device_id]
+            device['state'] = existing_device.get('state', 'unknown')
+            device['battery'] = existing_device.get('battery', 'unknown')
+            device['devTemperature'] = existing_device.get('devTemperature', 'unknown')
+            device['last_seen'] = existing_device.get('last_seen', 'never')
+
+        # Add device to the new devices list
+        new_devices.append(device)
+
+    # Save the merged device data back to devices.yaml
     data_to_save = {
         "homes": {"id": home_id},
-        "devices": devices["data"]["devices"]
+        "devices": new_devices
     }
     save_to_yaml("devices.yaml", data_to_save)
 
