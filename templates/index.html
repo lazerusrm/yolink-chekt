@@ -93,7 +93,7 @@
         /* Fast spin animation */
         .fast-spin {
             animation-name: fast-spin;
-            animation-duration: 1s;  /* Fast spin */
+            animation-duration: 2s;  /* Fast spin */
         }
 
         @keyframes fast-spin {
@@ -101,52 +101,6 @@
             100% { transform: rotate(360deg); }
         }
 
-        /* Signal strength meter */
-        .signal-meter {
-            display: inline-block;
-            height: 20px;
-            width: 50px;
-            background-color: #999;
-            margin-left: 10px;
-            position: relative;
-        }
-
-        .bar {
-            width: 10px;
-            background-color: #ff0000; /* Red by default for low signal */
-            display: inline-block;
-            height: 5px;
-            margin-left: 2px;
-            vertical-align: bottom;
-        }
-
-        .bar.bar-1 {
-            height: 8px;
-        }
-
-        .bar.bar-2 {
-            height: 12px;
-        }
-
-        .bar.bar-3 {
-            height: 16px;
-        }
-
-        .bar.bar-4 {
-            height: 20px;
-        }
-
-        .high-signal .bar {
-            background-color: #00ff00; /* Green for high signal */
-        }
-
-        .medium-signal .bar {
-            background-color: #ffff00; /* Yellow for medium signal */
-        }
-
-        .low-signal .bar {
-            background-color: #ff0000; /* Red for low signal */
-        }
     </style>
 </head>
 
@@ -189,69 +143,33 @@
             }
         }
 
-        // Function to dynamically determine signal quality and create a signal meter
-        function createSignalMeter(signal) {
-            let signalClass = "low-signal"; // Default to low signal
-            let bars = 1;
-
-            if (signal >= -70) {
-                signalClass = "high-signal";
-                bars = 4;
-            } else if (signal >= -90) {
-                signalClass = "medium-signal";
-                bars = 3;
-            } else if (signal >= -110) {
-                signalClass = "low-signal";
-                bars = 2;
-            }
-
-            // Create the signal meter HTML
-            let meterHTML = `<div class="signal-meter ${signalClass}">`;
-            for (let i = 1; i <= bars; i++) {
-                meterHTML += `<span class="bar bar-${i}"></span>`;
-            }
-            meterHTML += `</div>`;
-            return meterHTML;
+        // Status check and sensor data updates go here
+        function updateStatus(elementId, iconId, message, success) {
+            const icon = success ? 'https://img.icons8.com/color/48/000000/checkmark.png' : 'https://img.icons8.com/color/48/000000/cancel.png';
+            $('#' + iconId).attr('src', icon).removeClass('hidden');
+            $('#' + elementId).text(message);
         }
 
-        // Function to map battery level to percentage and get battery icon
-        function getBatteryInfo(batteryLevel) {
-            let percentage;
-            let icon;
-
-            switch (batteryLevel) {
-                case 0:
-                    percentage = "0%";
-                    icon = "https://img.icons8.com/color/48/000000/empty-battery.png";
-                    break;
-                case 1:
-                    percentage = "25%";
-                    icon = "https://img.icons8.com/color/48/000000/low-battery.png";
-                    break;
-                case 2:
-                    percentage = "50%";
-                    icon = "https://img.icons8.com/color/48/000000/medium-battery.png";
-                    break;
-                case 3:
-                    percentage = "75%";
-                    icon = "https://img.icons8.com/color/48/000000/medium-full-battery.png";
-                    break;
-                case 4:
-                    percentage = "100%";
-                    icon = "https://img.icons8.com/color/48/000000/full-battery.png";
-                    break;
-                default:
-                    percentage = "N/A";
-                    icon = "https://img.icons8.com/color/48/000000/question-mark.png";
-                    break;
-            }
-
-            return { percentage, icon };
+        function checkStatus(url, elementId, iconId, successMessage, errorMessage) {
+            $.ajax({
+                type: "GET",
+                url: url,
+                success: function (response) {
+                    if (response.status === "success") {
+                        updateStatus(elementId, iconId, successMessage, true);
+                    } else {
+                        updateStatus(elementId, iconId, errorMessage, false);
+                    }
+                },
+                error: function () {
+                    updateStatus(elementId, iconId, errorMessage, false);
+                }
+            });
         }
 
-        // Fetch and update sensor data from the devices.yaml file
+        // Function to fetch and display sensor data from devices.yaml
         function updateSensorData() {
-            toggleSpinnerSpeed(true); // Fast spin when reloading
+            toggleSpinnerSpeed(true); // Fast spin during data load
             $.ajax({
                 type: "GET",
                 url: "/get_sensor_data",  // This endpoint will fetch data from devices.yaml
@@ -259,25 +177,23 @@
                     const sensorList = $('#sensor-list');
                     sensorList.empty(); // Clear the current list
 
-                    sensorData.devices.forEach(sensor => {
-                        const batteryInfo = getBatteryInfo(sensor.battery);
-                        const signalMeter = createSignalMeter(sensor.signal);
-                        
-                        const sensorHTML = `
-                            <div class="sensor">
-                                <p class="sensor-name">${sensor.name}</p>
-                                <p class="sensor-data-item">State: ${sensor.state || 'N/A'}</p>
-                                <p class="sensor-data-item">
-                                    <img src="${batteryInfo.icon}" class="battery-icon" alt="Battery Icon"> 
-                                    Battery: ${batteryInfo.percentage}
-                                </p>
-                                <p class="sensor-data-item">Temperature: ${sensor.devTemperature || 'N/A'}°F</p>
-                                <p class="sensor-data-item">Signal: ${signalMeter}</p>
-                                <p class="sensor-data-item">Last Seen: ${sensor.last_seen || 'N/A'}</p>
-                            </div>
-                        `;
-                        sensorList.append(sensorHTML);
-                    });
+                    // Check if sensor data is loaded correctly
+                    if (sensorData && sensorData.devices) {
+                        sensorData.devices.forEach(sensor => {
+                            const sensorHTML = `
+                                <div class="sensor">
+                                    <p class="sensor-name">${sensor.name}</p>
+                                    <p class="sensor-data-item">State: ${sensor.state || 'N/A'}</p>
+                                    <p class="sensor-data-item">Battery: ${sensor.battery || 'N/A'}</p>
+                                    <p class="sensor-data-item">Temperature: ${sensor.devTemperature || 'N/A'}°F</p>
+                                    <p class="sensor-data-item">Last Seen: ${sensor.last_seen || 'N/A'}</p>
+                                </div>
+                            `;
+                            sensorList.append(sensorHTML);
+                        });
+                    } else {
+                        sensorList.append('<p>No sensor data available.</p>');
+                    }
 
                     toggleSpinnerSpeed(false); // Slow spin after data is updated
                 },
