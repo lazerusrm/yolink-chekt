@@ -31,8 +31,26 @@
             color: #ffffff;
         }
 
+        .sensor-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            grid-gap: 20px;
+        }
+
         .sensor {
-            margin-bottom: 20px;
+            background-color: #393939;
+            padding: 15px;
+            border-radius: 10px;
+        }
+
+        .sensor h3 {
+            font-size: 1.5rem;
+            color: #00aaff;
+            margin-bottom: 10px;
+        }
+
+        .sensor p {
+            margin: 5px 0;
         }
 
         .link {
@@ -64,7 +82,7 @@
         <!-- Sensor Data Section -->
         <div class="sensor-data">
             <h2>Sensor Data</h2>
-            <div id="sensor-list">
+            <div class="sensor-grid" id="sensor-list">
                 <!-- Sensor data will be appended here dynamically -->
             </div>
         </div>
@@ -111,12 +129,12 @@
                     sensorData.devices.forEach(sensor => {
                         const sensorHTML = `
                             <div class="sensor">
-                                <p>Sensor Name: <span>${sensor.name}</span></p>
-                                <p>State: <span>${sensor.state || 'N/A'}</span></p>
-                                <p>Battery: <span>${sensor.battery || 'N/A'}%</span></p>
-                                <p>Temperature: <span>${sensor.devTemperature || 'N/A'}°F</span></p>
-                                <p>Signal: <span>${sensor.signal || 'N/A'}</span></p>
-                                <p>Last Seen: <span>${sensor.last_seen || 'N/A'}</span></p>
+                                <h3>${sensor.name}</h3>
+                                <p><strong>State:</strong> ${sensor.state || 'N/A'}</p>
+                                <p><strong>Battery:</strong> ${sensor.battery || 'N/A'}%</p>
+                                <p><strong>Temperature:</strong> ${sensor.devTemperature || 'N/A'}°F</p>
+                                <p><strong>Signal:</strong> ${sensor.signal || 'N/A'} dB</p>
+                                <p><strong>Last Seen:</strong> ${sensor.last_seen || 'N/A'}</p>
                             </div>
                         `;
                         sensorList.append(sensorHTML);

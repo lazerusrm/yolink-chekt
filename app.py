@@ -201,10 +201,8 @@ def update_device_data(device_id, payload):
             # Update device fields
             device['state'] = payload['data'].get('state', device.get('state', 'unknown'))
             device['battery'] = payload['data'].get('battery', device.get('battery', 'unknown'))
-            device['power'] = payload['data'].get('power', device.get('power', 'unknown'))
-            device['watt'] = payload['data'].get('watt', device.get('watt', 'unknown'))
-
-            # Convert temperature to Fahrenheit
+            
+            # Update temperature (if available)
             temperature_c = payload['data'].get('devTemperature')
             if temperature_c is not None:
                 device['devTemperature'] = celsius_to_fahrenheit(temperature_c)
@@ -398,7 +396,6 @@ def get_sensor_data():
 
     # Ensure there is data in the file and the devices list exists
     if devices_data and 'devices' in devices_data and len(devices_data['devices']) > 0:
-        # Prepare a list of all sensor data
         all_sensors = []
         for sensor in devices_data['devices']:
             all_sensors.append({
@@ -406,11 +403,10 @@ def get_sensor_data():
                 'state': sensor.get('state', 'Unknown'),
                 'battery': sensor.get('battery', 'Unknown'),
                 'devTemperature': sensor.get('devTemperature', 'Unknown'),
-                'signal': sensor.get('signal', 'Unknown'),
+                'signal': sensor.get('signal', 'Unknown'),  # Include signal level here
                 'last_seen': sensor.get('last_seen', 'Unknown')
             })
         
-        # Return all sensor data as a JSON response
         return jsonify({'devices': all_sensors})
     else:
         return jsonify({'error': 'No sensor data available.'}), 404
