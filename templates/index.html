@@ -84,7 +84,6 @@
             animation-name: slow-spin;
         }
 
-        /* Slow spin animation */
         @keyframes slow-spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
@@ -93,7 +92,7 @@
         /* Fast spin animation */
         .fast-spin {
             animation-name: fast-spin;
-            animation-duration: 1s;  /* Fast spin */
+            animation-duration: 2s;  /* Fast spin during data loading */
         }
 
         @keyframes fast-spin {
@@ -101,6 +100,52 @@
             100% { transform: rotate(360deg); }
         }
 
+        /* Signal strength meter */
+        .signal-meter {
+            display: inline-block;
+            height: 20px;
+            width: 50px;
+            background-color: #999;
+            margin-left: 10px;
+            position: relative;
+        }
+
+        .bar {
+            width: 10px;
+            background-color: #ff0000; /* Red by default for low signal */
+            display: inline-block;
+            height: 5px;
+            margin-left: 2px;
+            vertical-align: bottom;
+        }
+
+        .bar.bar-1 {
+            height: 8px;
+        }
+
+        .bar.bar-2 {
+            height: 12px;
+        }
+
+        .bar.bar-3 {
+            height: 16px;
+        }
+
+        .bar.bar-4 {
+            height: 20px;
+        }
+
+        .high-signal .bar {
+            background-color: #00ff00; /* Green for high signal */
+        }
+
+        .medium-signal .bar {
+            background-color: #ffff00; /* Yellow for medium signal */
+        }
+
+        .low-signal .bar {
+            background-color: #ff0000; /* Red for low signal */
+        }
     </style>
 </head>
 
@@ -143,43 +188,29 @@
             }
         }
 
-        // Status check and sensor data updates go here
-        function updateStatus(elementId, iconId, message, success) {
-            const icon = success ? 'https://img.icons8.com/color/48/000000/checkmark.png' : 'https://img.icons8.com/color/48/000000/cancel.png';
-            $('#' + iconId).attr('src', icon).removeClass('hidden');
-            $('#' + elementId).text(message);
-        }
+        // Function to dynamically determine signal quality and create a signal meter
+        function createSignalMeter(signal) {
+            let signalClass = "low-signal"; // Default to low signal
+            let bars = 1;
 
-        function checkStatus(url, elementId, iconId, successMessage, errorMessage) {
-            $.ajax({
-                type: "GET",
-                url: url,
-                success: function (response) {
-                    if (response.status === "success") {
-                        updateStatus(elementId, iconId, successMessage, true);
-                    } else {
-                        updateStatus(elementId, iconId, errorMessage, false);
-                    }
-                },
-                error: function () {
-                    updateStatus(elementId, iconId, errorMessage, false);
-                }
-            });
-        }
-
-        // Function to dynamically determine signal quality
-        function getSignalQuality(signal) {
             if (signal >= -70) {
-                return "Excellent";
+                signalClass = "high-signal";
+                bars = 4;
             } else if (signal >= -90) {
-                return "High";
+                signalClass = "medium-signal";
+                bars = 3;
             } else if (signal >= -110) {
-                return "Good";
-            } else if (signal >= -130) {
-                return "Poor";
-            } else {
-                return "Very Poor";
+                signalClass = "low-signal";
+                bars = 2;
             }
+
+            // Create the signal meter HTML
+            let meterHTML = `<div class="signal-meter ${signalClass}">`;
+            for (let i = 1; i <= bars; i++) {
+                meterHTML += `<span class="bar bar-${i}"></span>`;
+            }
+            meterHTML += `</div>`;
+            return meterHTML;
         }
 
         // Function to map battery level to percentage and get battery icon
@@ -217,69 +248,40 @@
             return { percentage, icon };
         }
 
-        // Function to compare sensors first by last seen and then by name
-        function compareSensors(a, b) {
-            const timeA = new Date(a.last_seen).getTime();
-            const timeB = new Date(b.last_seen).getTime();
-
-            // Prioritize valid times first, put invalid dates last
-            if (isNaN(timeA) && !isNaN(timeB)) return 1;   // a has no valid date, b does
-            if (!isNaN(timeA) && isNaN(timeB)) return -1;  // a has a valid date, b doesn't
-
-            // First compare by last_seen (most recent first)
-            if (timeA !== timeB) {
-                return timeB - timeA;
-            }
-
-            // If last_seen times are equal, compare by name alphabetically
-            return a.name.localeCompare(b.name);
-        }
-
-        // Function to convert UTC to local time and format
-        function formatLocalTime(isoDateString) {
-            if (!isoDateString) return "N/A";  // Handle missing or invalid dates
-            const localTime = new Date(isoDateString);
-            // Adjusting by -6 hours for your timezone (offset)
-            if (!isNaN(localTime)) {
-                localTime.setHours(localTime.getHours() - 6);
-                return localTime.toLocaleString();  // Convert to user's local time and format
-            }
-            return "Invalid date";  // Return 'Invalid date' if the date is not valid
-        }
-
-        // Fetch and update sensor data from the devices.yaml file
+        // Function to fetch sensor data and display it
         function updateSensorData() {
             toggleSpinnerSpeed(true); // Fast spin when reloading
             $.ajax({
                 type: "GET",
-                url: "/get_sensor_data",  // This endpoint will fetch data from devices.yaml
+                url: "/get_sensor_data",  // Ensure this URL is correct
                 success: function (sensorData) {
                     const sensorList = $('#sensor-list');
                     sensorList.empty(); // Clear the current list
 
-                    sensorData.devices.sort(compareSensors); // Sort sensors by last seen and then by name
-
-                    sensorData.devices.forEach(sensor => {
-                        const signalQuality = getSignalQuality(sensor.signal);
-                        const batteryInfo = getBatteryInfo(sensor.battery);
-                        
-                        const lastSeenLocal = formatLocalTime(sensor.last_seen); // Convert last_seen to local time
-
-                        const sensorHTML = `
-                            <div class="sensor">
-                                <p class="sensor-name">${sensor.name}</p>
-                                <p class="sensor-data-item">State: ${sensor.state || 'N/A'}</p>
-                                <p class="sensor-data-item">
-                                    <img src="${batteryInfo.icon}" class="battery-icon" alt="Battery Icon"> 
-                                    Battery: ${batteryInfo.percentage} (Level ${sensor.battery})
-                                </p>
-                                <p class="sensor-data-item">Temperature: ${sensor.devTemperature || 'N/A'}°F</p>
-                                <p class="sensor-data-item">Signal: ${sensor.signal || 'N/A'} dBm (${signalQuality})</p>
-                                <p class="sensor-data-item">Last Seen: ${lastSeenLocal}</p>
-                            </div>
-                        `;
-                        sensorList.append(sensorHTML);
-                    });
+                    // Check if sensor data is loaded correctly
+                    if (sensorData && sensorData.devices) {
+                        sensorData.devices.forEach(sensor => {
+                            const batteryInfo = getBatteryInfo(sensor.battery);
+                            const signalMeter = createSignalMeter(sensor.signal);
+                            
+                            const sensorHTML = `
+                                <div class="sensor">
+                                    <p class="sensor-name">${sensor.name}</p>
+                                    <p class="sensor-data-item">State: ${sensor.state || 'N/A'}</p>
+                                    <p class="sensor-data-item">
+                                        <img src="${batteryInfo.icon}" class="battery-icon" alt="Battery Icon"> 
+                                        Battery: ${batteryInfo.percentage}
+                                    </p>
+                                    <p class="sensor-data-item">Temperature: ${sensor.devTemperature || 'N/A'}°F</p>
+                                    <p class="sensor-data-item">Signal: ${signalMeter}</p>
+                                    <p class="sensor-data-item">Last Seen: ${sensor.last_seen || 'N/A'}</p>
+                                </div>
+                            `;
+                            sensorList.append(sensorHTML);
+                        });
+                    } else {
+                        sensorList.append('<p>No sensor data available.</p>');
+                    }
 
                     toggleSpinnerSpeed(false); // Slow spin after data is updated
                 },
