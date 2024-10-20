@@ -454,7 +454,6 @@ def check_chekt_status():
 
 @app.route('/refresh_yolink_devices', methods=['GET'])
 def refresh_yolink_devices():
-    global mqtt_client_instance
     config = load_config()
     token = config['yolink'].get('token')
 
@@ -490,7 +489,11 @@ def refresh_yolink_devices():
             device['state'] = existing_device.get('state', 'unknown')
             device['battery'] = existing_device.get('battery', 'unknown')
             device['devTemperature'] = existing_device.get('devTemperature', 'unknown')
+            device['signal'] = existing_device.get('signal', 'unknown')  # Preserve signal field
             device['last_seen'] = existing_device.get('last_seen', 'never')
+
+        # Ensure signal field is populated in the new device entry (from LoRa data or default)
+        device['signal'] = device.get('signal', 'unknown')
 
         # Add device to the new devices list
         new_devices.append(device)
@@ -511,7 +514,7 @@ def refresh_yolink_devices():
     mqtt_thread.daemon = True
     mqtt_thread.start()
 
-    return jsonify({"status": "success", "message": "Yolink devices refreshed and MQTT client restarted."})
+    return jsonify({"status": "success", "message": "YoLink devices refreshed and MQTT client restarted."})
 
 @app.route('/')
 def index():
