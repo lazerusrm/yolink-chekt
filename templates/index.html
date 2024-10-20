@@ -68,28 +68,39 @@
             color: #007BFF;
         }
 
-        /* Rotating loading indicator */
+        /* Spinner */
         .spinner {
             border: 4px solid rgba(255, 255, 255, 0.3);
             border-top: 4px solid #ffffff;
             border-radius: 50%;
             width: 24px;
             height: 24px;
-            animation: spin 1s linear infinite;
             display: inline-block;
             margin-left: 10px;
             vertical-align: middle;
+            animation-duration: 5s;  /* Slow spin by default */
+            animation-timing-function: linear;
+            animation-iteration-count: infinite;
+            animation-name: slow-spin;
         }
 
-        @keyframes spin {
+        /* Slow spin animation */
+        @keyframes slow-spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
 
-        /* Hide the spinner by default */
-        .hidden {
-            display: none;
+        /* Fast spin animation */
+        .fast-spin {
+            animation-name: fast-spin;
+            animation-duration: 1s;  /* Fast spin */
         }
+
+        @keyframes fast-spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
     </style>
 </head>
 
@@ -99,7 +110,7 @@
 
         <!-- Status check for MQTT and CHEKT -->
         <div class="status">
-            <h2>Status <span id="loading-spinner" class="spinner hidden"></span></h2>
+            <h2>Status <span id="loading-spinner" class="spinner"></span></h2> <!-- Spinner always visible -->
             <div id="mqtt-status" class="status-item">
                 <img src="" alt="" id="mqtt-icon" class="hidden">
                 <span id="mqtt-message">Checking MQTT connection...</span>
@@ -123,12 +134,12 @@
 
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script>
-        // Function to show or hide the loading spinner
-        function toggleLoadingSpinner(show) {
-            if (show) {
-                $('#loading-spinner').removeClass('hidden');
+        // Function to toggle spinner speed between slow and fast
+        function toggleSpinnerSpeed(fast) {
+            if (fast) {
+                $('#loading-spinner').addClass('fast-spin');  // Fast spin
             } else {
-                $('#loading-spinner').addClass('hidden');
+                $('#loading-spinner').removeClass('fast-spin');  // Slow spin
             }
         }
 
@@ -238,7 +249,7 @@
 
         // Fetch and update sensor data from the devices.yaml file
         function updateSensorData() {
-            toggleLoadingSpinner(true); // Show the loading spinner
+            toggleSpinnerSpeed(true); // Fast spin when reloading
             $.ajax({
                 type: "GET",
                 url: "/get_sensor_data",  // This endpoint will fetch data from devices.yaml
@@ -270,11 +281,11 @@
                         sensorList.append(sensorHTML);
                     });
 
-                    toggleLoadingSpinner(false); // Hide the loading spinner after data is updated
+                    toggleSpinnerSpeed(false); // Slow spin after data is updated
                 },
                 error: function () {
                     $('#sensor-list').html('<p>Error loading sensor data.</p>');
-                    toggleLoadingSpinner(false); // Hide the loading spinner if there's an error
+                    toggleSpinnerSpeed(false); // Slow spin if there's an error
                 }
             });
         }
