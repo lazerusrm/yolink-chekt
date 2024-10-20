@@ -31,6 +31,10 @@
             color: #ffffff;
         }
 
+        .sensor {
+            margin-bottom: 20px;
+        }
+
         .link {
             display: block;
             margin-top: 20px;
@@ -60,11 +64,9 @@
         <!-- Sensor Data Section -->
         <div class="sensor-data">
             <h2>Sensor Data</h2>
-            <p>Sensor Name: <span id="sensor-name">Loading...</span></p>
-            <p>State: <span id="sensor-state">Loading...</span></p>
-            <p>Battery: <span id="sensor-battery">Loading...</span></p>
-            <p>Temperature: <span id="sensor-temperature">Loading...</span></p>
-            <p>Last Seen: <span id="sensor-last-seen">Loading...</span></p>
+            <div id="sensor-list">
+                <!-- Sensor data will be appended here dynamically -->
+            </div>
         </div>
 
         <!-- Link to Configuration page -->
@@ -103,18 +105,25 @@
                 type: "GET",
                 url: "/get_sensor_data",  // This endpoint will fetch data from devices.yaml
                 success: function (sensorData) {
-                    $('#sensor-name').text(sensorData.name);
-                    $('#sensor-state').text(sensorData.state);
-                    $('#sensor-battery').text(sensorData.battery + '%');
-                    $('#sensor-temperature').text(sensorData.devTemperature + '°F');
-                    $('#sensor-last-seen').text(sensorData.last_seen);
+                    const sensorList = $('#sensor-list');
+                    sensorList.empty(); // Clear the current list
+
+                    sensorData.devices.forEach(sensor => {
+                        const sensorHTML = `
+                            <div class="sensor">
+                                <p>Sensor Name: <span>${sensor.name}</span></p>
+                                <p>State: <span>${sensor.state || 'N/A'}</span></p>
+                                <p>Battery: <span>${sensor.battery || 'N/A'}%</span></p>
+                                <p>Temperature: <span>${sensor.devTemperature || 'N/A'}°F</span></p>
+                                <p>Signal: <span>${sensor.signal || 'N/A'}</span></p>
+                                <p>Last Seen: <span>${sensor.last_seen || 'N/A'}</span></p>
+                            </div>
+                        `;
+                        sensorList.append(sensorHTML);
+                    });
                 },
                 error: function () {
-                    $('#sensor-name').text('Error loading sensor data');
-                    $('#sensor-state').text('Error');
-                    $('#sensor-battery').text('Error');
-                    $('#sensor-temperature').text('Error');
-                    $('#sensor-last-seen').text('Error');
+                    $('#sensor-list').html('<p>Error loading sensor data.</p>');
                 }
             });
         }
