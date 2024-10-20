@@ -179,20 +179,20 @@ def force_generate_token_and_client():
     return token, client_id
 
 def update_device_data(device_id, payload):
-    with open('devices.yaml', 'r') as file:
-        devices_data = yaml.safe_load(file)
+    # Load the devices.yaml file
+    devices_data = load_yaml(devices_file)
 
     now = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S')
     
-    # Find the device based on the serial number (device_id)
-    for device in devices_data['device_parameters']:
-        if device['serial_number'] == device_id:
+    # Find the device in devices.yaml based on the device ID
+    for device in devices_data['devices']:
+        if device['deviceId'] == device_id:
             
-            # Update fields with new data from the payload
+            # Update the device's state, battery, temperature, and last_seen fields with new data
             device['state'] = payload['data'].get('state', device.get('state'))
             device['battery'] = payload['data'].get('battery', device.get('battery'))
             
-            # Convert temperature to Fahrenheit
+            # Convert temperature to Fahrenheit if available
             temperature_c = payload['data'].get('devTemperature')
             if temperature_c is not None:
                 device['devTemperature'] = celsius_to_fahrenheit(temperature_c)
@@ -201,8 +201,7 @@ def update_device_data(device_id, payload):
             device['last_seen'] = now
 
     # Save the updated devices.yaml
-    with open('devices.yaml', 'w') as file:
-        yaml.safe_dump(devices_data, file)
+    save_to_yaml(devices_file, devices_data)
 
 def yolink_api_test():
     # Load configuration to get token
