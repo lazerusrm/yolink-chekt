@@ -460,7 +460,22 @@ def index():
 
 @app.route('/config.html')
 def config():
-    return render_template('config.html')
+    try:
+        # Load the configuration data from config.yaml
+        config_data = load_config()
+
+        # Ensure yolink section exists
+        if 'yolink' not in config_data:
+            config_data['yolink'] = {
+                'uaid': '',
+                'secret_key': ''
+            }
+
+        # Pass only the config data to the template
+        return render_template('config.html', config=config_data)
+    except Exception as e:
+        logger.error(f"Error serving config.html: {str(e)}")
+        return jsonify({"status": "error", "message": "Error serving config.html"}), 500
 
 @app.route('/get_homes', methods=['GET'])
 def get_homes():
