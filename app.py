@@ -689,15 +689,20 @@ def should_trigger_event(state, device_type):
 
 
 # Helper function to map state to the appropriate CHEKT event
+# Helper function to map state to the appropriate CHEKT event
 def map_state_to_event(state, device_type):
     if device_type == 'door_contact':
-        return f"Door {state}"  # e.g., "Door opened" or "Door closed"
+        if state == 'open':
+            return "Door Opened"
+        elif state == 'closed':
+            return "Door Closed"
     elif device_type == 'motion':
-        return "Motion detected"
+        if state == 'alert':
+            return "Motion Detected"
     elif device_type == 'leak_sensor':
-        return "Water leak detected"
+        if state == 'alert':
+            return "Water Leak Detected"
     return "Unknown Event"
-
 
 # Helper function to dynamically determine the CHEKT zone for a device
 def get_chekt_zone(device_id):
@@ -762,11 +767,15 @@ def on_message(client, userdata, msg):
         if device_id:
             logger.info(f"Device ID: {device_id}, State: {state}")
 
-            # Load the mappings from mappings.yaml
-            mappings = load_yaml(mappings_file).get('mappings', [])
-            #logger.debug(f"Loaded mappings: {mappings}")
+            # Load the mappings directly from mappings.yaml
+            try:
+                mappings_data = load_yaml(mappings_file)
+                mappings = mappings_data.get('mappings', [])
+            except Exception as e:
+                logger.error(f"Failed to load mappings.yaml: {str(e)}")
+                return  # Exit early if there's an error loading the mappings
 
-            # Find the corresponding mapping for the device
+            # Find the corresponding mapping for the device in mappings.yaml
             mapping = next((m for m in mappings if m['yolink_device_id'] == device_id), None)
 
             if mapping:
