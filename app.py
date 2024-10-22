@@ -438,14 +438,24 @@ def get_sensor_data():
         all_sensors = []
         for sensor in devices_data['devices']:
             all_sensors.append({
-                'name': sensor.get('name', 'Unknown'),
-                'state': sensor.get('state', 'Unknown'),
-                'battery': sensor.get('battery', 'Unknown'),
-                'devTemperature': sensor.get('devTemperature', 'Unknown'),
-                'signal': sensor.get('signal', 'Unknown'),  # Include signal level here
-                'last_seen': sensor.get('last_seen', 'Unknown')
+                'name': sensor.get('name', 'Unknown'),  # Name or fallback to 'Unknown'
+                'state': sensor.get('state', 'Unknown'),  # State or 'Unknown'
+                'battery': sensor.get('battery', 'Unknown'),  # Battery level
+                'temperature': sensor.get('temperature', 'Unknown'),  # Temperature field
+                'humidity': sensor.get('humidity', 'Unknown'),  # Humidity field
+                'signal': sensor.get('signal', 'Unknown'),  # Signal strength
+                'tempLimit': sensor.get('tempLimit', {'min': None, 'max': None}),  # Temperature limits
+                'humidityLimit': sensor.get('humidityLimit', {'min': None, 'max': None}),  # Humidity limits
+                'alarm': sensor.get('alarm', {  # Alarm data
+                    'lowBattery': False,
+                    'lowTemp': False,
+                    'highTemp': False,
+                    'lowHumidity': False,
+                    'highHumidity': False
+                }),
+                'last_seen': sensor.get('last_seen', 'Unknown')  # Last seen timestamp
             })
-        
+
         return jsonify({'devices': all_sensors})
     else:
         return jsonify({'error': 'No sensor data available.'}), 404
