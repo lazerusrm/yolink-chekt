@@ -41,6 +41,7 @@
             background-color: #3a3a3a;
             padding: 15px;
             border-radius: 10px;
+            transition: border 0.3s ease;
         }
 
         .sensor-name {
@@ -99,6 +100,16 @@
         @keyframes fast-spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
+        }
+
+        /* Red border for alarm condition, low battery, or poor signal */
+        .sensor.alarm {
+            border: 2px solid red;
+        }
+
+        /* Yellow border for moderate battery or signal levels */
+        .sensor.warning {
+            border: 2px solid yellow;
         }
 
     </style>
@@ -247,6 +258,29 @@
             return "Invalid date";  // Return 'Invalid date' if the date is not valid
         }
 
+        // Check for alarm condition or poor battery/signal and return appropriate class
+        function getBorderClass(sensor) {
+            // Check if the sensor is in alarm condition for temperature or humidity limits
+            const tempExceedsLimit = sensor.devTemperature && (sensor.devTemperature > sensor.tempLimit.max || sensor.devTemperature < sensor.tempLimit.min);
+            const signalPoor = sensor.signal <= -125 && sensor.signal >= -140;
+            const signalWarning = sensor.signal <= -115 && sensor.signal >= -124;
+            const batteryWarning = sensor.battery === 1;
+            const batteryCritical = sensor.battery === 0;
+
+            // If any alarm conditions are met, return 'alarm' class
+            if (tempExceedsLimit || sensor.alarm.highHumidity || sensor.alarm.lowBattery || batteryCritical || signalPoor) {
+                return 'alarm';
+            }
+
+            // If signal or battery level is in a warning state, return 'warning' class
+            if (batteryWarning || signalWarning) {
+                return 'warning';
+            }
+
+            // No alarm or warning
+            return '';
+        }
+
         // Fetch and update sensor data from the devices.yaml file
         function updateSensorData() {
             toggleSpinnerSpeed(true); // Fast spin when reloading
@@ -264,9 +298,12 @@
                         const batteryInfo = getBatteryInfo(sensor.battery);
                         
                         const lastSeenLocal = formatLocalTime(sensor.last_seen); // Convert last_seen to local time
+                        
+                        // Get the appropriate border class based on alarm condition
+                        const borderClass = getBorderClass(sensor);
 
                         const sensorHTML = `
-                            <div class="sensor">
+                            <div class="sensor ${borderClass}">
                                 <p class="sensor-name">${sensor.name}</p>
                                 <p class="sensor-data-item">State: ${sensor.state || 'N/A'}</p>
                                 <p class="sensor-data-item">
