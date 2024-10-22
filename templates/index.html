@@ -102,16 +102,25 @@
             100% { transform: rotate(360deg); }
         }
 
-        /* Red border for alarm condition, low battery, or poor signal */
+        /* Red border for alarm condition */
         .sensor.alarm {
             border: 2px solid red;
         }
 
-        /* Yellow border for moderate battery or signal levels */
+        /* Yellow border for warning condition */
         .sensor.warning {
             border: 2px solid yellow;
         }
 
+        /* Red highlight for specific sections in alarm */
+        .alarm {
+            border: 2px solid red;
+        }
+
+        /* Yellow highlight for specific sections in warning */
+        .warning {
+            border: 2px solid yellow;
+        }
     </style>
 </head>
 
@@ -258,10 +267,18 @@
             return "Invalid date";  // Return 'Invalid date' if the date is not valid
         }
 
+        // Function to compare value with limits and apply the appropriate class
+        function getHighlightClass(value, min, max) {
+            if (value === 'N/A' || value === null || value === undefined) return '';
+            if (value > max || value < min) {
+                return 'alarm';  // Red border for values outside the limits
+            }
+            return '';  // No class for normal values
+        }
+
         // Check for alarm condition or poor battery/signal and return appropriate class
         function getBorderClass(sensor) {
-            // Check if the sensor is in alarm condition for temperature or humidity limits
-            const tempExceedsLimit = sensor.devTemperature && (sensor.devTemperature > sensor.tempLimit.max || sensor.devTemperature < sensor.tempLimit.min);
+            const tempExceedsLimit = sensor.temperature && (sensor.temperature > sensor.tempLimit.max || sensor.temperature < sensor.tempLimit.min);
             const signalPoor = sensor.signal <= -125 && sensor.signal >= -140;
             const signalWarning = sensor.signal <= -115 && sensor.signal >= -124;
             const batteryWarning = sensor.battery === 1;
@@ -296,22 +313,29 @@
                     sensorData.devices.forEach(sensor => {
                         const signalQuality = getSignalQuality(sensor.signal);
                         const batteryInfo = getBatteryInfo(sensor.battery);
-                        
+
                         const lastSeenLocal = formatLocalTime(sensor.last_seen); // Convert last_seen to local time
-                        
+
                         // Get the appropriate border class based on alarm condition
                         const borderClass = getBorderClass(sensor);
 
+                        // Highlight classes for temperature, humidity, signal, and battery
+                        const tempHighlight = getHighlightClass(sensor.temperature, sensor.tempLimit.min, sensor.tempLimit.max);
+                        const humidityHighlight = getHighlightClass(sensor.humidity, sensor.humidityLimit.min, sensor.humidityLimit.max);
+                        const signalHighlight = sensor.signal && sensor.signal <= -125 ? 'alarm' : '';
+                        const batteryHighlight = sensor.battery === 0 ? 'alarm' : sensor.battery === 1 ? 'warning' : '';
+
                         const sensorHTML = `
                             <div class="sensor ${borderClass}">
-                                <p class="sensor-name">${sensor.name}</p>
+                                <p class="sensor-name">${sensor.name || 'Unknown Device'}</p>
                                 <p class="sensor-data-item">State: ${sensor.state || 'N/A'}</p>
-                                <p class="sensor-data-item">
+                                <p class="sensor-data-item ${batteryHighlight}">
                                     <img src="${batteryInfo.icon}" class="battery-icon" alt="Battery Icon"> 
                                     Battery: ${batteryInfo.percentage} (Level ${sensor.battery})
                                 </p>
-                                <p class="sensor-data-item">Temperature: ${sensor.devTemperature || 'N/A'}°F</p>
-                                <p class="sensor-data-item">Signal: ${sensor.signal || 'N/A'} dBm (${signalQuality})</p>
+                                <p class="sensor-data-item ${tempHighlight}">Temperature: ${sensor.temperature || 'N/A'}°F</p>
+                                <p class="sensor-data-item ${humidityHighlight}">Humidity: ${sensor.humidity || 'N/A'}%</p>
+                                <p class="sensor-data-item ${signalHighlight}">Signal: ${sensor.signal || 'N/A'} dBm (${signalQuality})</p>
                                 <p class="sensor-data-item">Last Seen: ${lastSeenLocal}</p>
                             </div>
                         `;

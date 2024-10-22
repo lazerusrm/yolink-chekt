@@ -208,13 +208,14 @@ def update_device_data(device_id, payload):
                 mode = payload['data'].get('mode', 'c')  # Default to Celsius if mode is not present
 
                 if temperature is not None:
-                    if mode == 'c':  # Convert only if it's in Celsius
+                    if mode == 'c':  # Convert from Celsius to Fahrenheit if mode is 'c'
                         device['temperature'] = celsius_to_fahrenheit(temperature)
                         logger.info(f"Temperature converted to Fahrenheit: {device['temperature']} °F")
                     else:
                         device['temperature'] = temperature
                         logger.info(f"Temperature retained in Fahrenheit: {device['temperature']} °F")
                 else:
+                    device['temperature'] = 'unknown'
                     logger.warning(f"No temperature data for device {device_id}")
 
             # Handle humidity, if available
@@ -222,6 +223,7 @@ def update_device_data(device_id, payload):
                 device['humidity'] = payload['data'].get('humidity', device.get('humidity', 'unknown'))
                 logger.info(f"Humidity updated: {device['humidity']}%")
             else:
+                device['humidity'] = 'unknown'
                 logger.warning(f"No humidity data for device {device_id}")
 
             # Capture the alarm limits for temperature and humidity
@@ -240,6 +242,13 @@ def update_device_data(device_id, payload):
                 }
                 logger.info(f"Alarm state updated: {device['alarm']}")
             else:
+                device['alarm'] = {
+                    'lowBattery': False,
+                    'lowTemp': False,
+                    'highTemp': False,
+                    'lowHumidity': False,
+                    'highHumidity': False,
+                }
                 logger.warning(f"No alarm data for device {device_id}")
 
             # Update signal strength from LoRa info
@@ -248,6 +257,7 @@ def update_device_data(device_id, payload):
                 device['signal'] = lora_info.get('signal')
                 logger.info(f"Updated signal strength for device {device_id}: {device['signal']}")
             else:
+                device['signal'] = 'unknown'
                 logger.warning(f"No signal data for device {device_id}")
 
             # Update the last seen timestamp
@@ -264,6 +274,10 @@ def update_device_data(device_id, payload):
         logger.info(f"Devices.yaml updated successfully for Device ID: {device_id}")
     except Exception as e:
         logger.error(f"Failed to save devices.yaml: {str(e)}")
+
+# Helper function to convert Celsius to Fahrenheit
+def celsius_to_fahrenheit(celsius):
+    return (celsius * 9/5) + 32
 
 def yolink_api_test():
     # Load configuration to get token
