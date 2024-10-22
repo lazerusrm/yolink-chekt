@@ -400,31 +400,25 @@ def login():
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
-        totp_code = request.form['totp_code']
 
-        # Load users from config.yaml
-        users_db = config_data.get('users', {})
-
-        # If no users exist, create the first user
-        if not users_db:
-            created_user = create_user(username, password)
-            if created_user:
-                flash(f"User {username} created successfully. Please log in again.")
+        # Check if the user already exists
+        if username in users_db:
+            user = users_db[username]
+            if bcrypt.check_password_hash(user['password'], password):
+                totp = pyotp.TOTP(user['totp_secret'])
+                totp_code = request.form['totp_code']
+                if totp.verify(totp_code):
+                    login_user(User(username))
+                    return redirect(url_for('index'))
+                else:
+                    flash('Invalid TOTP code')
             else:
-                flash(f"User {username} already exists.")
-            return redirect(url_for('login'))
-
-        # Authenticate the user
-        user = users_db.get(username)
-        if user and bcrypt.check_password_hash(user['password'], password):
-            totp = pyotp.TOTP(user['totp_secret'])
-            if totp.verify(totp_code):
-                login_user(User(username))
-                return redirect(url_for('index'))
-            else:
-                flash('Invalid TOTP code')
+                flash('Invalid username or password')
         else:
-            flash('Invalid username or password')
+            # If the user does not exist, prompt for username, password, and generate a TOTP secret
+            totp_secret = create_user(username, password)
+            flash(f"User {username} created successfully. Please scan the QR code and enter the TOTP code.")
+            return redirect(url_for('setup_totp', username=username))  # Redirect to the TOTP setup page
 
     return render_template('login.html')
 
@@ -434,20 +428,37 @@ def logout():
     logout_user()
     return redirect(url_for('login'))
     
-@app.route('/setup_totp')
-@login_required
-def setup_totp():
-    user = users_db[current_user.id]
-    totp = pyotp.TOTP(user['totp_secret'])
-    otp_uri = totp.provisioning_uri(current_user.id, issuer_name="YourAppName")
+@app.route('/setup_totp/<username>', methods=['GET', 'POST'])
+def setup_totp(username):
+    if request.method == 'POST':
+        totp_code = request.form['totp_code']
+        user = users_db.get(username)
+        if user:
+            totp = pyotp.TOTP(user['totp_secret'])
+            if totp.verify(totp_code):
+                login_user(User(username))
+                flash('TOTP setup complete, you are now logged in.')
+                return redirect(url_for('index'))
+            else:
+                flash('Invalid TOTP code. Please try again.')
+                return redirect(url_for('setup_totp', username=username))
 
-    # Generate a QR code to show in the frontend
-    qr = qrcode.make(otp_uri)
-    img_io = io.BytesIO()
-    qr.save(img_io, 'PNG')
-    img_io.seek(0)
+    # Generate QR code for the user’s TOTP secret
+    user = users_db.get(username)
+    if user:
+        totp = pyotp.TOTP(user['totp_secret'])
+        otp_uri = totp.provisioning_uri(username, issuer_name="YourAppName")
 
-    return render_template('setup_totp.html', qr_code=img_io)
+        # Generate a QR code for the TOTP secret
+        qr = qrcode.make(otp_uri)
+        img_io = io.BytesIO()
+        qr.save(img_io, 'PNG')
+        img_io.seek(0)
+
+        return render_template('setup_totp.html', qr_code=img_io.getvalue(), totp_secret=user['totp_secret'])
+
+    flash('User not found')
+    return redirect(url_for('login'))
 
 @app.route('/save_chekt_zone', methods=['POST'])
 def save_chekt_zone():
@@ -810,6 +821,7 @@ def save_zone_change():
     return jsonify({"status": "success"})
 
 @app.route('/')
+@login_required
 def index():
     # Attempt to load devices and mappings from YAML files, using fallback data if it fails
     devices = []

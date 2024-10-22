@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Setup TOTP - Yolink to CHEKT</title>
+    <!-- Bootstrap CSS -->
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css">
+    <!-- Font Awesome CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css" integrity="sha512-Kc323vGBEqzTmouAECnVceyQqyqdsSiqLQISBL29aUW4U/M7pSPA/gEUZQqv1cwx4OnYxTxve5UMg5GT6L4JJg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            padding: 20px;
+            background-color: #2e2e2e;
+            color: #ffffff;
+        }
+
+        .container {
+            max-width: 500px;
+            margin-top: 50px;
+        }
+
+        .card {
+            background-color: #4a4a4a;
+            padding: 20px;
+            border-radius: 10px;
+            border: none;
+        }
+
+        h1 {
+            color: #ffffff;
+            text-align: center;
+            font-size: 1.8rem;
+            margin-bottom: 30px;
+        }
+
+        .form-group label {
+            color: #ffffff;
+            font-size: 1.1rem;
+        }
+
+        .form-control {
+            background-color: #3a3a3a;
+            color: #ffffff;
+            border: none;
+            border-bottom: 2px solid #00ff00;
+            border-radius: 0;
+            padding: 10px;
+        }
+
+        .form-control:focus {
+            box-shadow: none;
+            background-color: #3a3a3a;
+            border-color: #00ff00;
+        }
+
+        .btn-primary {
+            background-color: #00ff00;
+            border-color: #00ff00;
+            color: #2e2e2e;
+            font-weight: bold;
+        }
+
+        .btn-primary:hover {
+            background-color: #00cc00;
+            border-color: #00cc00;
+        }
+
+        .totp-info {
+            text-align: center;
+            margin-top: 20px;
+            margin-bottom: 20px;
+        }
+
+        .totp-info strong {
+            color: #00ff00;
+        }
+
+        .qr-code-container {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .qr-code-container img {
+            max-width: 200px;
+            border: 5px solid #00ff00;
+            border-radius: 10px;
+        }
+
+        /* Mobile-friendly adjustments */
+        @media (max-width: 768px) {
+            .container {
+                margin-top: 20px;
+                padding: 10px;
+            }
+
+            h1 {
+                font-size: 1.5rem;
+            }
+
+            .qr-code-container img {
+                max-width: 150px;
+            }
+
+            .btn-primary {
+                font-size: 1rem;
+                padding: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Setup Two-Factor Authentication</h1>
+        <div class="card">
+            <div class="qr-code-container">
+                <h3>Scan the QR Code</h3>
+                <img src="data:image/png;base64,{{ qr_code|b64encode }}" alt="QR Code">
+            </div>
+            <div class="totp-info">
+                <p>Or enter this code manually: <strong>{{ totp_secret }}</strong></p>
+            </div>
+            <form method="POST" action="{{ url_for('setup_totp', username=request.args.get('username')) }}">
+                <div class="form-group">
+                    <label for="totp_code">Enter TOTP Code</label>
+                    <input type="text" name="totp_code" id="totp_code" class="form-control" placeholder="Enter TOTP Code" required>
+                </div>
+                <button type="submit" class="btn btn-primary btn-block">Complete Setup</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/js/bootstrap.min.js"></script>
+</body>
+</html>
