@@ -16,11 +16,6 @@ import threading
 import os
 import logging
 
-bcrypt = Bcrypt(app)
-login_manager = LoginManager(app)
-login_manager.login_view = 'login'  # Redirect to login page if not logged in
-app.secret_key = 'your_secret_key_here'  # You should set this to a secure value
-
 mqtt_client_instance = None  # Global variable to store the MQTT client instance
 
 app = Flask(__name__)
@@ -35,6 +30,12 @@ devices_file = "devices.yaml"
 mappings_file = "mappings.yaml"
 
 config_data = {}
+
+bcrypt = Bcrypt(app)
+login_manager = LoginManager(app)
+login_manager.login_view = 'login'  # Redirect to login page if not logged in
+app.secret_key = 'your_secret_key_here'  # You should set this to a secure value
+
 
 # Load configuration
 def load_config():
