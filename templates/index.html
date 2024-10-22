@@ -42,6 +42,7 @@
             padding: 15px;
             border-radius: 10px;
             transition: border 0.3s ease;
+            position: relative;
         }
 
         .sensor-name {
@@ -121,8 +122,47 @@
         .warning {
             border: 2px solid yellow;
         }
+
         .hidden {
-    display: none !important;
+            display: none !important;
+        }
+
+        /* Styles for CHEKT zone editing */
+        .chekt-zone {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            color: red;
+            font-size: 1.25rem;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .chekt-zone-input {
+            width: 60px;
+            text-align: center;
+            font-size: 1.25rem;
+            font-weight: bold;
+            color: red;
+            background-color: transparent;
+            border: none;
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            border-bottom: 1px solid red;
+        }
+
+        .chekt-zone-input:focus {
+            outline: none;
+        }
+
+        .save-confirmation {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            color: #00ff00;
+            font-size: 0.9rem;
+            font-weight: bold;
         }
     </style>
 </head>
@@ -163,6 +203,7 @@
         </div>
     </div>
 
+    <!-- Include jQuery and your JavaScript code -->
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script>
         // Function to toggle spinner speed between slow and fast
@@ -305,7 +346,7 @@
             return '';
         }
 
-        // Fetch and update sensor data from the devices.yaml file
+        // Function to fetch and update sensor data
         function updateSensorData() {
             toggleSpinnerSpeed(true); // Fast spin when reloading
             $.ajax({
@@ -331,8 +372,12 @@
                         const signalHighlight = sensor.signal <= -115 ? 'warning' : '';
                         const batteryHighlight = sensor.battery === 0 ? 'alarm' : sensor.battery === 1 ? 'warning' : '';
 
+                        // Get CHEKT zone (ensure sensor.chekt_zone is available)
+                        const chektZone = sensor.chekt_zone || 'N/A';
+
                         const sensorHTML = `
                             <div class="sensor ${borderClass}">
+                                <span class="chekt-zone" onclick="makeZoneEditable(this, '${sensor.deviceId}')">Zone ${chektZone}</span>
                                 <p class="sensor-name">${sensor.name || 'Unknown Device'}</p>
                                 <p class="sensor-data-item">State: ${sensor.state || 'N/A'}</p>
                                 ${batteryInfo.percentage !== 'N/A' ? `
@@ -344,6 +389,7 @@
                                 ${sensor.humidity !== 'N/A' ? `<p class="sensor-data-item ${humidityHighlight}">Humidity: ${sensor.humidity}%</p>` : ''}
                                 <p class="sensor-data-item ${signalHighlight}">Signal: ${sensor.signal || 'N/A'} dBm (${signalQuality})</p>
                                 <p class="sensor-data-item">Last Seen: ${lastSeenLocal}</p>
+                                <span class="save-confirmation" id="save-confirmation-${sensor.deviceId}" style="display: none;">Saved!</span>
                             </div>
                         `;
                         sensorList.append(sensorHTML);
@@ -354,6 +400,64 @@
                 error: function () {
                     $('#sensor-list').html('<p>Error loading sensor data.</p>');
                     toggleSpinnerSpeed(false); // Slow spin if there's an error
+                }
+            });
+        }
+
+        // Function to make CHEKT zone editable
+        function makeZoneEditable(zoneSpan, deviceId) {
+            const currentZone = zoneSpan.textContent.replace('Zone ', '').trim();
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.value = currentZone === 'N/A' ? '' : currentZone;
+            input.classList.add('chekt-zone-input');
+
+            // Replace the zone span with the input field
+            zoneSpan.parentNode.insertBefore(input, zoneSpan);
+            zoneSpan.style.display = 'none';
+            input.focus();
+
+            input.addEventListener('keydown', function (event) {
+                if (event.key === 'Enter') {
+                    const newZone = input.value.trim();
+                    if (newZone) {
+                        saveZone(deviceId, newZone);  // Save the new zone
+                        zoneSpan.textContent = `Zone ${newZone}`;
+                    } else {
+                        zoneSpan.textContent = 'Zone N/A';
+                    }
+                    input.remove();
+                    zoneSpan.style.display = 'inline';
+                }
+            });
+
+            input.addEventListener('blur', function () {
+                input.remove();
+                zoneSpan.style.display = 'inline';
+            });
+        }
+
+        // Function to save the new CHEKT zone to the server
+        function saveZone(deviceId, newZone) {
+            $.ajax({
+                type: "POST",
+                url: "/save_chekt_zone",
+                contentType: "application/json",
+                data: JSON.stringify({ deviceId: deviceId, chekt_zone: newZone }),
+                success: function(response) {
+                    console.log('Zone saved successfully.');
+                    // Show save confirmation message
+                    const confirmation = document.getElementById(`save-confirmation-${deviceId}`);
+                    if (confirmation) {
+                        confirmation.style.display = 'inline';
+                        setTimeout(() => {
+                            confirmation.style.display = 'none';
+                        }, 2000); // Show confirmation for 2 seconds
+                    }
+                },
+                error: function(xhr, status, error) {
+                    console.log('Error saving zone: ' + xhr.responseText);
+                    alert('Error saving zone: ' + xhr.responseText);
                 }
             });
         }

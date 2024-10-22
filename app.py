@@ -350,6 +350,39 @@ class YoLinkAPI:
             logger.error(f"Error retrieving device list: {str(e)}")
             return None
 
+@app.route('/save_chekt_zone', methods=['POST'])
+def save_chekt_zone():
+    data = request.get_json()
+    device_id = data.get('deviceId')
+    chekt_zone = data.get('chekt_zone')
+
+    if not device_id or not chekt_zone:
+        return jsonify({'status': 'error', 'message': 'Invalid data provided.'}), 400
+
+    # Load existing mappings
+    mappings_data = load_yaml(mappings_file)
+    if mappings_data is None:
+        mappings_data = {'mappings': []}  # Initialize if mappings.yaml is empty or doesn't exist
+
+    # Find the mapping for the given device_id
+    existing_mapping = next((m for m in mappings_data['mappings'] if m['yolink_device_id'] == device_id), None)
+
+    if existing_mapping:
+        # Update the existing mapping
+        existing_mapping['chekt_zone'] = chekt_zone
+    else:
+        # Create a new mapping entry
+        new_mapping = {
+            'yolink_device_id': device_id,
+            'chekt_zone': chekt_zone
+        }
+        mappings_data['mappings'].append(new_mapping)
+
+    # Save the updated mappings
+    save_to_yaml(mappings_file, mappings_data)
+
+    return jsonify({'status': 'success', 'message': 'CHEKT zone saved successfully.'})
+
 @app.route('/save_config', methods=['POST'])
 def save_config_route():
     try:
@@ -440,18 +473,33 @@ def save_mapping():
 def get_sensor_data():
     # Load the devices.yaml file directly
     try:
-        with open(devices_file, 'r') as file:
-            devices_data = yaml.safe_load(file)
-    except FileNotFoundError:
-        return jsonify({'error': 'devices.yaml not found.'}), 404
+        devices_data = load_yaml(devices_file)
+        if devices_data is None:
+            devices_data = {'devices': []}
     except Exception as e:
         return jsonify({'error': f'Failed to load devices.yaml: {str(e)}'}), 500
 
+    # Load the mappings to get the chekt_zone
+    try:
+        mappings_data = load_yaml(mappings_file)
+        if mappings_data is None:
+            mappings_data = {'mappings': []}
+    except Exception as e:
+        return jsonify({'error': f'Failed to load mappings.yaml: {str(e)}'}), 500
+
+    # Create a dictionary for quick lookup of chekt_zone by deviceId
+    mappings_dict = {m['yolink_device_id']: m for m in mappings_data.get('mappings', [])}
+
     # Ensure there is data in the file and the devices list exists
-    if devices_data and 'devices' in devices_data and len(devices_data['devices']) > 0:
+    if 'devices' in devices_data and len(devices_data['devices']) > 0:
         all_sensors = []
         for sensor in devices_data['devices']:
+            device_id = sensor.get('deviceId')
+            mapping = mappings_dict.get(device_id, {})
+            chekt_zone = mapping.get('chekt_zone', 'N/A')
+
             all_sensors.append({
+                'deviceId': device_id,
                 'name': sensor.get('name', 'Unknown'),  # Name or fallback to 'Unknown'
                 'state': sensor.get('state', 'Unknown'),  # State or 'Unknown'
                 'battery': sensor.get('battery', 'Unknown'),  # Battery level
@@ -467,7 +515,8 @@ def get_sensor_data():
                     'lowHumidity': False,
                     'highHumidity': False
                 }),
-                'last_seen': sensor.get('last_seen', 'Unknown')  # Last seen timestamp
+                'last_seen': sensor.get('last_seen', 'Unknown'),  # Last seen timestamp
+                'chekt_zone': chekt_zone  # Add the chekt_zone to the sensor data
             })
 
         return jsonify({'devices': all_sensors})
@@ -545,6 +594,16 @@ def refresh_yolink_devices():
         logger.error(f"Error loading devices.yaml: {str(e)}")
         existing_devices = {}
 
+    # Load existing mappings to preserve chekt_zone
+    try:
+        mappings_data = load_yaml(mappings_file)
+        if mappings_data is None:
+            mappings_data = {'mappings': []}
+        mappings_dict = {m['yolink_device_id']: m for m in mappings_data.get('mappings', [])}
+    except Exception as e:
+        logger.error(f"Error loading mappings.yaml: {str(e)}")
+        mappings_dict = {}
+
     # Merge new device list with existing devices to retain dynamic fields
     new_devices = []
     for device in devices["data"]["devices"]:
@@ -592,6 +651,13 @@ def refresh_yolink_devices():
         # Ensure signal field is populated in the new device entry (from LoRa data or default)
         device_data['signal'] = device.get('loraInfo', {}).get('signal', device_data.get('signal'))
 
+        # Add chekt_zone from mappings if available
+        mapping = mappings_dict.get(device_id)
+        if mapping:
+            device_data['chekt_zone'] = mapping.get('chekt_zone', 'N/A')
+        else:
+            device_data['chekt_zone'] = 'N/A'
+
         # Add device to the new devices list
         new_devices.append(device_data)
 
@@ -601,7 +667,7 @@ def refresh_yolink_devices():
         "devices": new_devices
     }
     try:
-        save_to_yaml("devices.yaml", data_to_save)
+        save_to_yaml(devices_file, data_to_save)
     except Exception as e:
         logger.error(f"Error saving to devices.yaml: {str(e)}")
         return jsonify({"status": "error", "message": "Failed to save devices to devices.yaml"})
@@ -616,6 +682,7 @@ def refresh_yolink_devices():
     mqtt_thread.start()
 
     return jsonify({"status": "success", "message": "YoLink devices refreshed and MQTT client restarted."})
+
 
 @app.route('/save_zone_change', methods=['POST'])
 def save_zone_change():
