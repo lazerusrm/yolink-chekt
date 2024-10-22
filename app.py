@@ -1,3 +1,8 @@
+from flask import Flask, render_template, request, jsonify, redirect, url_for, flash
+from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
+from flask_bcrypt import Bcrypt
+import pyotp
+import uuid
 import yaml
 from datetime import datetime
 import base64
@@ -10,6 +15,11 @@ from flask import Flask, render_template, request, jsonify
 import threading
 import os
 import logging
+
+bcrypt = Bcrypt(app)
+login_manager = LoginManager(app)
+login_manager.login_view = 'login'  # Redirect to login page if not logged in
+app.secret_key = 'your_secret_key_here'  # You should set this to a secure value
 
 mqtt_client_instance = None  # Global variable to store the MQTT client instance
 
@@ -349,6 +359,83 @@ class YoLinkAPI:
         except Exception as e:
             logger.error(f"Error retrieving device list: {str(e)}")
             return None
+
+def create_user(username, password):
+    # Check if the user already exists in users_db
+    if username in users_db:
+        logger.warning(f"User {username} already exists. User creation skipped.")
+        return None
+
+    # If the user does not exist, create a new user
+    hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
+    totp_secret = pyotp.random_base32()  # Generate a TOTP secret for 2FA
+
+    # Add the new user to config.yaml
+    users_db[username] = {
+        'password': hashed_password,
+        'totp_secret': totp_secret
+    }
+
+    # Save to config.yaml
+    config_data['users'] = users_db
+    save_config(config_data)
+    logger.info(f"New user {username} created successfully.")
+    return username
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        totp_code = request.form['totp_code']
+
+        # Load users from config.yaml
+        users_db = config_data.get('users', {})
+
+        # If no users exist, create the first user
+        if not users_db:
+            # Create the first user
+            created_user = create_user(username, password)
+            if created_user:
+                flash(f"User {username} created successfully. Please log in again.")
+            else:
+                flash(f"User {username} already exists.")
+            return redirect(url_for('login'))
+
+        # Authenticate the user
+        user = users_db.get(username)
+        if user and bcrypt.check_password_hash(user['password'], password):
+            totp = pyotp.TOTP(user['totp_secret'])
+            if totp.verify(totp_code):
+                login_user(User(username))
+                return redirect(url_for('index'))
+            else:
+                flash('Invalid TOTP code')
+        else:
+            flash('Invalid username or password')
+
+    return render_template('login.html')
+
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    return redirect(url_for('login'))
+
+@app.route('/setup_totp')
+@login_required
+def setup_totp():
+    user = users_db[current_user.id]
+    totp = pyotp.TOTP(user['totp_secret'])
+    otp_uri = totp.provisioning_uri(current_user.id, issuer_name="YourAppName")
+
+    # Generate a QR code to show in the frontend
+    qr = qrcode.make(otp_uri)
+    img_io = io.BytesIO()
+    qr.save(img_io, 'PNG')
+    img_io.seek(0)
+
+    return render_template('setup_totp.html', qr_code=img_io)
 
 @app.route('/save_chekt_zone', methods=['POST'])
 def save_chekt_zone():

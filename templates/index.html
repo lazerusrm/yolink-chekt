@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Yolink to CHEKT Status</title>
     <!-- Bootstrap CSS -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.0/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css">
     <!-- Font Awesome CSS -->
     <!-- Using the latest version of Font Awesome 6 -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css" integrity="sha512-Kc323vGBEqzTmouAECnVceyQqyqdsSiqLQISBL29aUW4U/M7pSPA/gEUZQqv1cwx4OnYxTxve5UMg5GT6L4JJg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
@@ -189,8 +189,32 @@
 </head>
 
 <body>
+    <!-- Navigation Bar -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <a class="navbar-brand" href="#">YoLink to CHEKT</a>
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarNav">
+            <ul class="navbar-nav">
+                <li class="nav-item {% if request.path == '/' %}active{% endif %}">
+                    <a class="nav-link" href="/">Dashboard</a>
+                </li>
+                <li class="nav-item {% if request.path == '/config.html' %}active{% endif %}">
+                    <a class="nav-link" href="/config.html">Configuration</a>
+                </li>
+                <!-- Logout Link -->
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url_for('logout') }}">Logout</a>
+                </li>
+            </ul>
+        </div>
+    </nav>
+
+    <!-- Check if user is authenticated -->
+    {% if current_user.is_authenticated %}
     <div class="container">
-        <h1>Yolink to CHEKT Status</h1>
+        <h1>Welcome, {{ current_user.id }}!</h1>
 
         <!-- Status check for MQTT and CHEKT -->
         <div class="status">
@@ -203,9 +227,6 @@
                 <img src="" alt="" id="chekt-icon" class="hidden">
                 <span id="chekt-message">Checking CHEKT server status...</span>
             </div>
-
-            <!-- Configuration Page Button -->
-            <a href="config.html" class="btn btn-primary mt-3">Configuration Page</a>
 
             <!-- Update Yolink Devices Button -->
             <button id="update-devices" class="btn btn-secondary mt-3">Update Yolink Devices</button>
@@ -223,9 +244,17 @@
             </div>
         </div>
     </div>
+    {% else %}
+    <!-- If user is not authenticated, redirect to login -->
+    <script>
+        window.location.href = "{{ url_for('login') }}";
+    </script>
+    {% endif %}
 
     <!-- Include jQuery and your JavaScript code -->
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <!-- Bootstrap JS (Optional for functionality like navbar toggle) -->
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/js/bootstrap.min.js"></script>
     <script>
         // Function to toggle spinner speed between slow and fast
         function toggleSpinnerSpeed(fast) {
