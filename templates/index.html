@@ -79,7 +79,7 @@
             display: inline-block;
             margin-left: 10px;
             vertical-align: middle;
-            animation-duration: 5s;  /* Slow spin by default */
+            animation-duration: 5s;
             animation-timing-function: linear;
             animation-iteration-count: infinite;
             animation-name: slow-spin;
@@ -94,7 +94,7 @@
         /* Fast spin animation */
         .fast-spin {
             animation-name: fast-spin;
-            animation-duration: 1s;  /* Fast spin */
+            animation-duration: 1s;
         }
 
         @keyframes fast-spin {
@@ -124,7 +124,7 @@
 
         .hidden {
             display: none !important;
-}
+        }
     </style>
 </head>
 
@@ -254,28 +254,25 @@
             const timeA = new Date(a.last_seen).getTime();
             const timeB = new Date(b.last_seen).getTime();
 
-            // Prioritize valid times first, put invalid dates last
-            if (isNaN(timeA) && !isNaN(timeB)) return 1;   // a has no valid date, b does
-            if (!isNaN(timeA) && isNaN(timeB)) return -1;  // a has a valid date, b doesn't
+            if (isNaN(timeA) && !isNaN(timeB)) return 1;
+            if (!isNaN(timeA) && isNaN(timeB)) return -1;
 
-            // First compare by last_seen (most recent first)
             if (timeA !== timeB) {
                 return timeB - timeA;
             }
 
-            // If last_seen times are equal, compare by name alphabetically
             return a.name.localeCompare(b.name);
         }
 
         // Function to convert UTC to local time and format
         function formatLocalTime(isoDateString) {
-            if (!isoDateString || isoDateString === 'never') return "Never";  // Handle missing or "never" dates
+            if (!isoDateString || isoDateString === 'never') return "Never";
             const localTime = new Date(isoDateString);
             if (!isNaN(localTime)) {
-                localTime.setHours(localTime.getHours() - 6);  // Adjusting timezone offset
-                return localTime.toLocaleString();  // Convert to local time and format
+                localTime.setHours(localTime.getHours() - 6);
+                return localTime.toLocaleString();
             }
-            return "Invalid date";  // Return 'Invalid date' if not valid
+            return "Invalid date";
         }
 
         // Check for alarm condition or poor battery/signal and return appropriate class
@@ -308,25 +305,28 @@
 
         // Fetch and update sensor data from the devices.yaml file
         function updateSensorData() {
-            toggleSpinnerSpeed(true); // Fast spin when reloading
+            toggleSpinnerSpeed(true);
             $.ajax({
                 type: "GET",
-                url: "/get_sensor_data",  // This endpoint will fetch data from devices.yaml
+                url: "/get_sensor_data",
                 success: function (sensorData) {
                     const sensorList = $('#sensor-list');
-                    sensorList.empty(); // Clear the current list
+                    sensorList.empty();
 
-                    sensorData.devices.sort(compareSensors); // Sort sensors by last seen and then by name
+                    if (!sensorData || !sensorData.devices || sensorData.devices.length === 0) {
+                        sensorList.html('<p>No sensor data available.</p>');
+                        toggleSpinnerSpeed(false);
+                        return;
+                    }
+
+                    sensorData.devices.sort(compareSensors);
 
                     sensorData.devices.forEach(sensor => {
                         const signalQuality = getSignalQuality(sensor.signal);
                         const batteryInfo = getBatteryInfo(sensor.battery);
-                        const lastSeenLocal = formatLocalTime(sensor.last_seen);  // Convert last_seen to local time
+                        const lastSeenLocal = formatLocalTime(sensor.last_seen);
 
-                        // Get the appropriate border class based on alarm condition
                         const borderClass = getBorderClass(sensor);
-
-                        // Highlight classes for temperature, humidity, signal, and battery
                         const tempHighlight = getHighlightClass(sensor.temperature, sensor.tempLimit.min, sensor.tempLimit.max);
                         const humidityHighlight = getHighlightClass(sensor.humidity, sensor.humidityLimit.min, sensor.humidityLimit.max);
                         const signalHighlight = sensor.signal <= -115 ? 'warning' : '';
@@ -350,11 +350,11 @@
                         sensorList.append(sensorHTML);
                     });
 
-                    toggleSpinnerSpeed(false); // Slow spin after data is updated
+                    toggleSpinnerSpeed(false);
                 },
                 error: function () {
                     $('#sensor-list').html('<p>Error loading sensor data.</p>');
-                    toggleSpinnerSpeed(false); // Slow spin if there's an error
+                    toggleSpinnerSpeed(false);
                 }
             });
         }
@@ -363,24 +363,20 @@
             checkStatus('/check_mqtt_status', 'mqtt-message', 'mqtt-icon', 'MQTT connection is active.', 'MQTT connection is inactive.');
             checkStatus('/check_chekt_status', 'chekt-message', 'chekt-icon', 'CHEKT server is alive.', 'Failed to connect to CHEKT server.');
 
-            // Call function to update sensor data from devices.yaml
             updateSensorData();
+            setInterval(updateSensorData, 10000);
 
-            // Auto-update sensor data every 10 seconds
-            setInterval(updateSensorData, 10000);  // 10000 ms = 10 seconds
-
-            // Update Yolink Devices button action
             $('#update-devices').click(function() {
-                $('#refresh-spinner').removeClass('hidden'); // Show spinner
+                $('#refresh-spinner').removeClass('hidden');
                 $('#refresh-message').text('Updating Yolink devices...');
 
                 $.ajax({
                     type: "GET",
-                    url: "/refresh_yolink_devices",  // Backend route to update devices
+                    url: "/refresh_yolink_devices",
                     success: function () {
                         $('#refresh-spinner').addClass('hidden');
                         $('#refresh-message').text('Yolink devices updated successfully!');
-                        updateSensorData();  // Refresh the sensor data after update
+                        updateSensorData();
                     },
                     error: function () {
                         $('#refresh-spinner').addClass('hidden');
