@@ -198,24 +198,57 @@ def update_device_data(device_id, payload):
             device_found = True
             logger.info(f"Device {device_id} found in devices.yaml. Updating data...")
 
-            # Update device fields
+            # Update common fields like state, battery, etc.
             device['state'] = payload['data'].get('state', device.get('state', 'unknown'))
             device['battery'] = payload['data'].get('battery', device.get('battery', 'unknown'))
-            device['power'] = payload['data'].get('power', device.get('power', 'unknown'))
-            device['watt'] = payload['data'].get('watt', device.get('watt', 'unknown'))
 
-            # Convert temperature to Fahrenheit if available
-            temperature_c = payload['data'].get('devTemperature')
-            if temperature_c is not None:
-                device['devTemperature'] = celsius_to_fahrenheit(temperature_c)
+            # Check if temperature and humidity data are present and update accordingly
+            if 'temperature' in payload['data']:
+                temperature = payload['data'].get('temperature')
+                mode = payload['data'].get('mode', 'c')  # Default to Celsius if mode is not present
 
-            # Update signal strength from LoRa info, with logging for troubleshooting
+                if temperature is not None:
+                    if mode == 'c':  # Convert only if it's in Celsius
+                        device['temperature'] = celsius_to_fahrenheit(temperature)
+                        logger.info(f"Temperature converted to Fahrenheit: {device['temperature']} °F")
+                    else:
+                        device['temperature'] = temperature
+                        logger.info(f"Temperature retained in Fahrenheit: {device['temperature']} °F")
+                else:
+                    logger.warning(f"No temperature data for device {device_id}")
+
+            # Handle humidity, if available
+            if 'humidity' in payload['data']:
+                device['humidity'] = payload['data'].get('humidity', device.get('humidity', 'unknown'))
+                logger.info(f"Humidity updated: {device['humidity']}%")
+            else:
+                logger.warning(f"No humidity data for device {device_id}")
+
+            # Capture the alarm limits for temperature and humidity
+            device['tempLimit'] = payload['data'].get('tempLimit', device.get('tempLimit', {'max': None, 'min': None}))
+            device['humidityLimit'] = payload['data'].get('humidityLimit', device.get('humidityLimit', {'max': None, 'min': None}))
+
+            # Handle alarm conditions
+            if 'alarm' in payload['data']:
+                alarm_data = payload['data'].get('alarm', {})
+                device['alarm'] = {
+                    'lowBattery': alarm_data.get('lowBattery', False),
+                    'lowTemp': alarm_data.get('lowTemp', False),
+                    'highTemp': alarm_data.get('highTemp', False),
+                    'lowHumidity': alarm_data.get('lowHumidity', False),
+                    'highHumidity': alarm_data.get('highHumidity', False),
+                }
+                logger.info(f"Alarm state updated: {device['alarm']}")
+            else:
+                logger.warning(f"No alarm data for device {device_id}")
+
+            # Update signal strength from LoRa info
             lora_info = payload['data'].get('loraInfo', {})
             if 'signal' in lora_info:
                 device['signal'] = lora_info.get('signal')
                 logger.info(f"Updated signal strength for device {device_id}: {device['signal']}")
             else:
-                logger.warning(f"No signal information for device {device_id}, keeping existing value.")
+                logger.warning(f"No signal data for device {device_id}")
 
             # Update the last seen timestamp
             device['last_seen'] = now
@@ -486,21 +519,47 @@ def refresh_yolink_devices():
     new_devices = []
     for device in devices["data"]["devices"]:
         device_id = device["deviceId"]
-        
+
+        # Initialize new device structure with default values
+        device_data = {
+            'deviceId': device_id,
+            'state': 'unknown',
+            'battery': 'unknown',
+            'temperature': 'unknown',
+            'humidity': 'unknown',
+            'tempLimit': {'max': None, 'min': None},
+            'humidityLimit': {'max': None, 'min': None},
+            'alarm': {
+                'lowBattery': False,
+                'lowTemp': False,
+                'highTemp': False,
+                'lowHumidity': False,
+                'highHumidity': False
+            },
+            'signal': 'unknown',
+            'last_seen': 'never'
+        }
+
         if device_id in existing_devices:
-            # Preserve dynamic fields (state, battery, etc.)
+            # Preserve dynamic fields from existing devices
             existing_device = existing_devices[device_id]
-            device['state'] = existing_device.get('state', 'unknown')
-            device['battery'] = existing_device.get('battery', 'unknown')
-            device['devTemperature'] = existing_device.get('devTemperature', 'unknown')
-            device['signal'] = existing_device.get('signal', 'unknown')  # Preserve signal field
-            device['last_seen'] = existing_device.get('last_seen', 'never')
+            device_data.update({
+                'state': existing_device.get('state', 'unknown'),
+                'battery': existing_device.get('battery', 'unknown'),
+                'temperature': existing_device.get('temperature', 'unknown'),
+                'humidity': existing_device.get('humidity', 'unknown'),
+                'tempLimit': existing_device.get('tempLimit', {'max': None, 'min': None}),
+                'humidityLimit': existing_device.get('humidityLimit', {'max': None, 'min': None}),
+                'alarm': existing_device.get('alarm', device_data['alarm']),
+                'signal': existing_device.get('signal', 'unknown'),
+                'last_seen': existing_device.get('last_seen', 'never')
+            })
 
         # Ensure signal field is populated in the new device entry (from LoRa data or default)
-        device['signal'] = device.get('signal', 'unknown')
+        device_data['signal'] = device.get('signal', device_data.get('signal'))
 
         # Add device to the new devices list
-        new_devices.append(device)
+        new_devices.append(device_data)
 
     # Save the merged device data back to devices.yaml
     data_to_save = {
