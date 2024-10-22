@@ -15,10 +15,17 @@ import os
 import logging
 import qrcode
 import io
+import base64
+
 
 mqtt_client_instance = None  # Global variable to store the MQTT client instance
 
 app = Flask(__name__)
+
+# Custom b64encode filter for Jinja2
+@app.template_filter('b64encode')
+def b64encode_filter(data):
+    return base64.b64encode(data).decode('utf-8')
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s', filename='application.log')
