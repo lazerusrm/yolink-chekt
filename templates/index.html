@@ -121,10 +121,6 @@
         .warning {
             border: 2px solid yellow;
         }
-
-        .hidden {
-            display: none !important;
-        }
     </style>
 </head>
 
@@ -332,21 +328,21 @@
                         const signalHighlight = sensor.signal <= -115 ? 'warning' : '';
                         const batteryHighlight = sensor.battery === 0 ? 'alarm' : sensor.battery === 1 ? 'warning' : '';
 
-                        const sensorHTML = 
+                        const sensorHTML = `
                             <div class="sensor ${borderClass}">
                                 <p class="sensor-name">${sensor.name || 'Unknown Device'}</p>
                                 <p class="sensor-data-item">State: ${sensor.state || 'N/A'}</p>
-                                ${batteryInfo.percentage !== 'N/A' ? 
+                                ${batteryInfo.percentage !== 'N/A' ? `
                                 <p class="sensor-data-item ${batteryHighlight}">
                                     <img src="${batteryInfo.icon}" class="battery-icon" alt="Battery Icon"> 
                                     Battery: ${batteryInfo.percentage} (Level ${sensor.battery})
-                                </p> : ''}
-                                ${sensor.temperature !== 'N/A' ? <p class="sensor-data-item ${tempHighlight}">Temperature: ${sensor.temperature}°F</p> : ''}
-                                ${sensor.humidity !== 'N/A' ? <p class="sensor-data-item ${humidityHighlight}">Humidity: ${sensor.humidity}%</p> : ''}
+                                </p>` : ''}
+                                ${sensor.temperature !== 'N/A' ? `<p class="sensor-data-item ${tempHighlight}">Temperature: ${sensor.temperature}°F</p>` : ''}
+                                ${sensor.humidity !== 'N/A' ? `<p class="sensor-data-item ${humidityHighlight}">Humidity: ${sensor.humidity}%</p>` : ''}
                                 <p class="sensor-data-item ${signalHighlight}">Signal: ${sensor.signal || 'N/A'} dBm (${signalQuality})</p>
                                 <p class="sensor-data-item">Last Seen: ${lastSeenLocal}</p>
                             </div>
-                        ;
+                        `;
                         sensorList.append(sensorHTML);
                     });
 
