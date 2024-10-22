@@ -91,7 +91,7 @@
 <body>
 
 <div class="login-container">
-    <h1>Login</h1>
+    <h1>{% if create_mode %}Create User{% else %}Login{% endif %}</h1>
     <form method="POST" action="{{ url_for('login') }}">
         <div class="form-group">
             <label for="username">Username</label>
@@ -102,7 +102,7 @@
             <input type="password" id="password" name="password" class="form-control" placeholder="Enter your password" required>
         </div>
 
-        <!-- Conditionally show TOTP input if user has a TOTP secret -->
+        <!-- Conditionally show TOTP input if user already exists and has a TOTP secret -->
         {% if totp_required %}
         <div class="form-group">
             <label for="totp_code">TOTP Code</label>
@@ -110,7 +110,9 @@
         </div>
         {% endif %}
 
-        <button type="submit" class="btn btn-login">Login</button>
+        <button type="submit" class="btn btn-login">
+            {% if create_mode %}Create User{% else %}Login{% endif %}
+        </button>
 
         {% if messages %}
         <div class="error-message">
@@ -120,7 +122,9 @@
         </div>
         {% endif %}
     </form>
-    <small class="form-text">Secure login with 2-factor authentication.</small>
+    <small class="form-text">
+        {% if create_mode %}Secure user creation{% else %}Secure login with 2-factor authentication{% endif %}
+    </small>
 </div>
 
 <!-- Bootstrap JS (Optional for functionality like form validation) -->

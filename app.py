@@ -375,26 +375,21 @@ class YoLinkAPI:
             logger.error(f"Error retrieving device list: {str(e)}")
             return None
 
-# Function to save user in config.yaml
 def create_user(username, password):
-    # Check if the user already exists in users_db
     if username in users_db:
-        logger.warning(f"User {username} already exists. User creation skipped.")
-        return None
+        return None  # User already exists
 
-    # Create a new user
     hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
-    totp_secret = pyotp.random_base32()  # Generate a TOTP secret for 2FA
+    totp_secret = pyotp.random_base32()  # Generate TOTP secret
 
     users_db[username] = {
         'password': hashed_password,
         'totp_secret': totp_secret
     }
 
-    # Save to config.yaml
+    # Save users to config.yaml
     config_data['users'] = users_db
     save_config(config_data)
-    logger.info(f"New user {username} created successfully.")
     return username
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -403,32 +398,38 @@ def login():
         username = request.form['username']
         password = request.form['password']
 
-        # Check if the user already exists
+        # Check if users exist in config.yaml
+        if not users_db:
+            # If no users exist, create a new user
+            create_user(username, password)
+            flash(f"User {username} created successfully. Please scan the QR code and set up TOTP.")
+            return redirect(url_for('setup_totp', username=username))
+
+        # If users exist, verify username and password
         if username in users_db:
             user = users_db[username]
             if bcrypt.check_password_hash(user['password'], password):
+                # Check if TOTP setup is complete
                 if 'totp_secret' in user:
-                    # If the user has a TOTP secret, ask for the TOTP code
                     totp = pyotp.TOTP(user['totp_secret'])
-                    totp_code = request.form.get('totp_code', '')
-                    if totp_code and totp.verify(totp_code):
+                    totp_code = request.form.get('totp_code', None)
+
+                    if not totp_code:  # TOTP not provided yet
+                        flash("Please enter your TOTP code.")
+                    elif totp.verify(totp_code):
                         login_user(User(username))
                         return redirect(url_for('index'))
                     else:
-                        flash('Invalid TOTP code')
-                        return render_template('login.html', totp_required=True)
+                        flash('Invalid TOTP code.')
                 else:
-                    # If no TOTP secret, just log them in
-                    login_user(User(username))
-                    return redirect(url_for('index'))
+                    flash(f"User {username} needs to complete TOTP setup.")
+                    return redirect(url_for('setup_totp', username=username))
             else:
-                flash('Invalid username or password')
+                flash('Invalid username or password.')
         else:
-            # Handle new user registration logic if required
-            flash('User does not exist')
+            flash('User does not exist. Please create a new user.')
 
-    # Initial GET request, no TOTP required
-    return render_template('login.html', totp_required=False)
+    return render_template('login.html')
 
 @app.route('/logout')
 @login_required
@@ -444,9 +445,8 @@ def setup_totp(username):
         if user:
             totp = pyotp.TOTP(user['totp_secret'])
             if totp.verify(totp_code):
-                login_user(User(username))
-                flash('TOTP setup complete, you are now logged in.')
-                return redirect(url_for('index'))
+                flash('TOTP setup complete. You can now log in.')
+                return redirect(url_for('login'))
             else:
                 flash('Invalid TOTP code. Please try again.')
                 return redirect(url_for('setup_totp', username=username))
@@ -455,17 +455,17 @@ def setup_totp(username):
     user = users_db.get(username)
     if user:
         totp = pyotp.TOTP(user['totp_secret'])
-        otp_uri = totp.provisioning_uri(username, issuer_name="YourAppName")
-
-        # Generate a QR code for the TOTP secret
+        otp_uri = totp.provisioning_uri(username, issuer_name="YoLink-CHEKT")
+        
+        # Generate QR code and render the setup page
         qr = qrcode.make(otp_uri)
         img_io = io.BytesIO()
         qr.save(img_io, 'PNG')
         img_io.seek(0)
-
+        
         return render_template('setup_totp.html', qr_code=img_io.getvalue(), totp_secret=user['totp_secret'])
 
-    flash('User not found')
+    flash('User not found.')
     return redirect(url_for('login'))
 
 @app.route('/save_chekt_zone', methods=['POST'])
