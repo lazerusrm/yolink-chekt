@@ -36,6 +36,17 @@ login_manager = LoginManager(app)
 login_manager.login_view = 'login'  # Redirect to login page if not logged in
 app.secret_key = 'your_secret_key_here'  # You should set this to a secure value
 
+# Define a User class for Flask-Login
+class User(UserMixin):
+    def __init__(self, username):
+        self.id = username  # Flask-Login requires that the `id` property be set
+
+# Implement the user_loader function
+@login_manager.user_loader
+def load_user(username):
+    if username in users_db:
+        return User(username)  # Return a User object if the user exists in the "database"
+    return None
 
 # Load configuration
 def load_config():
