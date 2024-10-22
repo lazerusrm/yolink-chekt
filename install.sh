@@ -64,6 +64,11 @@ rsync -a "$APP_DIR/yolink-chekt-main/" "$APP_DIR/" || { echo "Move extracted fil
 rm -rf "$APP_DIR/yolink-chekt-main"
 rm "$APP_DIR/repo.zip"
 
+# Ensure templates directory exists and copy the new template files
+echo "Copying new template files (including login.html)..."
+mkdir -p "$APP_DIR/templates/"
+cp -r "$APP_DIR/yolink-chekt-main/templates/"* "$APP_DIR/templates/" || { echo "Failed to copy templates."; exit 1; }
+
 # Create default configuration files if they don't exist
 if [ ! -f "$APP_DIR/config.yaml" ]; then
 cat <<EOT > "$APP_DIR/config.yaml"
