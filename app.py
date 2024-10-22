@@ -356,7 +356,7 @@ def save_chekt_zone():
     device_id = data.get('deviceId')
     chekt_zone = data.get('chekt_zone')
 
-    if not device_id or not chekt_zone:
+    if not device_id:
         return jsonify({'status': 'error', 'message': 'Invalid data provided.'}), 400
 
     # Load existing mappings
@@ -365,23 +365,34 @@ def save_chekt_zone():
         mappings_data = {'mappings': []}  # Initialize if mappings.yaml is empty or doesn't exist
 
     # Find the mapping for the given device_id
-    existing_mapping = next((m for m in mappings_data['mappings'] if m['yolink_device_id'] == device_id), None)
+    existing_mapping = next(
+        (m for m in mappings_data['mappings'] if m['yolink_device_id'] == device_id),
+        None
+    )
 
     if existing_mapping:
-        # Update the existing mapping
-        existing_mapping['chekt_zone'] = chekt_zone
+        if chekt_zone and chekt_zone.strip():
+            # Update the existing mapping with the new chekt_zone
+            existing_mapping['chekt_zone'] = chekt_zone.strip()
+        else:
+            # Remove the chekt_zone to deactivate the sensor
+            existing_mapping.pop('chekt_zone', None)
     else:
-        # Create a new mapping entry
-        new_mapping = {
-            'yolink_device_id': device_id,
-            'chekt_zone': chekt_zone
-        }
-        mappings_data['mappings'].append(new_mapping)
+        if chekt_zone and chekt_zone.strip():
+            # Create a new mapping entry only if chekt_zone is provided
+            new_mapping = {
+                'yolink_device_id': device_id,
+                'chekt_zone': chekt_zone.strip()
+            }
+            mappings_data['mappings'].append(new_mapping)
+        else:
+            # No chekt_zone provided and no existing mapping; nothing to update
+            pass
 
     # Save the updated mappings
     save_to_yaml(mappings_file, mappings_data)
 
-    return jsonify({'status': 'success', 'message': 'CHEKT zone saved successfully.'})
+    return jsonify({'status': 'success', 'message': 'CHEKT zone saved successfully.'}), 200
 
 @app.route('/save_config', methods=['POST'])
 def save_config_route():

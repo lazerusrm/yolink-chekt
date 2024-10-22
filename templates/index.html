@@ -129,13 +129,12 @@
 
         /* Styles for CHEKT zone editing */
         .chekt-zone {
-            position: absolute;
-            top: 10px;
-            right: 10px;
             color: red;
             font-size: 1.25rem;
             font-weight: bold;
             cursor: pointer;
+            display: block;
+            margin-top: 5px;
         }
 
         .chekt-zone-input {
@@ -146,10 +145,8 @@
             color: red;
             background-color: transparent;
             border: none;
-            position: absolute;
-            top: 10px;
-            right: 10px;
             border-bottom: 1px solid red;
+            margin-top: 5px;
         }
 
         .chekt-zone-input:focus {
@@ -373,12 +370,12 @@
                         const batteryHighlight = sensor.battery === 0 ? 'alarm' : sensor.battery === 1 ? 'warning' : '';
 
                         // Get CHEKT zone (ensure sensor.chekt_zone is available)
-                        const chektZone = sensor.chekt_zone || 'N/A';
+                        const chektZone = sensor.chekt_zone && sensor.chekt_zone.trim() !== '' ? sensor.chekt_zone.trim() : 'No Zone';
 
                         const sensorHTML = `
                             <div class="sensor ${borderClass}">
-                                <span class="chekt-zone" onclick="makeZoneEditable(this, '${sensor.deviceId}')">Zone ${chektZone}</span>
                                 <p class="sensor-name">${sensor.name || 'Unknown Device'}</p>
+                                <span class="chekt-zone" onclick="makeZoneEditable(this, '${sensor.deviceId}')">${chektZone !== 'No Zone' ? 'Zone ' + chektZone : 'No Zone'}</span>
                                 <p class="sensor-data-item">State: ${sensor.state || 'N/A'}</p>
                                 ${batteryInfo.percentage !== 'N/A' ? `
                                 <p class="sensor-data-item ${batteryHighlight}">
@@ -406,10 +403,11 @@
 
         // Function to make CHEKT zone editable
         function makeZoneEditable(zoneSpan, deviceId) {
-            const currentZone = zoneSpan.textContent.replace('Zone ', '').trim();
+            const currentZoneText = zoneSpan.textContent.trim();
+            const currentZone = currentZoneText.replace('Zone ', '').replace('No Zone', '').trim();
             const input = document.createElement('input');
             input.type = 'text';
-            input.value = currentZone === 'N/A' ? '' : currentZone;
+            input.value = currentZone;
             input.classList.add('chekt-zone-input');
 
             // Replace the zone span with the input field
@@ -417,23 +415,22 @@
             zoneSpan.style.display = 'none';
             input.focus();
 
+            function saveAndUpdate() {
+                const newZone = input.value.trim();
+                saveZone(deviceId, newZone);  // Save the new zone, even if it's empty
+                zoneSpan.textContent = newZone ? `Zone ${newZone}` : 'No Zone';
+                input.remove();
+                zoneSpan.style.display = 'block';
+            }
+
             input.addEventListener('keydown', function (event) {
                 if (event.key === 'Enter') {
-                    const newZone = input.value.trim();
-                    if (newZone) {
-                        saveZone(deviceId, newZone);  // Save the new zone
-                        zoneSpan.textContent = `Zone ${newZone}`;
-                    } else {
-                        zoneSpan.textContent = 'Zone N/A';
-                    }
-                    input.remove();
-                    zoneSpan.style.display = 'inline';
+                    saveAndUpdate();
                 }
             });
 
             input.addEventListener('blur', function () {
-                input.remove();
-                zoneSpan.style.display = 'inline';
+                saveAndUpdate();
             });
         }
 
@@ -443,7 +440,7 @@
                 type: "POST",
                 url: "/save_chekt_zone",
                 contentType: "application/json",
-                data: JSON.stringify({ deviceId: deviceId, chekt_zone: newZone }),
+                data: JSON.stringify({ deviceId: deviceId, chekt_zone: newZone }), // Send empty string if newZone is empty
                 success: function(response) {
                     console.log('Zone saved successfully.');
                     // Show save confirmation message
