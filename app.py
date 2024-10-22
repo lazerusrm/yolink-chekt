@@ -6,12 +6,10 @@ import uuid
 import yaml
 from datetime import datetime
 import base64
-import uuid
 import paho.mqtt.client as mqtt
 import json
 import requests
 import time
-from flask import Flask, render_template, request, jsonify
 import threading
 import os
 import logging
@@ -29,7 +27,9 @@ config_file = "config.yaml"
 devices_file = "devices.yaml"
 mappings_file = "mappings.yaml"
 
+# Global config and users data
 config_data = {}
+users_db = {}
 
 bcrypt = Bcrypt(app)
 login_manager = LoginManager(app)
@@ -50,25 +50,26 @@ def load_user(username):
 
 # Load configuration
 def load_config():
-    global config_data
+    global config_data, users_db
     with open(config_file, 'r') as file:
         config_data = yaml.safe_load(file)
     
-    # Provide default MQTT configuration if not present
+# Provide default MQTT configuration if not present
     if 'mqtt' not in config_data:
         config_data['mqtt'] = {
             'url': 'mqtt://api.yosmart.com',
             'port': 8003,
             'topic': 'yl-home/${Home ID}/+/report'
         }
-    return config_data
 
+    # Load users from config.yaml (if present)
+    users_db = config_data.get('users', {})
+    
+    return config_data
 
 # Save configuration
 def save_config(data):
     global config_data
-    
-    # Merge incoming data with existing config, so static sections like 'mqtt' remain intact
     config_data.update(data)
 
     # Ensure MQTT section is populated with defaults if not present
@@ -372,17 +373,17 @@ class YoLinkAPI:
             logger.error(f"Error retrieving device list: {str(e)}")
             return None
 
+# Function to save user in config.yaml
 def create_user(username, password):
     # Check if the user already exists in users_db
     if username in users_db:
         logger.warning(f"User {username} already exists. User creation skipped.")
         return None
 
-    # If the user does not exist, create a new user
+    # Create a new user
     hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
     totp_secret = pyotp.random_base32()  # Generate a TOTP secret for 2FA
 
-    # Add the new user to config.yaml
     users_db[username] = {
         'password': hashed_password,
         'totp_secret': totp_secret
@@ -406,7 +407,6 @@ def login():
 
         # If no users exist, create the first user
         if not users_db:
-            # Create the first user
             created_user = create_user(username, password)
             if created_user:
                 flash(f"User {username} created successfully. Please log in again.")
@@ -428,12 +428,12 @@ def login():
 
     return render_template('login.html')
 
-@app.route('/logout')
+@@app.route('/logout')
 @login_required
 def logout():
     logout_user()
     return redirect(url_for('login'))
-
+    
 @app.route('/setup_totp')
 @login_required
 def setup_totp():
