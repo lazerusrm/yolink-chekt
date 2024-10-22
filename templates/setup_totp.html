@@ -117,7 +117,8 @@
         <div class="card">
             <div class="qr-code-container">
                 <h3>Scan the QR Code</h3>
-                <img src="data:image/png;base64,{{ qr_code|b64encode }}" alt="QR Code">
+                <!-- QR code image already base64 encoded in the backend -->
+                <img src="data:image/png;base64,{{ qr_code }}" alt="QR Code">
             </div>
             <div class="totp-info">
                 <p>Or enter this code manually: <strong>{{ totp_secret }}</strong></p>

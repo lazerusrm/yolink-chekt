@@ -4,7 +4,7 @@
     <!-- Meta and Title -->
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - YoLink to CHEKT</title>
+    <title>{{ 'Create User' if create_mode else 'Login' }} - YoLink to CHEKT</title>
     <!-- Bootstrap CSS -->
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css">
     <!-- Font Awesome CSS -->
@@ -91,7 +91,7 @@
 <body>
 
 <div class="login-container">
-    <h1>{% if create_mode %}Create User{% else %}Login{% endif %}</h1>
+    <h1>{{ 'Create User' if create_mode else 'Login' }}</h1>
     <form method="POST" action="{{ url_for('login') }}">
         <div class="form-group">
             <label for="username">Username</label>
@@ -102,7 +102,7 @@
             <input type="password" id="password" name="password" class="form-control" placeholder="Enter your password" required>
         </div>
 
-        <!-- Conditionally show TOTP input if user already exists and has a TOTP secret -->
+        <!-- Show TOTP input only when needed -->
         {% if totp_required %}
         <div class="form-group">
             <label for="totp_code">TOTP Code</label>
@@ -111,9 +111,10 @@
         {% endif %}
 
         <button type="submit" class="btn btn-login">
-            {% if create_mode %}Create User{% else %}Login{% endif %}
+            {{ 'Create User' if create_mode else 'Login' }}
         </button>
 
+        <!-- Display error messages if there are any -->
         {% if messages %}
         <div class="error-message">
             {% for message in messages %}
@@ -122,8 +123,10 @@
         </div>
         {% endif %}
     </form>
+
+    <!-- Provide appropriate helper text -->
     <small class="form-text">
-        {% if create_mode %}Secure user creation{% else %}Secure login with 2-factor authentication{% endif %}
+        {{ 'Secure user creation' if create_mode else 'Secure login with 2-factor authentication' }}
     </small>
 </div>
 

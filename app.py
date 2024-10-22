@@ -405,30 +405,38 @@ def login():
         username = request.form['username']
         password = request.form['password']
 
-        # Check if users exist in config.yaml
+        # Check if users exist in config.yaml (if no users, prompt to create a new user)
         if not users_db:
-            # If no users exist, create a new user
+            # No users in the system, create a new one
             create_user(username, password)
-            flash(f"User {username} created successfully. Please scan the QR code and set up TOTP.")
+            flash(f"User {username} created successfully. Please scan the QR code to set up TOTP.")
             return redirect(url_for('setup_totp', username=username))
 
-        # If users exist, verify username and password
+        # Users exist, proceed with login validation
         if username in users_db:
             user = users_db[username]
+
+            # Validate password
             if bcrypt.check_password_hash(user['password'], password):
-                # Check if TOTP setup is complete
+                # Check if TOTP is required (TOTP setup complete)
                 if 'totp_secret' in user:
-                    totp = pyotp.TOTP(user['totp_secret'])
                     totp_code = request.form.get('totp_code', None)
 
-                    if not totp_code:  # TOTP not provided yet
+                    # If TOTP code is not provided
+                    if not totp_code:
                         flash("Please enter your TOTP code.")
-                    elif totp.verify(totp_code):
+                        return render_template('login.html', totp_required=True)
+
+                    # Verify the provided TOTP code
+                    totp = pyotp.TOTP(user['totp_secret'])
+                    if totp.verify(totp_code):
+                        # TOTP is valid, log the user in
                         login_user(User(username))
                         return redirect(url_for('index'))
                     else:
                         flash('Invalid TOTP code.')
                 else:
+                    # TOTP setup not completed
                     flash(f"User {username} needs to complete TOTP setup.")
                     return redirect(url_for('setup_totp', username=username))
             else:
@@ -436,7 +444,7 @@ def login():
         else:
             flash('User does not exist. Please create a new user.')
 
-    return render_template('login.html')
+    return render_template('login.html', totp_required=False)
 
 @app.route('/logout')
 @login_required
