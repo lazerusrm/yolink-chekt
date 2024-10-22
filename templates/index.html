@@ -325,6 +325,13 @@
                         const signalHighlight = sensor.signal && sensor.signal <= -125 ? 'alarm' : '';
                         const batteryHighlight = sensor.battery === 0 ? 'alarm' : sensor.battery === 1 ? 'warning' : '';
 
+                        // Conditionally display temperature and humidity if not unknown
+                        const temperatureHTML = sensor.temperature !== 'unknown' ? 
+                            `<p class="sensor-data-item ${tempHighlight}">Temperature: ${sensor.temperature}°F</p>` : '';
+
+                        const humidityHTML = sensor.humidity !== 'unknown' ? 
+                            `<p class="sensor-data-item ${humidityHighlight}">Humidity: ${sensor.humidity}%</p>` : '';
+
                         const sensorHTML = `
                             <div class="sensor ${borderClass}">
                                 <p class="sensor-name">${sensor.name || 'Unknown Device'}</p>
@@ -333,8 +340,8 @@
                                     <img src="${batteryInfo.icon}" class="battery-icon" alt="Battery Icon"> 
                                     Battery: ${batteryInfo.percentage} (Level ${sensor.battery})
                                 </p>
-                                <p class="sensor-data-item ${tempHighlight}">Temperature: ${sensor.temperature || 'N/A'}°F</p>
-                                <p class="sensor-data-item ${humidityHighlight}">Humidity: ${sensor.humidity || 'N/A'}%</p>
+                                ${temperatureHTML}
+                                ${humidityHTML}
                                 <p class="sensor-data-item ${signalHighlight}">Signal: ${sensor.signal || 'N/A'} dBm (${signalQuality})</p>
                                 <p class="sensor-data-item">Last Seen: ${lastSeenLocal}</p>
                             </div>
