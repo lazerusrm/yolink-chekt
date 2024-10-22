@@ -8,9 +8,8 @@
     <!-- Bootstrap CSS -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.0/dist/css/bootstrap.min.css">
     <!-- Font Awesome CSS -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/fontawesome.min.css" integrity="sha512-..." crossorigin="anonymous" referrerpolicy="no-referrer" />
-    <!-- Include Solid Style for Font Awesome -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/solid.min.css" integrity="sha512-..." crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <!-- Using the latest version of Font Awesome 6 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha512-sourLuYjZ6+xWd7K93Qfq2oEFxE3fsUIbYuq5yAqGiYH+AlYc3W6FIKHJjCo2GcJHgAjXXHrx7OfSZdCIclgsw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
     <style>
         /* General Styles */
         body {
@@ -334,8 +333,6 @@
             if (!isoDateString || isoDateString === 'never') return "Never";  // Handle missing or "never" dates
             const localTime = new Date(isoDateString);
             if (!isNaN(localTime)) {
-                // Adjust timezone offset if necessary
-                // localTime.setHours(localTime.getHours() - 6);  // Remove if not needed
                 return localTime.toLocaleString();  // Convert to local time and format
             }
             return "Invalid date";  // Return 'Invalid date' if not valid
@@ -396,7 +393,7 @@
                         const batteryHighlight = sensor.battery === 0 ? 'alarm' : sensor.battery === 1 ? 'warning' : '';
 
                         // Get CHEKT zone (ensure sensor.chekt_zone is available)
-                        const chektZone = sensor.chekt_zone && sensor.chekt_zone.trim() !== '' ? sensor.chekt_zone.trim() : 'No Zone';
+                        const chektZone = (sensor.chekt_zone && sensor.chekt_zone.trim() !== '' && sensor.chekt_zone.trim().toLowerCase() !== 'n/a') ? `Zone ${sensor.chekt_zone.trim()}` : 'No Zone';
 
                         const sensorHTML = `
                             <div class="sensor ${borderClass}">
@@ -405,7 +402,7 @@
                                 ${sensor.state && sensor.state !== 'unknown' ? `<p class="sensor-data-item">State: ${sensor.state}</p>` : ''}
                                 ${batteryInfo.percentage !== 'N/A' && sensor.battery !== undefined ? `
                                 <p class="sensor-data-item ${batteryHighlight}">
-                                    <i class="fa-solid ${batteryInfo.iconClass} battery-icon"></i>
+                                    <i class="fas ${batteryInfo.iconClass} battery-icon"></i>
                                     Battery: ${batteryInfo.percentage}
                                 </p>` : ''}
                                 ${sensor.temperature && sensor.temperature !== 'unknown' ? `<p class="sensor-data-item ${tempHighlight}">Temperature: ${sensor.temperature}°F</p>` : ''}
