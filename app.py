@@ -536,8 +536,14 @@ def refresh_yolink_devices():
         return jsonify({"status": "error", "message": f"Failed to retrieve devices: {devices.get('desc', 'Unknown error')}"})
 
     # Load the existing devices.yaml
-    existing_devices_data = load_yaml(devices_file)
-    existing_devices = {device['deviceId']: device for device in existing_devices_data.get('devices', [])}
+    try:
+        existing_devices_data = load_yaml(devices_file)
+        if existing_devices_data is None:
+            existing_devices_data = {}  # Ensure we have a dictionary to work with
+        existing_devices = {device['deviceId']: device for device in existing_devices_data.get('devices', [])}
+    except Exception as e:
+        logger.error(f"Error loading devices.yaml: {str(e)}")
+        existing_devices = {}
 
     # Merge new device list with existing devices to retain dynamic fields
     new_devices = []
@@ -594,7 +600,11 @@ def refresh_yolink_devices():
         "homes": {"id": home_id},
         "devices": new_devices
     }
-    save_to_yaml("devices.yaml", data_to_save)
+    try:
+        save_to_yaml("devices.yaml", data_to_save)
+    except Exception as e:
+        logger.error(f"Error saving to devices.yaml: {str(e)}")
+        return jsonify({"status": "error", "message": "Failed to save devices to devices.yaml"})
 
     # Restart the MQTT client after refreshing devices
     if mqtt_client_instance:
