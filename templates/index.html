@@ -1,11 +1,16 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <!-- Meta and Title -->
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Yolink to CHEKT Status</title>
+    <!-- Bootstrap CSS -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.0/dist/css/bootstrap.min.css">
+    <!-- Font Awesome CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha512-tl4frx6dGJ+rYdIJrODv/XY6dHhfzP0B3pQ9VlJDcwxAajgPXxK76aD8hWkRgfiNDg0tfYafifzCFBuu4rYx8w==" crossorigin="anonymous" referrerpolicy="no-referrer" />
     <style>
+        /* General Styles */
         body {
             font-family: Arial, sans-serif;
             margin: 20px;
@@ -56,13 +61,34 @@
             margin: 5px 0;
         }
 
+        /* Battery Icon Styles */
         .battery-icon {
-            width: 24px;
-            height: 24px;
+            font-size: 1.2em;
             margin-right: 10px;
             vertical-align: middle;
         }
 
+        .battery-icon.fa-battery-empty {
+            color: red;
+        }
+
+        .battery-icon.fa-battery-quarter {
+            color: orange;
+        }
+
+        .battery-icon.fa-battery-half {
+            color: gold;
+        }
+
+        .battery-icon.fa-battery-three-quarters {
+            color: yellowgreen;
+        }
+
+        .battery-icon.fa-battery-full {
+            color: green;
+        }
+
+        /* Link Styles */
         .link {
             display: block;
             margin-top: 20px;
@@ -70,7 +96,7 @@
             color: #007BFF;
         }
 
-        /* Spinner */
+        /* Spinner Styles */
         .spinner {
             border: 4px solid rgba(255, 255, 255, 0.3);
             border-top: 4px solid #ffffff;
@@ -103,22 +129,19 @@
             100% { transform: rotate(360deg); }
         }
 
-        /* Red border for alarm condition */
+        /* Alarm and Warning Styles */
         .sensor.alarm {
             border: 2px solid red;
         }
 
-        /* Yellow border for warning condition */
         .sensor.warning {
             border: 2px solid yellow;
         }
 
-        /* Red highlight for specific sections in alarm */
         .alarm {
             border: 2px solid red;
         }
 
-        /* Yellow highlight for specific sections in warning */
         .warning {
             border: 2px solid yellow;
         }
@@ -127,7 +150,7 @@
             display: none !important;
         }
 
-        /* Styles for CHEKT zone editing */
+        /* CHEKT Zone Editing Styles */
         .chekt-zone {
             color: red;
             font-size: 1.25rem;
@@ -251,39 +274,39 @@
             }
         }
 
-        // Function to map battery level to percentage and get battery icon
+        // Function to map battery level to percentage and get battery icon class
         function getBatteryInfo(batteryLevel) {
             let percentage;
-            let icon;
+            let iconClass;
 
             switch (batteryLevel) {
                 case 0:
                     percentage = "0%";
-                    icon = "https://img.icons8.com/color/48/000000/empty-battery.png";
+                    iconClass = "fa-battery-empty";
                     break;
                 case 1:
                     percentage = "25%";
-                    icon = "https://img.icons8.com/color/48/000000/low-battery.png";
+                    iconClass = "fa-battery-quarter";
                     break;
                 case 2:
                     percentage = "50%";
-                    icon = "https://img.icons8.com/color/48/000000/medium-battery.png";
+                    iconClass = "fa-battery-half";
                     break;
                 case 3:
                     percentage = "75%";
-                    icon = "https://img.icons8.com/color/48/000000/medium-full-battery.png";
+                    iconClass = "fa-battery-three-quarters";
                     break;
                 case 4:
                     percentage = "100%";
-                    icon = "https://img.icons8.com/color/48/000000/full-battery.png";
+                    iconClass = "fa-battery-full";
                     break;
                 default:
                     percentage = "N/A";
-                    icon = "https://img.icons8.com/color/48/000000/question-mark.png";
+                    iconClass = "fa-battery-empty";
                     break;
             }
 
-            return { percentage, icon };
+            return { percentage, iconClass };
         }
 
         // Function to compare sensors first by last seen and then by name
@@ -309,7 +332,7 @@
             if (!isoDateString || isoDateString === 'never') return "Never";  // Handle missing or "never" dates
             const localTime = new Date(isoDateString);
             if (!isNaN(localTime)) {
-                localTime.setHours(localTime.getHours() - 6);  // Adjusting timezone offset
+                localTime.setHours(localTime.getHours() - 6);  // Adjusting timezone offset if necessary
                 return localTime.toLocaleString();  // Convert to local time and format
             }
             return "Invalid date";  // Return 'Invalid date' if not valid
@@ -317,13 +340,13 @@
 
         // Check for alarm condition or poor battery/signal and return appropriate class
         function getBorderClass(sensor) {
-            const tempExceedsLimit = sensor.temperature && (sensor.temperature > sensor.tempLimit.max || sensor.temperature < sensor.tempLimit.min);
+            const tempExceedsLimit = sensor.temperature && sensor.tempLimit && (sensor.temperature > sensor.tempLimit.max || sensor.temperature < sensor.tempLimit.min);
             const signalPoor = sensor.signal <= -115 && sensor.signal >= -140;
             const signalWarning = sensor.signal <= -111 && sensor.signal >= -115;
             const batteryWarning = sensor.battery === 1;
             const batteryCritical = sensor.battery === 0;
 
-            if (tempExceedsLimit || sensor.alarm.highHumidity || sensor.alarm.lowBattery || batteryCritical || signalPoor) {
+            if (tempExceedsLimit || sensor.alarm?.highHumidity || sensor.alarm?.lowBattery || batteryCritical || signalPoor) {
                 return 'alarm';
             }
 
@@ -336,7 +359,7 @@
 
         // Function to highlight fields in alarm/warning state
         function getHighlightClass(value, min, max) {
-            if (value === 'N/A' || value === null || value === undefined) return '';
+            if (value === undefined || value === null) return '';
             if (value > max || value < min) {
                 return 'alarm';
             }
@@ -353,7 +376,7 @@
                     const sensorList = $('#sensor-list');
                     sensorList.empty(); // Clear the current list
 
-                    sensorData.devices.sort(compareSensors); // Sort sensors by last seen and then by name
+                    sensorData.devices.sort(compareSensors); // Sort sensors
 
                     sensorData.devices.forEach(sensor => {
                         const signalQuality = getSignalQuality(sensor.signal);
@@ -364,8 +387,8 @@
                         const borderClass = getBorderClass(sensor);
 
                         // Highlight classes for temperature, humidity, signal, and battery
-                        const tempHighlight = getHighlightClass(sensor.temperature, sensor.tempLimit.min, sensor.tempLimit.max);
-                        const humidityHighlight = getHighlightClass(sensor.humidity, sensor.humidityLimit.min, sensor.humidityLimit.max);
+                        const tempHighlight = getHighlightClass(sensor.temperature, sensor.tempLimit?.min, sensor.tempLimit?.max);
+                        const humidityHighlight = getHighlightClass(sensor.humidity, sensor.humidityLimit?.min, sensor.humidityLimit?.max);
                         const signalHighlight = sensor.signal <= -115 ? 'warning' : '';
                         const batteryHighlight = sensor.battery === 0 ? 'alarm' : sensor.battery === 1 ? 'warning' : '';
 
@@ -376,16 +399,16 @@
                             <div class="sensor ${borderClass}">
                                 <p class="sensor-name">${sensor.name || 'Unknown Device'}</p>
                                 <span class="chekt-zone" onclick="makeZoneEditable(this, '${sensor.deviceId}')">${chektZone !== 'No Zone' ? 'Zone ' + chektZone : 'No Zone'}</span>
-                                <p class="sensor-data-item">State: ${sensor.state || 'N/A'}</p>
-                                ${batteryInfo.percentage !== 'N/A' ? `
+                                ${sensor.state ? `<p class="sensor-data-item">State: ${sensor.state}</p>` : ''}
+                                ${batteryInfo.percentage !== 'N/A' && sensor.battery !== undefined ? `
                                 <p class="sensor-data-item ${batteryHighlight}">
-                                    <img src="${batteryInfo.icon}" class="battery-icon" alt="Battery Icon"> 
-                                    Battery: ${batteryInfo.percentage} (Level ${sensor.battery})
+                                    <i class="fas ${batteryInfo.iconClass} battery-icon"></i>
+                                    Battery: ${batteryInfo.percentage}
                                 </p>` : ''}
-                                ${sensor.temperature !== 'N/A' ? `<p class="sensor-data-item ${tempHighlight}">Temperature: ${sensor.temperature}°F</p>` : ''}
-                                ${sensor.humidity !== 'N/A' ? `<p class="sensor-data-item ${humidityHighlight}">Humidity: ${sensor.humidity}%</p>` : ''}
-                                <p class="sensor-data-item ${signalHighlight}">Signal: ${sensor.signal || 'N/A'} dBm (${signalQuality})</p>
-                                <p class="sensor-data-item">Last Seen: ${lastSeenLocal}</p>
+                                ${sensor.temperature !== undefined ? `<p class="sensor-data-item ${tempHighlight}">Temperature: ${sensor.temperature}°F</p>` : ''}
+                                ${sensor.humidity !== undefined ? `<p class="sensor-data-item ${humidityHighlight}">Humidity: ${sensor.humidity}%</p>` : ''}
+                                ${sensor.signal !== undefined ? `<p class="sensor-data-item ${signalHighlight}">Signal: ${sensor.signal} dBm (${signalQuality})</p>` : ''}
+                                ${sensor.last_seen ? `<p class="sensor-data-item">Last Seen: ${lastSeenLocal}</p>` : ''}
                                 <span class="save-confirmation" id="save-confirmation-${sensor.deviceId}" style="display: none;">Saved!</span>
                             </div>
                         `;
