@@ -624,39 +624,39 @@ def save_zone_change():
 
 @app.route('/')
 def index():
-    # Load devices and mappings from YAML files with error handling
+    # Attempt to load devices and mappings from YAML files, using fallback data if it fails
+    devices = []
+    device_mappings = {}
+    config_data = {}
+
+    # Gracefully handle errors when loading devices.yaml
     try:
         devices_data = load_yaml('devices.yaml')
         if devices_data is None:
             raise ValueError("devices.yaml is empty or not properly loaded")
         devices = devices_data.get('devices', [])
     except FileNotFoundError:
-        logger.error("devices.yaml file not found.")
-        return "Error: devices file not found", 500
+        logger.warning("devices.yaml file not found, rendering with no devices.")
     except Exception as e:
-        logger.error(f"Failed to load devices.yaml: {str(e)}")
-        return "Error loading devices data", 500
+        logger.warning(f"Failed to load devices.yaml: {str(e)}, rendering with no devices.")
 
+    # Gracefully handle errors when loading mappings.yaml
     try:
         mappings_data = load_yaml('mappings.yaml')
         mappings = mappings_data.get('mappings', {}) if mappings_data else {}
+        device_mappings = {m['yolink_device_id']: m for m in mappings}
     except FileNotFoundError:
-        logger.error("mappings.yaml file not found.")
-        mappings = {}  # If mappings.yaml is not found, default to an empty dict
+        logger.warning("mappings.yaml file not found, rendering with no mappings.")
     except Exception as e:
-        logger.error(f"Failed to load mappings.yaml: {str(e)}")
-        mappings = {}
+        logger.warning(f"Failed to load mappings.yaml: {str(e)}, rendering with no mappings.")
 
-    # Prepare a dictionary to easily access the mappings by device ID
-    device_mappings = {m['yolink_device_id']: m for m in mappings}
-
-    # Load configuration for pre-filling the form
+    # Gracefully handle errors when loading config.yaml
     try:
         config_data = load_config()
     except Exception as e:
-        logger.error(f"Failed to load config: {str(e)}")
-        config_data = {}
+        logger.warning(f"Failed to load config: {str(e)}, rendering with default config.")
 
+    # Render the page with the data (even if it's partial or empty)
     return render_template('index.html', devices=devices, mappings=device_mappings, config=config_data)
 
 @app.route('/config.html')
