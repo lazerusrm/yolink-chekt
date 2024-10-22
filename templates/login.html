@@ -101,11 +101,17 @@
             <label for="password">Password</label>
             <input type="password" id="password" name="password" class="form-control" placeholder="Enter your password" required>
         </div>
+
+        <!-- Conditionally show TOTP input if user has a TOTP secret -->
+        {% if totp_required %}
         <div class="form-group">
             <label for="totp_code">TOTP Code</label>
             <input type="text" id="totp_code" name="totp_code" class="form-control" placeholder="Enter your 2FA code" required>
         </div>
+        {% endif %}
+
         <button type="submit" class="btn btn-login">Login</button>
+
         {% if messages %}
         <div class="error-message">
             {% for message in messages %}

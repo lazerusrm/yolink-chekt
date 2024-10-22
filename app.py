@@ -407,22 +407,28 @@ def login():
         if username in users_db:
             user = users_db[username]
             if bcrypt.check_password_hash(user['password'], password):
-                totp = pyotp.TOTP(user['totp_secret'])
-                totp_code = request.form['totp_code']
-                if totp.verify(totp_code):
+                if 'totp_secret' in user:
+                    # If the user has a TOTP secret, ask for the TOTP code
+                    totp = pyotp.TOTP(user['totp_secret'])
+                    totp_code = request.form.get('totp_code', '')
+                    if totp_code and totp.verify(totp_code):
+                        login_user(User(username))
+                        return redirect(url_for('index'))
+                    else:
+                        flash('Invalid TOTP code')
+                        return render_template('login.html', totp_required=True)
+                else:
+                    # If no TOTP secret, just log them in
                     login_user(User(username))
                     return redirect(url_for('index'))
-                else:
-                    flash('Invalid TOTP code')
             else:
                 flash('Invalid username or password')
         else:
-            # If the user does not exist, prompt for username, password, and generate a TOTP secret
-            totp_secret = create_user(username, password)
-            flash(f"User {username} created successfully. Please scan the QR code and enter the TOTP code.")
-            return redirect(url_for('setup_totp', username=username))  # Redirect to the TOTP setup page
+            # Handle new user registration logic if required
+            flash('User does not exist')
 
-    return render_template('login.html')
+    # Initial GET request, no TOTP required
+    return render_template('login.html', totp_required=False)
 
 @app.route('/logout')
 @login_required
