@@ -530,9 +530,13 @@ def refresh_yolink_devices():
     for device in devices["data"]["devices"]:
         device_id = device["deviceId"]
 
+        # Fetch the device name directly from the API response
+        device_name = device.get('name', f"Device {device_id[-4:]}")  # Default to last 4 chars of deviceId if name is missing
+
         # Initialize new device structure with default values
         device_data = {
             'deviceId': device_id,
+            'name': device_name,
             'state': 'unknown',
             'battery': 'unknown',
             'temperature': 'unknown',
@@ -566,7 +570,7 @@ def refresh_yolink_devices():
             })
 
         # Ensure signal field is populated in the new device entry (from LoRa data or default)
-        device_data['signal'] = device.get('signal', device_data.get('signal'))
+        device_data['signal'] = device.get('loraInfo', {}).get('signal', device_data.get('signal'))
 
         # Add device to the new devices list
         new_devices.append(device_data)
