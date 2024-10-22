@@ -13,6 +13,8 @@ import time
 import threading
 import os
 import logging
+import qrcode
+import io
 
 mqtt_client_instance = None  # Global variable to store the MQTT client instance
 
