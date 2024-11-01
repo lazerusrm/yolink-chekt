@@ -585,7 +585,7 @@ def save_config_route():
         current_config.update(config_data)
 
         # Save the updated configuration to the config.yaml file
-        save_config_to_file(current_config)  # Assuming this function saves the config to a file
+        save_config(current_config)  # Assuming this function saves the config to a file
 
         return jsonify({"status": "success", "message": "Configuration saved successfully."})
     
