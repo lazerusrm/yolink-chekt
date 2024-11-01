@@ -17,6 +17,8 @@ import qrcode
 import io
 import base64
 import secrets
+from datetime import datetime
+import pytz
 
 mqtt_client_instance = None  # Global variable to store the MQTT client instance
 temp_user_data = {}  # Holds temporary data for users not yet verified
@@ -218,10 +220,30 @@ def force_generate_token_and_client():
     
     return token, client_id
 
+def convert_to_timezone(timestamp):
+    global config_data  # Ensure access to global config_data
+    timezone_name = config_data.get('timezone', 'UTC')
+    try:
+        target_timezone = pytz.timezone(timezone_name)
+    except pytz.UnknownTimeZoneError:
+        logger.error(f"Unknown timezone '{timezone_name}' specified in config. Defaulting to UTC.")
+        target_timezone = pytz.UTC
+    utc_time = datetime.fromtimestamp(timestamp, pytz.UTC)
+    return utc_time.astimezone(target_timezone)
+
+def process_sensor_data(data):
+    for sensor in data['sensors']:
+        timestamp = sensor.get('timestamp')
+        if timestamp:
+            sensor['local_time'] = convert_to_timezone(timestamp, timezone).strftime('%Y-%m-%d %H:%M:%S')
+    return data
+
 def update_device_data(device_id, payload):
+    global config_data  # Ensure access to the global config_data
     logger.info(f"Updating device data for Device ID: {device_id}")
 
     # Load the devices.yaml file
+    timezone_name = config_data.get('timezone', 'UTC')
     try:
         devices_data = load_yaml(devices_file)
         logger.info(f"Loaded devices.yaml successfully.")
@@ -229,7 +251,7 @@ def update_device_data(device_id, payload):
         logger.error(f"Failed to load devices.yaml: {str(e)}")
         return
 
-    now = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S')
+    now = datetime.now(target_timezone).strftime('%Y-%m-%dT%H:%M:%S')
 
     # Find the device in devices.yaml based on the device ID
     device_found = False
@@ -555,10 +577,16 @@ def save_config_route():
         
         # Log the received configuration for debugging
         logger.debug(f"Received configuration data: {config_data}")
-        
-        # Save the configuration to the config.yaml file
-        save_config(config_data)
-        
+
+        # Load existing configuration
+        current_config = load_config()  # Assuming this function loads the existing config
+
+        # Update the configuration with new values, including timezone
+        current_config.update(config_data)
+
+        # Save the updated configuration to the config.yaml file
+        save_config_to_file(current_config)  # Assuming this function saves the config to a file
+
         return jsonify({"status": "success", "message": "Configuration saved successfully."})
     
     except Exception as e:
@@ -632,6 +660,7 @@ def save_mapping():
 
 @app.route('/get_sensor_data', methods=['GET'])
 def get_sensor_data():
+    global config_data
     # Load the devices.yaml file directly
     try:
         devices_data = load_yaml(devices_file)
@@ -651,6 +680,14 @@ def get_sensor_data():
     # Create a dictionary for quick lookup of chekt_zone by deviceId
     mappings_dict = {m['yolink_device_id']: m for m in mappings_data.get('mappings', [])}
 
+    # Get the configured timezone
+    timezone_name = config_data.get('timezone', 'UTC')
+    try:
+        target_timezone = pytz.timezone(timezone_name)
+    except pytz.UnknownTimeZoneError:
+        logger.error(f"Unknown timezone '{timezone_name}' specified in config. Defaulting to UTC.")
+        target_timezone = pytz.UTC
+
     # Ensure there is data in the file and the devices list exists
     if 'devices' in devices_data and len(devices_data['devices']) > 0:
         all_sensors = []
@@ -658,6 +695,22 @@ def get_sensor_data():
             device_id = sensor.get('deviceId')
             mapping = mappings_dict.get(device_id, {})
             chekt_zone = mapping.get('chekt_zone', 'N/A')
+
+            # Get and format last_seen
+            last_seen_str = sensor.get('last_seen', 'Unknown')
+            if last_seen_str != 'Unknown':
+                try:
+                    # Parse the last_seen string
+                    last_seen_dt = datetime.strptime(last_seen_str, '%Y-%m-%dT%H:%M:%S')
+                    # Localize the datetime to the target timezone
+                    last_seen_dt = target_timezone.localize(last_seen_dt)
+                    # Format the time as desired
+                    last_seen_formatted = last_seen_dt.strftime('%Y-%m-%d %H:%M:%S')
+                except Exception as e:
+                    logger.error(f"Error parsing last_seen for device {device_id}: {str(e)}")
+                    last_seen_formatted = last_seen_str  # Fallback to the original string
+            else:
+                last_seen_formatted = 'Unknown'
 
             all_sensors.append({
                 'deviceId': device_id,
@@ -676,7 +729,7 @@ def get_sensor_data():
                     'lowHumidity': False,
                     'highHumidity': False
                 }),
-                'last_seen': sensor.get('last_seen', 'Unknown'),  # Last seen timestamp
+                'last_seen': last_seen_formatted,
                 'chekt_zone': chekt_zone  # Add the chekt_zone to the sensor data
             })
 
@@ -702,6 +755,7 @@ def check_chekt_status():
     chekt_ip = config['chekt'].get('ip')
     chekt_port = config['chekt'].get('port')
     api_token = config['chekt'].get('api_token')
+    timezone = config.get('timezone')  # Get the timezone
 
     if not chekt_ip or not chekt_port:
         return jsonify({"status": "error", "message": "CHEKT API configuration is missing."})
