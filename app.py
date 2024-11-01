@@ -16,12 +16,13 @@ import logging
 import qrcode
 import io
 import base64
+import secrets
 
 mqtt_client_instance = None  # Global variable to store the MQTT client instance
 temp_user_data = {}  # Holds temporary data for users not yet verified
 
 app = Flask(__name__)
-app.secret_key = 'ASD32459807ASDFvfasjdpouqwerqbvcx'
+app.secret_key = secrets.token_hex(32)  # Generate a secure, random 32-byte hex key
 
 # Custom b64encode filter for Jinja2
 @app.template_filter('b64encode')
