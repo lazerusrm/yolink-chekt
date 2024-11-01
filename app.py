@@ -476,19 +476,25 @@ def setup_totp(username):
                 flash('Invalid TOTP code. Please try again.')
                 return redirect(url_for('setup_totp', username=username))
 
-    # Generate QR code for the user’s TOTP secret
+    # Generate QR code and TOTP URI for the user's app
     user = users_db.get(username)
     if user:
         totp = pyotp.TOTP(user['totp_secret'])
         otp_uri = totp.provisioning_uri(username, issuer_name="YoLink-CHEKT")
-        
-        # Generate QR code and render the setup page
+
+        # Generate QR code
         qr = qrcode.make(otp_uri)
         img_io = io.BytesIO()
         qr.save(img_io, 'PNG')
         img_io.seek(0)
-        
-        return render_template('setup_totp.html', qr_code=img_io.getvalue(), totp_secret=user['totp_secret'])
+
+        # Pass both the QR code and manual TOTP secret to the template
+        return render_template(
+            'setup_totp.html',
+            qr_code=img_io.getvalue(),
+            totp_secret=user['totp_secret'],  # Manual passcode string
+            username=username
+        )
 
     flash('User not found.')
     return redirect(url_for('login'))

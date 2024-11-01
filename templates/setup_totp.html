@@ -123,7 +123,7 @@
             <div class="totp-info">
                 <p>Or enter this code manually: <strong>{{ totp_secret }}</strong></p>
             </div>
-            <form method="POST" action="{{ url_for('setup_totp', username=request.args.get('username')) }}">
+            <form method="POST" action="{{ url_for('setup_totp', username=username) }}">
                 <div class="form-group">
                     <label for="totp_code">Enter TOTP Code</label>
                     <input type="text" name="totp_code" id="totp_code" class="form-control" placeholder="Enter TOTP Code" required>
