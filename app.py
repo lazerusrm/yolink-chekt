@@ -22,7 +22,6 @@ import pytz
 
 mqtt_client_instance = None  # Global variable to store the MQTT client instance
 temp_user_data = {}  # Holds temporary data for users not yet verified
-monitor_api_key = get_monitor_api_key()
 
 app = Flask(__name__)
 app.secret_key = secrets.token_hex(32)  # Generate a secure, random 32-byte hex key
@@ -129,6 +128,8 @@ def save_mappings(data):
 
 def get_monitor_api_key():
     return os.getenv('MONITOR_API_KEY') or config_data.get('monitor', {}).get('api_key')
+
+monitor_api_key = get_monitor_api_key()
     
 def send_data_to_monitor(data):
     try:
