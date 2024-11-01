@@ -384,19 +384,18 @@ class YoLinkAPI:
             return None
 
 def create_user(username, password):
-    if username in users_db:
+    if username in users_db or username in temp_user_data:
         flash('User already exists. Please log in.')
         return None  # Avoid re-creating an existing user
 
     hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
     totp_secret = pyotp.random_base32()  # Generate TOTP secret
 
-    users_db[username] = {
+    # Temporarily store user in temp_user_data until TOTP setup is complete
+    temp_user_data[username] = {
         'password': hashed_password,
         'totp_secret': totp_secret
     }
-    config_data['users'] = users_db
-    save_config(config_data)
     return username
 
 @app.route('/login', methods=['GET', 'POST'])
