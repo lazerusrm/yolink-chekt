@@ -418,7 +418,7 @@ def login():
                     # TOTP is verified, log in the user
                     login_user(User(username))
                     session.pop('password_verified', None)  # Clear the password verification flag
-                    return redirect(url_for('index'))
+                    return redirect(url_for('index'))  # Ensure redirect to index
                 else:
                     flash('Invalid TOTP code. Please try again.')
                     return render_template('login.html', totp_required=True)
@@ -439,12 +439,13 @@ def login():
                     # No TOTP set up, log in directly
                     login_user(User(username))
                     session.pop('password_verified', None)  # Clear the password verification flag
-                    return redirect(url_for('index'))
+                    return redirect(url_for('index'))  # Ensure redirect to index
             else:
                 flash('Invalid username or password.')
         else:
             flash('User does not exist. Please create a new user.')
 
+    # Initial GET request or TOTP request failure
     return render_template('login.html', totp_required=False)
     
 @app.route('/logout')
