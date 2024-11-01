@@ -384,7 +384,8 @@ class YoLinkAPI:
 
 def create_user(username, password):
     if username in users_db:
-        return None  # User already exists
+        flash('User already exists. Please log in.')
+        return None  # Avoid re-creating an existing user
 
     hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
     totp_secret = pyotp.random_base32()  # Generate TOTP secret
@@ -393,8 +394,6 @@ def create_user(username, password):
         'password': hashed_password,
         'totp_secret': totp_secret
     }
-
-    # Save users to config.yaml
     config_data['users'] = users_db
     save_config(config_data)
     return username
@@ -404,39 +403,45 @@ def login():
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
+        totp_code = request.form.get('totp_code', None)
 
-        # Check if users exist in config.yaml (if no users, prompt to create a new user)
+        # Check if no users exist; create the first user
         if not users_db:
-            # No users in the system, create a new one
             create_user(username, password)
             flash(f"User {username} created successfully. Please scan the QR code to set up TOTP.")
             return redirect(url_for('setup_totp', username=username))
 
-        # Users exist, proceed with login validation
+        # Check if the user exists in users_db
         if username in users_db:
             user = users_db[username]
 
-            # Validate password
-            if bcrypt.check_password_hash(user['password'], password):
-                # Check if TOTP is required (TOTP setup complete)
-                if 'totp_secret' in user:
-                    totp_code = request.form.get('totp_code', None)
-
-                    # If TOTP code is not provided
-                    if not totp_code:
-                        flash("Please enter your TOTP code.")
-                        return render_template('login.html', totp_required=True)
-
-                    # Verify the provided TOTP code
+            # If the session indicates password has been verified
+            if session.get('password_verified') == username:
+                # Proceed with TOTP verification
+                if 'totp_secret' in user and totp_code:
                     totp = pyotp.TOTP(user['totp_secret'])
                     if totp.verify(totp_code):
-                        # TOTP is valid, log the user in
+                        # TOTP verified, log the user in
                         login_user(User(username))
+                        session.pop('password_verified', None)  # Clear the session flag
                         return redirect(url_for('index'))
                     else:
                         flash('Invalid TOTP code.')
                 else:
-                    # TOTP setup not completed
+                    flash("Please enter your TOTP code.")
+                return render_template('login.html', totp_required=True)
+
+            # If password not yet verified, check password
+            elif bcrypt.check_password_hash(user['password'], password):
+                # Password verified, store verification in session
+                session['password_verified'] = username
+
+                # If TOTP is set up, prompt for TOTP code
+                if 'totp_secret' in user:
+                    flash("Please enter your TOTP code.")
+                    return render_template('login.html', totp_required=True)
+                else:
+                    # If TOTP setup is incomplete, redirect to TOTP setup
                     flash(f"User {username} needs to complete TOTP setup.")
                     return redirect(url_for('setup_totp', username=username))
             else:
@@ -444,12 +449,14 @@ def login():
         else:
             flash('User does not exist. Please create a new user.')
 
+    # Render login page without TOTP field initially
     return render_template('login.html', totp_required=False)
-
+    
 @app.route('/logout')
 @login_required
 def logout():
     logout_user()
+    session.pop('password_verified', None)  # Clear any session flags on logout
     return redirect(url_for('login'))
     
 @app.route('/setup_totp/<username>', methods=['GET', 'POST'])
