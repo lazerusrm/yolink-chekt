@@ -68,6 +68,9 @@ def load_config():
     with open(config_file, 'r') as file:
         config_data = yaml.safe_load(file)
     
+    # Populate users_db from config.yaml
+    users_db = config_data.get('users', {})
+
 # Provide default MQTT configuration if not present
     if 'mqtt' not in config_data:
         config_data['mqtt'] = {
