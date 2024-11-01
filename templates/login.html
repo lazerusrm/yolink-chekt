@@ -7,7 +7,6 @@
     <title>{{ 'Create User' if create_mode else 'Login' }} - YoLink to CHEKT</title>
     <!-- Bootstrap CSS -->
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css">
-    <!-- Font Awesome CSS -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css" integrity="sha512-Kc323vGBEqzTmouAECnVceyQqyqdsSiqLQISBL29aUW4U/M7pSPA/gEUZQqv1cwx4OnYxTxve5UMg5GT6L4JJg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
     <style>
         /* General Styles */
@@ -69,22 +68,9 @@
             background-color: #28a745;
         }
 
-        .form-text {
-            color: #cccccc;
-            font-size: 0.9rem;
-        }
-
         .error-message {
             color: red;
             font-size: 0.9rem;
-        }
-
-        /* Responsive Design */
-        @media (max-width: 576px) {
-            .login-container {
-                padding: 20px;
-                width: 90%;
-            }
         }
     </style>
 </head>
@@ -93,6 +79,7 @@
 <div class="login-container">
     <h1>{{ 'Create User' if create_mode else 'Login' }}</h1>
     <form method="POST" action="{{ url_for('login') }}">
+        <!-- Username and Password fields -->
         <div class="form-group">
             <label for="username">Username</label>
             <input type="text" id="username" name="username" class="form-control" placeholder="Enter your username" required>
@@ -101,20 +88,10 @@
             <label for="password">Password</label>
             <input type="password" id="password" name="password" class="form-control" placeholder="Enter your password" required>
         </div>
+        
+        <button type="submit" class="btn btn-login">{{ 'Create User' if create_mode else 'Login' }}</button>
 
-        <!-- Show TOTP input only when needed -->
-        {% if totp_required %}
-        <div class="form-group">
-            <label for="totp_code">TOTP Code</label>
-            <input type="text" id="totp_code" name="totp_code" class="form-control" placeholder="Enter your 2FA code" required>
-        </div>
-        {% endif %}
-
-        <button type="submit" class="btn btn-login">
-            {{ 'Create User' if create_mode else 'Login' }}
-        </button>
-
-        <!-- Display error messages if there are any -->
+        <!-- Error messages -->
         {% if messages %}
         <div class="error-message">
             {% for message in messages %}
@@ -124,14 +101,45 @@
         {% endif %}
     </form>
 
-    <!-- Provide appropriate helper text -->
+    <!-- Info text -->
     <small class="form-text">
         {{ 'Secure user creation' if create_mode else 'Secure login with 2-factor authentication' }}
     </small>
 </div>
 
-<!-- Bootstrap JS (Optional for functionality like form validation) -->
-<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/js/bootstrap.min.js"></script>
+<!-- TOTP Modal -->
+<div class="modal fade" id="totpModal" tabindex="-1" aria-labelledby="totpModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content" style="background-color: #4a4a4a; color: #ffffff;">
+            <div class="modal-header">
+                <h5 class="modal-title" id="totpModalLabel">Two-Factor Authentication</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close" style="color: #ffffff;">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <form id="totpForm" method="POST" action="{{ url_for('login') }}">
+                    <div class="form-group">
+                        <label for="totp_code">Enter TOTP Code</label>
+                        <input type="text" id="totp_code" name="totp_code" class="form-control" placeholder="Enter your 2FA code" required>
+                    </div>
+                    <button type="submit" class="btn btn-login">Verify</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
 
+<!-- Bootstrap JS and jQuery -->
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/js/bootstrap.bundle.min.js"></script>
+<script>
+    // Show TOTP modal if totp_required is true
+    {% if totp_required %}
+        $(document).ready(function() {
+            $('#totpModal').modal('show');
+        });
+    {% endif %}
+</script>
 </body>
 </html>
