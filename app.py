@@ -22,6 +22,7 @@ import pytz
 
 mqtt_client_instance = None  # Global variable to store the MQTT client instance
 temp_user_data = {}  # Holds temporary data for users not yet verified
+monitor_api_key = get_monitor_api_key()
 
 app = Flask(__name__)
 app.secret_key = secrets.token_hex(32)  # Generate a secure, random 32-byte hex key
@@ -125,6 +126,19 @@ def load_mappings():
 # Specifically save mappings.yaml
 def save_mappings(data):
     save_to_yaml(mappings_file, data)
+
+def get_monitor_api_key():
+    return os.getenv('MONITOR_API_KEY') or config_data.get('monitor', {}).get('api_key')
+    
+def send_data_to_monitor(data):
+    try:
+        response = requests.post("https://monitor.industrialcamera.com/api/sensor_data", json=data, headers={"Authorization": "Bearer YOUR_API_KEY"})
+        if response.status_code == 200:
+            logger.info("Data sent to monitor server successfully.")
+        else:
+            logger.error(f"Failed to send data to monitor server. Status code: {response.status_code}, Response: {response.text}")
+    except Exception as e:
+        logger.error(f"Error sending data to monitor server: {str(e)}")
 
 def is_token_expired():
     """
@@ -246,12 +260,12 @@ def update_device_data(device_id, payload):
     timezone_name = config_data.get('timezone', 'UTC')
     try:
         devices_data = load_yaml(devices_file)
-        logger.info(f"Loaded devices.yaml successfully.")
+        logger.info("Loaded devices.yaml successfully.")
     except Exception as e:
         logger.error(f"Failed to load devices.yaml: {str(e)}")
         return
 
-    now = datetime.now(target_timezone).strftime('%Y-%m-%dT%H:%M:%S')
+    now = datetime.now(pytz.timezone(timezone_name)).strftime('%Y-%m-%dT%H:%M:%S')
 
     # Find the device in devices.yaml based on the device ID
     device_found = False
@@ -325,6 +339,25 @@ def update_device_data(device_id, payload):
             # Update the last seen timestamp
             device['last_seen'] = now
             logger.info(f"Updated device data: {device}")
+
+            # Prepare the data to send to the monitoring server
+            data_to_send = {
+                "home_id": config_data.get('home_id', 'UNKNOWN_HOME_ID'),  # Ensure you have a home ID defined
+                "device_id": device_id,
+                "sensor_data": {
+                    "temperature": device.get('temperature'),
+                    "humidity": device.get('humidity'),
+                    "state": device.get('state'),
+                    "last_seen": device['last_seen'],
+                    "signal": device.get('signal'),
+                    # Add other relevant sensor fields here
+                },
+                "configuration": config_data,  # Send the current configuration
+                "devices": devices_data,  # Send the complete devices.yaml data
+            }
+
+            # Send data in a background thread
+            threading.Thread(target=send_data_to_monitor, args=(data_to_send,)).start()
             break
 
     if not device_found:
@@ -581,8 +614,8 @@ def save_config_route():
         # Load existing configuration
         current_config = load_config()  # Assuming this function loads the existing config
 
-        # Update the configuration with new values, including timezone
-        current_config.update(config_data)
+        # Update the configuration with new values, including monitor API key
+        current_config.update(config_data)  # This will automatically include all relevant keys
 
         # Save the updated configuration to the config.yaml file
         save_config(current_config)  # Assuming this function saves the config to a file
