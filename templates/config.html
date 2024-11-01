@@ -153,6 +153,22 @@
                 <label for="chekt_token">CHEKT API Token</label>
                 <input type="text" id="chekt_token" name="chekt_token" class="form-control" value="{{ config.chekt.api_token }}" required>
             </div>
+
+            <!-- Timezone Selection -->
+            <div class="form-group">
+                <label for="timezone">Select Timezone</label>
+                <select id="timezone" name="timezone" class="form-control" required>
+                    <option value="UTC" {% if config.timezone == 'UTC' %}selected{% endif %}>UTC</option>
+                    <option value="America/New_York" {% if config.timezone == 'America/New_York' %}selected{% endif %}>America/New_York</option>
+                    <option value="America/Chicago" {% if config.timezone == 'America/Chicago' %}selected{% endif %}>America/Chicago</option>
+                    <option value="America/Denver" {% if config.timezone == 'America/Denver' %}selected{% endif %}>America/Denver</option>
+                    <option value="America/Los_Angeles" {% if config.timezone == 'America/Los_Angeles' %}selected{% endif %}>America/Los_Angeles</option>
+                    <option value="Europe/London" {% if config.timezone == 'Europe/London' %}selected{% endif %}>Europe/London</option>
+                    <option value="Asia/Tokyo" {% if config.timezone == 'Asia/Tokyo' %}selected{% endif %}>Asia/Tokyo</option>
+                    <!-- Add more timezones as needed -->
+                </select>
+            </div>
+
             <button type="submit" class="btn btn-primary">Save Configuration</button>
             <div id="config-status" class="status mt-2">
                 <img src="" alt="" id="config-icon" class="hidden">
@@ -324,7 +340,8 @@
                     ip: $('#chekt_ip').val(),
                     port: $('#chekt_port').val(),
                     api_token: $('#chekt_token').val()
-                }
+                },
+                timezone: $('#timezone').val() // Include timezone in the data
             };
 
             $('#config-icon').addClass('hidden');
