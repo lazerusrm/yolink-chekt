@@ -421,7 +421,7 @@ def login():
 
             # Check if password has already been verified
             if session.get('password_verified') == username:
-                # Proceed with TOTP verification
+                # Only proceed with TOTP verification
                 if 'totp_secret' in user and totp_code:
                     totp = pyotp.TOTP(user['totp_secret'])
                     if totp.verify(totp_code):
