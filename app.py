@@ -482,16 +482,17 @@ def setup_totp(username):
         totp = pyotp.TOTP(user['totp_secret'])
         otp_uri = totp.provisioning_uri(username, issuer_name="YoLink-CHEKT")
 
-        # Generate QR code
+        # Generate QR code and convert to base64
         qr = qrcode.make(otp_uri)
         img_io = io.BytesIO()
         qr.save(img_io, 'PNG')
         img_io.seek(0)
+        qr_base64 = base64.b64encode(img_io.getvalue()).decode('utf-8')
 
-        # Pass both the QR code and manual TOTP secret to the template
+        # Pass both the QR code image (base64) and manual TOTP secret to the template
         return render_template(
             'setup_totp.html',
-            qr_code=img_io.getvalue(),
+            qr_code=qr_base64,  # Base64-encoded QR code image
             totp_secret=user['totp_secret'],  # Manual passcode string
             username=username
         )
