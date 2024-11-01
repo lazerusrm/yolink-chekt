@@ -707,18 +707,23 @@ def check_chekt_status():
         return jsonify({"status": "error", "message": "CHEKT API configuration is missing."})
 
     url = f"http://{chekt_ip}:{chekt_port}/api/v1/"
+    api_key = api_token  # Assuming the api_token is your API key
+    auth_header = base64.b64encode(f"apikey:{api_key}".encode()).decode()
+
     headers = {
-        'Authorization': f"Bearer {api_token}",
-        'Content-Type': 'application/json',
-        'Username': 'apikey'
+        "Authorization": f"Basic {auth_header}",
+        "Content-Type": "application/json"
     }
 
     try:
+        logger.debug(f"Testing CHEKT API Connection to URL: {url}")
         response = requests.get(url, headers=headers)
+        logger.debug(f"CHEKT API Response: {response.status_code} - {response.text}")
+
         if response.status_code == 200:
             return jsonify({"status": "success", "message": "CHEKT server is alive and API key is valid."})
         else:
-            return jsonify({"status": "error", "message": "Failed to connect to CHEKT server. Status code: " + str(response.status_code)})
+            return jsonify({"status": "error", "message": f"Failed to connect to CHEKT server. Status code: {response.status_code}"})
     except Exception as e:
         logger.error(f"Error connecting to CHEKT server: {str(e)}")
         return jsonify({"status": "error", "message": "Error connecting to CHEKT server."})
