@@ -402,6 +402,7 @@ def create_user(username, password):
 def login():
     # Redirect already authenticated users
     if current_user.is_authenticated:
+        logger.info("User is already authenticated; redirecting to index.")
         return redirect(url_for('index'))
     
     if request.method == 'POST':
@@ -415,12 +416,17 @@ def login():
             if user and 'totp_secret' in user:
                 totp = pyotp.TOTP(user['totp_secret'])
                 if totp.verify(totp_code):
-                    # TOTP is verified, log in the user
-                    login_user(User(username))
+                    # TOTP is verified, log in the user with remember=True
+                    login_user(User(username), remember=True)
                     session.pop('password_verified', None)  # Clear the password verification flag
-                    return redirect(url_for('index'))  # Ensure redirect to index
+                    logger.info(f"TOTP verified, logged in user {username}. Redirecting to index.")
+
+                    # Handle redirection after successful login
+                    next_page = request.args.get('next')
+                    return redirect(next_page or url_for('index'))
                 else:
                     flash('Invalid TOTP code. Please try again.')
+                    logger.warning("Invalid TOTP code provided.")
                     return render_template('login.html', totp_required=True)
 
         # Handle initial login with username and password
@@ -430,6 +436,7 @@ def login():
             if bcrypt.check_password_hash(user['password'], password):
                 # Password is verified; store in session and check for TOTP
                 session['password_verified'] = username
+                logger.info(f"Password verified for user {username}.")
 
                 if 'totp_secret' in user:
                     # TOTP is required
@@ -437,17 +444,22 @@ def login():
                     return render_template('login.html', totp_required=True)
                 else:
                     # No TOTP set up, log in directly
-                    login_user(User(username))
+                    login_user(User(username), remember=True)
                     session.pop('password_verified', None)  # Clear the password verification flag
-                    return redirect(url_for('index'))  # Ensure redirect to index
+                    logger.info(f"User {username} logged in without TOTP. Redirecting to index.")
+
+                    next_page = request.args.get('next')
+                    return redirect(next_page or url_for('index'))
             else:
                 flash('Invalid username or password.')
+                logger.warning("Invalid username or password.")
         else:
             flash('User does not exist. Please create a new user.')
+            logger.warning("User does not exist.")
 
     # Initial GET request or TOTP request failure
     return render_template('login.html', totp_required=False)
-    
+
 @app.route('/logout')
 @login_required
 def logout():
