@@ -19,6 +19,7 @@ import base64
 
 
 mqtt_client_instance = None  # Global variable to store the MQTT client instance
+temp_user_data = {}  # Holds temporary data for users not yet verified
 
 app = Flask(__name__)
 
@@ -466,17 +467,17 @@ def logout():
 def setup_totp(username):
     if request.method == 'POST':
         totp_code = request.form['totp_code']
-        
+
         # Retrieve the temporary TOTP secret generated during user creation
         user = temp_user_data.get(username)
         if user:
             totp = pyotp.TOTP(user['totp_secret'])
             if totp.verify(totp_code):
-                # Verification successful - add the user to users_db and save to config.yaml
+                # Verification successful - move user to users_db and save to config.yaml
                 users_db[username] = user
                 config_data['users'] = users_db
                 save_config(config_data)
-                
+
                 # Clean up temporary data and confirm success
                 temp_user_data.pop(username, None)
                 flash('TOTP setup complete. You can now log in.')
@@ -486,9 +487,8 @@ def setup_totp(username):
                 return redirect(url_for('setup_totp', username=username))
 
     # For GET requests, generate the QR code only if the user hasn’t been verified yet
-    if username not in users_db:
-        totp_secret = pyotp.random_base32()
-        temp_user_data[username] = {'password': users_db[username]['password'], 'totp_secret': totp_secret}
+    if username not in users_db and username in temp_user_data:
+        totp_secret = temp_user_data[username]['totp_secret']
         otp_uri = pyotp.TOTP(totp_secret).provisioning_uri(username, issuer_name="YoLink-CHEKT")
 
         # Generate and encode the QR code
@@ -502,7 +502,6 @@ def setup_totp(username):
 
     flash('User not found or already configured.')
     return redirect(url_for('login'))
-
 
 @app.route('/save_chekt_zone', methods=['POST'])
 def save_chekt_zone():
