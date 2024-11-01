@@ -17,7 +17,7 @@ import qrcode
 import io
 import base64
 
-
+app.secret_key = 'ASD32459807ASDFvfasjdpouqwerqbvcx'
 mqtt_client_instance = None  # Global variable to store the MQTT client instance
 temp_user_data = {}  # Holds temporary data for users not yet verified
 
@@ -54,8 +54,11 @@ class User(UserMixin):
 # Implement the user_loader function
 @login_manager.user_loader
 def load_user(username):
+    logger.debug(f"load_user called with username: {username}")
     if username in users_db:
-        return User(username)  # Return a User object if the user exists in the "database"
+        logger.debug(f"User {username} found in users_db.")
+        return User(username)
+    logger.debug(f"User {username} not found in users_db.")
     return None
 
 # Load configuration
@@ -420,6 +423,7 @@ def login():
                     login_user(User(username), remember=True)
                     session.pop('password_verified', None)  # Clear the password verification flag
                     logger.info(f"TOTP verified, logged in user {username}. Redirecting to index.")
+                    logger.debug(f"User {username} logged in. current_user.is_authenticated: {current_user.is_authenticated}")
 
                     # Handle redirection after successful login
                     next_page = request.args.get('next')
@@ -870,6 +874,7 @@ def save_zone_change():
 @app.route('/')
 @login_required
 def index():
+    logger.debug(f"Accessing index. current_user.is_authenticated: {current_user.is_authenticated}")
     # Attempt to load devices and mappings from YAML files, using fallback data if it fails
     devices = []
     device_mappings = {}
