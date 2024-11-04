@@ -4,10 +4,13 @@ services:
     ports:
       - "5000:5000"  # Map port 5000 on the container to port 5000 on the host
     volumes:
-      - ./config.yaml:/app/config.yaml  # Map config.yaml from host to container
-      - ./devices.yaml:/app/devices.yaml  # Map devices.yaml from host to container
-      - ./mappings.yaml:/app/mappings.yaml  # Map mappings.yaml from host to container
-      - ./templates/:/app/templates/  # Ensure templates directory (with login.html) is mapped to /app/templates/
-#   environment:
-#     - FLASK_ENV=production  # Optional: ensure Flask is running in production mode
+      - /opt/yolink-chekt:/app  # Map the entire application directory to the container
+      - /opt/yolink-chekt/application.log:/app/application.log  # Map the application log file for viewing outside the container
+      # You can still explicitly map files if needed, but this approach simplifies management
+      # - ./config.yaml:/app/config.yaml
+      # - ./devices.yaml:/app/devices.yaml
+      # - ./mappings.yaml:/app/mappings.yaml
+      # - ./templates/:/app/templates/
+    environment:
+      - FLASK_ENV=production  # Optional: ensure Flask is running in production mode
     restart: unless-stopped  # Ensure the container restarts automatically unless stopped manually
