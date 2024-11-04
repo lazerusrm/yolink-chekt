@@ -723,13 +723,16 @@ def load_devices():
     except FileNotFoundError:
         return {'devices': []}  # Return empty devices list if file is missing
 
-# Load mappings from mappings.yaml
+# Load mappings from mappings.yaml with additional logging
 def load_mappings():
     try:
-        with open(mappings_file, 'r') as file:
-            return yaml.safe_load(file) or {'mappings': []}
-    except FileNotFoundError:
-        return {'mappings': []}  # Return empty mappings if file is missing
+        with open(mappings_file, 'r') as yaml_file:
+            mappings_data = yaml.safe_load(yaml_file)
+            logger.info(f"Loaded mappings data: {mappings_data}")
+            return mappings_data
+    except Exception as e:
+        logger.error(f"Error loading mappings: {str(e)}")
+        return {"mappings": [], "chekt_mappings": [], "sia_mappings": []}
 
 @app.route('/config.html')
 @login_required
@@ -758,6 +761,7 @@ def on_message(client, userdata, msg):
         # Log the raw payload first
         logger.info(f"Raw payload: {msg.payload.decode('utf-8')}")
 
+        # Parse payload
         payload = json.loads(msg.payload.decode("utf-8"))
         device_id = payload.get('deviceId')
         state = payload['data'].get('state', 'Unknown state')
@@ -767,18 +771,36 @@ def on_message(client, userdata, msg):
 
         if device_id:
             logger.info(f"Calling update_device_data for Device ID: {device_id}")
-
-            # Explicitly call update_device_data and log the payload
             update_device_data(device_id, payload)
 
-            # Check if the event is an alert to trigger the system
+            # Check if the event is an alert or if it needs to trigger based on state
             if "alert" in event_type or state in ['open', 'closed', 'alert']:
                 device_type = parse_device_type(event_type, payload)
                 logger.info(f"Device {device_id} identified as {device_type}")
 
+                # Check if the device event should trigger based on type and state
                 if device_type and should_trigger_event(state, device_type):
                     receiver_type = config_data.get("receiver_type", "CHEKT").upper()
-                    trigger_alert(device_id, state, device_type, receiver_type)
+                    
+                    # Load mappings and retrieve the correct zone based on receiver type
+                    mappings_data = load_mappings()
+                    mapping = next((m for m in mappings_data.get('mappings', []) if m['yolink_device_id'] == device_id), None)
+
+                    if mapping:
+                        if receiver_type == "CHEKT":
+                            zone = mapping.get('chekt_zone')
+                        elif receiver_type == "SIA":
+                            zone = mapping.get('sia_zone')
+                        else:
+                            zone = None
+
+                        if zone and zone.strip():  # Ensure a valid zone
+                            logger.info(f"Triggering {receiver_type} event in zone {zone} for device {device_id}")
+                            trigger_alert(device_id, state, device_type, receiver_type, zone)
+                        else:
+                            logger.warning(f"No valid zone for device {device_id} with receiver {receiver_type}. Skipping trigger.")
+                    else:
+                        logger.warning(f"No mapping found for device {device_id}")
                 else:
                     logger.info(f"No triggering event for device {device_id}")
             else:
@@ -788,6 +810,7 @@ def on_message(client, userdata, msg):
 
     except Exception as e:
         logger.error(f"Error processing message: {str(e)}")
+
 
 # Helper functions for event handling
 def parse_device_type(event_type, payload):
