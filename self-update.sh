@@ -18,6 +18,13 @@ handle_error() {
   exit 1
 }
 
+# Ensure curl is installed
+if ! command -v curl &> /dev/null; then
+  echo "curl not found. Installing curl..."
+  apt-get update && apt-get install -y curl || handle_error "Failed to install curl."
+  echo "curl installed successfully."
+fi
+
 # Backup current config.yaml if it exists
 if [ -f "$CONFIG_FILE" ]; then
   cp "$CONFIG_FILE" "$CONFIG_BACKUP" || handle_error "Failed to backup config.yaml"
