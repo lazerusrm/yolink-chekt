@@ -846,10 +846,16 @@ def get_zone(device_id):
         return mapping.get('chekt_zone') or mapping.get('sia_zone')
     return None
 
-def trigger_alert(device_id, state, device_type, receiver_type):
+def trigger_alert(device_id, state, device_type, zone):
     event_description = map_state_to_event(state, device_type)
     
-    # Load mappings and retrieve the correct zone based on receiver type
+    # Retrieve receiver_type from config
+    receiver_type = config_data.get("receiver_type", "CHEKT").upper()
+    if receiver_type not in ["CHEKT", "SIA"]:
+        logger.error(f"Invalid receiver type in config: {receiver_type}. Defaulting to CHEKT.")
+        receiver_type = "CHEKT"
+    
+    # Load mappings and retrieve the correct zone based on the receiver type
     mappings_data = load_mappings()
     mapping = next((m for m in mappings_data.get('mappings', []) if m['yolink_device_id'] == device_id), None)
     
@@ -859,19 +865,19 @@ def trigger_alert(device_id, state, device_type, receiver_type):
 
     # Determine the correct zone based on the receiver type
     if receiver_type == "CHEKT":
-        zone = mapping.get('chekt_zone')
-        if zone:
-            logger.info(f"Triggering CHEKT event in zone {zone} for device {device_id}")
-            trigger_chekt_event(zone, event_description)
+        chekt_zone = mapping.get('chekt_zone')
+        if chekt_zone:
+            logger.info(f"Triggering CHEKT event in zone {chekt_zone} for device {device_id}")
+            trigger_chekt_event(chekt_zone, event_description)
         else:
             logger.warning(f"No CHEKT zone configured for device {device_id}")
     
     elif receiver_type == "SIA":
-        zone = mapping.get('sia_zone')
+        sia_zone = mapping.get('sia_zone')
         sia_config = config_data.get('sia', {})
-        if zone:
-            logger.info(f"Sending SIA event in zone {zone} for device {device_id}")
-            send_sia_message(device_id, event_description, zone, sia_config)
+        if sia_zone:
+            logger.info(f"Sending SIA event in zone {sia_zone} for device {device_id}")
+            send_sia_message(device_id, event_description, sia_zone, sia_config)
         else:
             logger.warning(f"No SIA zone configured for device {device_id}")
 
