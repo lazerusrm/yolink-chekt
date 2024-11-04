@@ -98,9 +98,9 @@ systemctl enable docker || handle_error "Failed to enable Docker service."
 systemctl start docker || handle_error "Failed to start Docker service."
 echo "Docker service is running."
 
-# Create required directories if they do not exist
+# Ensure the application directory exists
 echo "Ensuring application directories exist..."
-mkdir -p "$APP_DIR" "$TEMPLATES_DIR" || handle_error "Failed to create application directories."
+mkdir -p "$APP_DIR" || handle_error "Failed to create application directory."
 
 # Set ownership and permissions for the application directory
 echo "Setting ownership and permissions for $APP_DIR..."
