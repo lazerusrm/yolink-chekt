@@ -14,6 +14,11 @@ DEVICES_FILE="$APP_DIR/devices.yaml"
 DEVICES_BACKUP="$APP_DIR/devices.yaml.bak"
 TEMPLATES_DIR="$APP_DIR/templates"
 DOCKER_COMPOSE_FILE="$APP_DIR/docker-compose.yml"
+LOG_FILE="/var/log/yolink-chekt-install.log"
+
+# Redirect all output to log file
+exec > >(tee -i "$LOG_FILE")
+exec 2>&1
 
 # Function to handle errors
 handle_error() {
@@ -87,9 +92,21 @@ else
   echo "Docker Compose is already installed."
 fi
 
+# Ensure Docker service is running
+echo "Ensuring Docker service is running..."
+systemctl enable docker || handle_error "Failed to enable Docker service."
+systemctl start docker || handle_error "Failed to start Docker service."
+echo "Docker service is running."
+
 # Create required directories if they do not exist
 echo "Ensuring application directories exist..."
 mkdir -p "$APP_DIR" "$TEMPLATES_DIR" || handle_error "Failed to create application directories."
+
+# Set ownership and permissions for the application directory
+echo "Setting ownership and permissions for $APP_DIR..."
+chown -R root:root "$APP_DIR" || handle_error "Failed to set ownership for $APP_DIR."
+chmod -R 755 "$APP_DIR" || handle_error "Failed to set permissions for $APP_DIR."
+echo "Ownership and permissions set."
 
 # Function to backup a file if it exists
 backup_file() {
@@ -136,6 +153,11 @@ restore_file "$DEVICES_BACKUP" "$DEVICES_FILE"
 echo "Updating application files..."
 rsync -a --exclude='config.yaml' --exclude='mappings.yaml' --exclude='devices.yaml' "$APP_DIR/yolink-chekt-main/" "$APP_DIR/" || handle_error "Move extracted files failed."
 
+# Set appropriate permissions for all files in APP_DIR
+echo "Setting permissions for application files..."
+chmod -R u+rwX,go+rX "$APP_DIR" || handle_error "Failed to set permissions for application files."
+echo "Permissions set."
+
 # Set appropriate permissions for the self-update script
 chmod +x "$APP_DIR/self-update.sh" || handle_error "Setting executable permission failed."
 
@@ -143,14 +165,19 @@ chmod +x "$APP_DIR/self-update.sh" || handle_error "Setting executable permissio
 echo "Cleaning up temporary files..."
 rm -rf "$APP_DIR/yolink-chekt-main"
 rm "$APP_DIR/repo.zip"
+echo "Temporary files cleaned."
 
 # Function to determine if Docker Compose services are already running
 services_running() {
-  docker compose ps -q | grep -q . 
+  docker compose ps -q | grep -q .
 }
 
 # Navigate to the application directory
 cd "$APP_DIR" || handle_error "Failed to navigate to $APP_DIR."
+
+# Export to disable BuildKit
+export DOCKER_BUILDKIT=0
+echo "Docker BuildKit disabled."
 
 # Rebuild Docker containers with the latest code
 echo "Rebuilding Docker containers..."
@@ -163,6 +190,7 @@ else
 fi
 
 docker compose up --build -d || handle_error "Docker Compose up failed."
+echo "Docker containers rebuilt and started."
 
 # Check if the config.html file is in the container after the rebuild
 container_name=$(docker ps --filter "name=yolink_chekt" --format '{{.Names}}')
