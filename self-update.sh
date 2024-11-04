@@ -68,9 +68,7 @@ adjust_security_modules() {
     aa_status=$(aa-status | grep "profiles are loaded")
     if [[ $aa_status == *"profiles are loaded"* ]]; then
       echo "AppArmor is active. Attempting to adjust Docker AppArmor profile."
-      # Adjust Docker's AppArmor profile to allow mounting /proc
-      # This requires root privileges and careful editing
-      # For simplicity, we'll set Docker's profile to complain mode
+      # Adjust Docker's AppArmor profile to allow necessary operations
       sudo aa-complain /etc/apparmor.d/docker || echo "Could not set Docker AppArmor profile to complain mode."
       echo "AppArmor adjustment completed."
     else
