@@ -8,3 +8,4 @@ Flask-Login>=0.6.0
 pyotp>=2.6.0
 qrcode[pil]>=7.3
 pytz
+cryptography
