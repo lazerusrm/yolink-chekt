@@ -990,6 +990,15 @@ def save_zone():
 
     return jsonify({'status': 'success', 'message': f'{receiver_type} zone saved successfully.'}), 200
 
+# Function to save mappings to mappings.yaml
+def save_mappings(data):
+    try:
+        with open(mappings_file, 'w') as yaml_file:
+            yaml.dump(data, yaml_file)
+        logger.info("Mappings saved successfully.")
+    except Exception as e:
+        logger.error(f"Error saving mappings: {str(e)}")
+
 # Periodic Tasks
 def check_sensor_last_seen():
     try:
