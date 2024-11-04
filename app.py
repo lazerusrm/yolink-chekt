@@ -758,42 +758,37 @@ def on_message(client, userdata, msg):
     logger.info(f"Received message on topic {msg.topic}")
 
     try:
-        # Log the raw payload first
-        logger.info(f"Raw payload: {msg.payload.decode('utf-8')}")
-
         # Parse payload
         payload = json.loads(msg.payload.decode("utf-8"))
         device_id = payload.get('deviceId')
         state = payload['data'].get('state', 'Unknown state')
         event_type = payload.get('event', 'Unknown event').lower()
 
-        logger.info(f"Parsed Device ID: {device_id}, State: {state}, Event Type: {event_type}")
-
+        # Log essential device information
         if device_id:
-            logger.info(f"Calling update_device_data for Device ID: {device_id}")
+            logger.info(f"Device ID: {device_id}, State: {state}, Event Type: {event_type}")
             update_device_data(device_id, payload)
 
-            # Check if the event is an alert or if it needs to trigger based on state
+            # Check if the event is an alert or should trigger based on state
             if "alert" in event_type or state in ['open', 'closed', 'alert']:
                 device_type = parse_device_type(event_type, payload)
-                logger.info(f"Device {device_id} identified as {device_type}")
 
-                # Check if the device event should trigger based on type and state
+                # Only log when the device event should trigger an action
                 if device_type and should_trigger_event(state, device_type):
-                    # Default receiver_type to "CHEKT" if not correctly set
+                    # Validate receiver type and set to CHEKT by default if invalid
                     receiver_type = config_data.get("receiver_type", "CHEKT").upper()
                     if receiver_type not in ["CHEKT", "SIA"]:
-                        logger.error(f"Invalid receiver type: {receiver_type}. Defaulting to CHEKT.")
                         receiver_type = "CHEKT"
-
-                    # Load mappings and retrieve the correct zone based on receiver type
+                    
+                    # Retrieve zone from mappings without logging the full data
                     mappings_data = load_mappings()
                     mapping = next((m for m in mappings_data.get('mappings', []) if m['yolink_device_id'] == device_id), None)
 
                     if mapping:
+                        # Select the correct zone for the configured receiver type
                         zone = mapping.get('chekt_zone' if receiver_type == "CHEKT" else 'sia_zone')
-                        if zone and zone.strip():  # Ensure a valid zone
-                            logger.info(f"Triggering {receiver_type} event in zone {zone} for device {device_id}")
+                        if zone and zone.strip():  # Ensure zone is valid
+                            logger.info(f"Triggering {receiver_type} alert in zone {zone} for device {device_id}")
                             trigger_alert(device_id, state, device_type, zone)
                         else:
                             logger.warning(f"No valid zone for device {device_id} with receiver {receiver_type}. Skipping trigger.")
@@ -802,12 +797,13 @@ def on_message(client, userdata, msg):
                 else:
                     logger.info(f"No triggering event for device {device_id}")
             else:
-                logger.info(f"Received report event: {event_type}, data updated.")
+                logger.debug(f"Non-alert event received for device {device_id}. State updated only.")
         else:
-            logger.warning("Message without device ID.")
+            logger.warning("Message received without device ID.")
 
     except Exception as e:
         logger.error(f"Error processing message: {str(e)}")
+
 
 # Helper functions for event handling
 def parse_device_type(event_type, payload):
