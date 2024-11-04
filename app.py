@@ -780,25 +780,19 @@ def on_message(client, userdata, msg):
 
                 # Check if the device event should trigger based on type and state
                 if device_type and should_trigger_event(state, device_type):
-                    receiver_type = config_data.get("receiver_type", "CHEKT").upper()
-                    
                     # Load mappings and retrieve the correct zone based on receiver type
                     mappings_data = load_mappings()
                     mapping = next((m for m in mappings_data.get('mappings', []) if m['yolink_device_id'] == device_id), None)
 
                     if mapping:
-                        if receiver_type == "CHEKT":
-                            zone = mapping.get('chekt_zone')
-                        elif receiver_type == "SIA":
-                            zone = mapping.get('sia_zone')
-                        else:
-                            zone = None
+                        # Determine the zone to use based on receiver type
+                        zone = mapping.get('chekt_zone') if config_data.get("receiver_type", "CHEKT").upper() == "CHEKT" else mapping.get('sia_zone')
 
                         if zone and zone.strip():  # Ensure a valid zone
-                            logger.info(f"Triggering {receiver_type} event in zone {zone} for device {device_id}")
-                            trigger_alert(device_id, state, device_type, receiver_type, zone)
+                            logger.info(f"Triggering event in {config_data.get('receiver_type', 'CHEKT')} zone {zone} for device {device_id}")
+                            trigger_alert(device_id, state, device_type, zone)
                         else:
-                            logger.warning(f"No valid zone for device {device_id} with receiver {receiver_type}. Skipping trigger.")
+                            logger.warning(f"No valid zone for device {device_id} with receiver {config_data.get('receiver_type', 'CHEKT')}. Skipping trigger.")
                     else:
                         logger.warning(f"No mapping found for device {device_id}")
                 else:
@@ -810,7 +804,6 @@ def on_message(client, userdata, msg):
 
     except Exception as e:
         logger.error(f"Error processing message: {str(e)}")
-
 
 # Helper functions for event handling
 def parse_device_type(event_type, payload):
