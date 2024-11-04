@@ -490,9 +490,9 @@
         function saveZone(deviceId, newZone) {
             $.ajax({
                 type: "POST",
-                url: "/save_chekt_zone",
+                url: "/save_zone",
                 contentType: "application/json",
-                data: JSON.stringify({ deviceId: deviceId, chekt_zone: newZone }), // Send empty string if newZone is empty
+                data: JSON.stringify({ deviceId: deviceId, zone: newZone }), // Send empty string if newZone is empty
                 success: function(response) {
                     console.log('Zone saved successfully.');
                     // Show save confirmation message

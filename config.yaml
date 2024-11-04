@@ -1,20 +1,37 @@
 yolink:
-  base_url: "https://api.yosmart.com/"  # This is the Yolink API base URL.
+  base_url: "https://api.yosmart.com/"  # YoLink API base URL
   uaid: "your_uaid"
   secret_key: "your_secret_key"
   token: ""  # Placeholder for storing the generated access token
+
 mqtt:
   url: "mqtt://api.yosmart.com"
   port: 8003
   topic: "yl-home/${Home ID}/+/report"
+
 files:
   device_file: "devices.yaml"
   map_file: "mappings.yaml"
+
+# Define the receiver type and settings for CHEKT and SIA
+receiver_type: "CHEKT"  # Options: "CHEKT" or "SIA"
+
+# CHEKT Configuration
 chekt:
   ip: "192.168.1.100"
   port: 30003
-  api_token: ""
+  api_token: "your_chekt_api_token"  # CHEKT API token
+
+# SIA Configuration
+sia:
+  ip: "192.168.1.101"  # IP address of the SIA receiver
+  port: 30004          # Port for the SIA receiver
+  account_code: "your_sia_account_code"  # SIA account code
+  encryption_key: "your_sia_encryption_key"  # SIA encryption key (if needed)
+
 monitor:
-  api_key: "your_monitor_api_key"  # Add your monitor API key here
-timezone: "America/Denver"  # Set the default timezone here
+  api_key: "your_monitor_api_key"  # Monitor API key
+
+timezone: "America/Denver"  # Default timezone
+
 users: {}

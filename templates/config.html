@@ -4,7 +4,7 @@
     <!-- Metadata and Title -->
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>YoLink to CHEKT Configuration</title>
+    <title>YoLink to CHEKT & SIA Configuration</title>
     <!-- Bootstrap CSS -->
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css">
     <!-- Custom Styles -->
@@ -75,15 +75,15 @@
             padding: 15px;
             margin-top: 20px;
             border-radius: 10px;
-            height: 500px; /* Increased height for better visibility */
+            height: 500px;
             overflow-y: auto;
-            color: #28a745 !important; /* Ensure text color is green */
-            font-family: 'Courier New', Courier, monospace; /* Monospace font for logs */
+            color: #28a745 !important;
+            font-family: 'Courier New', Courier, monospace;
         }
         #log-content {
-            white-space: pre-wrap; /* Preserve line breaks and wrapping */
-            word-wrap: break-word; /* Handle long lines */
-            color: inherit; /* Inherit color from parent (.log) */
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            color: inherit;
         }
         .nav-link {
             color: #ffffff;
@@ -96,8 +96,8 @@
 <body>
     <!-- Navigation Bar -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-        <a class="navbar-brand" href="#">YoLink to CHEKT</a>
-        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+        <a class="navbar-brand" href="#">YoLink to CHEKT & SIA</a>
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav"     aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
             <span class="navbar-toggler-icon"></span>
         </button>
         <div class="collapse navbar-collapse" id="navbarNav">
@@ -108,6 +108,10 @@
                 <li class="nav-item active">
                     <a class="nav-link" href="/config.html">Configuration <span class="sr-only">(current)</span></a>
                 </li>
+                <!-- Logout Link (if applicable) -->
+                <!-- <li class="nav-item">
+                    <a class="nav-link" href="{{ url_for('logout') }}">Logout</a>
+                </li> -->
             </ul>
         </div>
     </nav>
@@ -123,9 +127,9 @@
                 <img src="" alt="" id="mqtt-icon" class="hidden">
                 <span id="mqtt-message">Checking MQTT connection...</span>
             </div>
-            <div id="chekt-status" class="status">
-                <img src="" alt="" id="chekt-icon" class="hidden">
-                <span id="chekt-message">Checking CHEKT server status...</span>
+            <div id="receiver-status" class="status">
+                <img src="" alt="" id="receiver-icon" class="hidden">
+                <span id="receiver-message">Checking Receiver server status...</span>
             </div>
         </div>
 
@@ -141,18 +145,59 @@
                 <input type="text" id="secret_key" name="secret_key" class="form-control" value="{{ config.yolink.secret_key }}" required>
             </div>
 
-            <h2>CHEKT Configuration</h2>
+            <h2>Alert Receiver Configuration</h2>
             <div class="form-group">
-                <label for="chekt_ip">CHEKT IP Address</label>
-                <input type="text" id="chekt_ip" name="chekt_ip" class="form-control" value="{{ config.chekt.ip }}" required>
+                <label for="receiver_type">Select Alert Receiver</label>
+                <select id="receiver_type" name="receiver_type" class="form-control" required>
+                    <option value="CHEKT" {% if config.receiver_type == 'CHEKT' %}selected{% endif %}>CHEKT</option>
+                    <option value="SIA" {% if config.receiver_type == 'SIA' %}selected{% endif %}>SIA</option>
+                </select>
             </div>
-            <div class="form-group">
-                <label for="chekt_port">CHEKT Port</label>
-                <input type="number" id="chekt_port" name="chekt_port" class="form-control" value="{{ config.chekt.port }}" required>
+
+            <!-- CHEKT Configuration -->
+            <div id="chekt-config" class="chekt-config">
+                <h2>CHEKT Configuration</h2>
+                <div class="form-group">
+                    <label for="chekt_ip">CHEKT IP Address</label>
+                    <input type="text" id="chekt_ip" name="chekt_ip" class="form-control" value="{{ config.chekt.ip }}">
+                </div>
+                <div class="form-group">
+                    <label for="chekt_port">CHEKT Port</label>
+                    <input type="number" id="chekt_port" name="chekt_port" class="form-control" value="{{ config.chekt.port }}">
+                </div>
+                <div class="form-group">
+                    <label for="chekt_token">CHEKT API Token</label>
+                    <input type="text" id="chekt_token" name="chekt_token" class="form-control" value="{{ config.chekt.api_token }}">
+                </div>
             </div>
-            <div class="form-group">
-                <label for="chekt_token">CHEKT API Token</label>
-                <input type="text" id="chekt_token" name="chekt_token" class="form-control" value="{{ config.chekt.api_token }}" required>
+
+            <!-- SIA Configuration -->
+            <div id="sia-config" class="sia-config">
+                <h2>SIA Configuration</h2>
+                <div class="form-group">
+                    <label for="sia_ip">SIA IP Address</label>
+                    <input type="text" id="sia_ip" name="sia_ip" class="form-control" value="{{ config.sia.ip }}">
+                </div>
+                <div class="form-group">
+                    <label for="sia_port">SIA Port</label>
+                    <input type="number" id="sia_port" name="sia_port" class="form-control" value="{{ config.sia.port }}">
+                </div>
+                <div class="form-group">
+                    <label for="sia_account_id">SIA Account ID</label>
+                    <input type="text" id="sia_account_id" name="sia_account_id" class="form-control" value="{{ config.sia.account_id }}">
+                </div>
+                <div class="form-group">
+                    <label for="sia_transmitter_id">SIA Transmitter ID</label>
+                    <input type="text" id="sia_transmitter_id" name="sia_transmitter_id" class="form-control" value="{{ config.sia.transmitter_id }}">
+                </div>
+                <div class="form-group">
+                    <label for="sia_contact_id">SIA Contact ID</label>
+                    <input type="text" id="sia_contact_id" name="sia_contact_id" class="form-control" value="{{ config.sia.contact_id }}">
+                </div>
+                <div class="form-group">
+                    <label for="sia_encryption_key">SIA Encryption Key</label>
+                    <input type="text" id="sia_encryption_key" name="sia_encryption_key" class="form-control" value="{{ config.sia.encryption_key }}">
+                </div>
             </div>
 
             <h2>Monitor Configuration</h2>
@@ -193,13 +238,8 @@
         </div>
 
         <!-- Device Mapping Form -->
-        <form id="mapping-form" class="form-section">
-            <h2>Device Mapping</h2>
-            <table class="table table-striped table-dark">
-                <!-- ... existing table content ... -->
-            </table>
-            <button type="submit" class="btn btn-primary">Save Mapping</button>
-        </form>
+        <!-- Device Mapping Section (if applicable) -->
+        <!-- ... existing table content ... -->
 
         <!-- Log Area -->
         <h2>Application Logs</h2>
@@ -286,15 +326,35 @@
             displayLogs(filteredLogs);
         });
 
+        // Function to toggle CHEKT and SIA configuration visibility based on receiver type selection
+        function toggleReceiverConfig() {
+            const receiverType = $('#receiver_type').val();
+            if (receiverType === 'CHEKT') {
+                $('#chekt-config').show();
+                $('#sia-config').hide();
+            } else if (receiverType === 'SIA') {
+                $('#chekt-config').hide();
+                $('#sia-config').show();
+            }
+        }
+
         // Initial setup when document is ready
         $(document).ready(function () {
             // Check statuses
             checkStatus('/check_mqtt_status', 'mqtt-message', 'mqtt-icon', 'MQTT connection is active.', 'MQTT connection is inactive.');
-            checkStatus('/check_chekt_status', 'chekt-message', 'chekt-icon', 'CHEKT server is alive.', 'Failed to connect to CHEKT server.');
+            checkStatus('/check_receiver_status', 'receiver-message', 'receiver-icon', 'Receiver server is alive.', 'Failed to connect to Receiver server.');
 
             // Fetch logs initially and set interval for live updates
             fetchLogs();
             setInterval(fetchLogs, 5000); // Update logs every 5 seconds
+
+            // Toggle receiver configuration sections based on initial value
+            toggleReceiverConfig();
+
+            // Change event for receiver type selection
+            $('#receiver_type').change(function() {
+                toggleReceiverConfig();
+            });
         });
 
         // Save configuration form
@@ -306,15 +366,24 @@
                     uaid: $('#uaid').val(),
                     secret_key: $('#secret_key').val()
                 },
+                receiver_type: $('#receiver_type').val(),
                 chekt: {
                     ip: $('#chekt_ip').val(),
                     port: $('#chekt_port').val(),
                     api_token: $('#chekt_token').val()
                 },
+                sia: {
+                    ip: $('#sia_ip').val(),
+                    port: $('#sia_port').val(),
+                    account_id: $('#sia_account_id').val(),
+                    transmitter_id: $('#sia_transmitter_id').val(),
+                    contact_id: $('#sia_contact_id').val(),
+                    encryption_key: $('#sia_encryption_key').val()
+                },
                 monitor: {
                     api_key: $('#monitor_api_key').val()
                 },
-                timezone: $('#timezone').val() // Include timezone in the data
+                timezone: $('#timezone').val()
             };
 
             $('#config-icon').addClass('hidden');
@@ -329,7 +398,7 @@
                     addToLog(response.message);
                     // Recheck statuses after saving
                     checkStatus('/check_mqtt_status', 'mqtt-message', 'mqtt-icon', 'MQTT connection is active.', 'MQTT connection is inactive.');
-                    checkStatus('/check_chekt_status', 'chekt-message', 'chekt-icon', 'CHEKT server is alive.', 'Failed to connect to CHEKT server.');
+                    checkStatus('/check_receiver_status', 'receiver-message', 'receiver-icon', 'Receiver server is alive.', 'Failed to connect to Receiver server.');
                 },
                 error: function (xhr, status, error) {
                     updateStatus('config-message', 'config-icon', 'Failed to save configuration.', false);
@@ -339,6 +408,7 @@
         });
 
         // ... (rest of your JavaScript code remains unchanged) ...
+
     </script>
 </body>
 </html>
