@@ -754,7 +754,7 @@ def on_connect(client, userdata, flags, rc):
     else:
         logger.error(f"Failed to connect to MQTT broker. Return code: {rc}")
 
-def on_message(client, userdata, msg):
+ddef on_message(client, userdata, msg):
     logger.info(f"Received message on topic {msg.topic}")
 
     try:
@@ -780,19 +780,23 @@ def on_message(client, userdata, msg):
 
                 # Check if the device event should trigger based on type and state
                 if device_type and should_trigger_event(state, device_type):
+                    # Default receiver_type to "CHEKT" if not correctly set
+                    receiver_type = config_data.get("receiver_type", "CHEKT").upper()
+                    if receiver_type not in ["CHEKT", "SIA"]:
+                        logger.error(f"Invalid receiver type: {receiver_type}. Defaulting to CHEKT.")
+                        receiver_type = "CHEKT"
+
                     # Load mappings and retrieve the correct zone based on receiver type
                     mappings_data = load_mappings()
                     mapping = next((m for m in mappings_data.get('mappings', []) if m['yolink_device_id'] == device_id), None)
 
                     if mapping:
-                        # Determine the zone to use based on receiver type
-                        zone = mapping.get('chekt_zone') if config_data.get("receiver_type", "CHEKT").upper() == "CHEKT" else mapping.get('sia_zone')
-
+                        zone = mapping.get('chekt_zone' if receiver_type == "CHEKT" else 'sia_zone')
                         if zone and zone.strip():  # Ensure a valid zone
-                            logger.info(f"Triggering event in {config_data.get('receiver_type', 'CHEKT')} zone {zone} for device {device_id}")
+                            logger.info(f"Triggering {receiver_type} event in zone {zone} for device {device_id}")
                             trigger_alert(device_id, state, device_type, zone)
                         else:
-                            logger.warning(f"No valid zone for device {device_id} with receiver {config_data.get('receiver_type', 'CHEKT')}. Skipping trigger.")
+                            logger.warning(f"No valid zone for device {device_id} with receiver {receiver_type}. Skipping trigger.")
                     else:
                         logger.warning(f"No mapping found for device {device_id}")
                 else:
