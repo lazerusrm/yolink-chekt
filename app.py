@@ -937,6 +937,50 @@ def send_sia_message(device_id, event_description, zone, sia_config):
     except Exception as e:
         logger.error(f"Failed to send SIA message: {str(e)}")
 
+@app.route('/save_zone', methods=['POST'])
+def save_zone():
+    data = request.get_json()
+    device_id = data.get('deviceId')
+    zone = data.get('zone')
+
+    if not device_id:
+        return jsonify({'status': 'error', 'message': 'Device ID is required.'}), 400
+
+    # Load configuration to determine receiver type
+    config_data = load_config()
+    receiver_type = config_data.get("receiver_type", "CHEKT").upper()
+
+    # Load mappings file
+    try:
+        mappings_data = load_mappings()
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': f'Error loading mappings: {str(e)}'}), 500
+
+    # Find the target mapping list based on receiver type
+    target_mapping = 'mappings'
+    mappings_list = mappings_data.get(target_mapping, [])
+
+    # Locate the existing mapping for the device
+    existing_mapping = next((m for m in mappings_list if m['yolink_device_id'] == device_id), None)
+
+    if zone == "":
+        # Remove mapping if zone is blank
+        if existing_mapping:
+            mappings_list.remove(existing_mapping)
+    else:
+        if existing_mapping:
+            existing_mapping['chekt_zone'] = zone
+        else:
+            mappings_list.append({'yolink_device_id': device_id, 'chekt_zone': zone})
+
+    # Save mappings back to the file
+    try:
+        save_mappings(mappings_data)
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': f'Error saving mappings: {str(e)}'}), 500
+
+    return jsonify({'status': 'success', 'message': f'{receiver_type} zone saved successfully.'}), 200
+
 # Periodic Tasks
 def check_sensor_last_seen():
     try:
