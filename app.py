@@ -855,19 +855,33 @@ def get_zone(device_id):
 
 def trigger_alert(device_id, state, device_type, receiver_type):
     event_description = map_state_to_event(state, device_type)
-    zone = get_zone(device_id)
+    
+    # Load mappings and retrieve the correct zone based on receiver type
+    mappings_data = load_mappings()
+    mapping = next((m for m in mappings_data.get('mappings', []) if m['yolink_device_id'] == device_id), None)
+    
+    if not mapping:
+        logger.warning(f"No mapping found for device {device_id}")
+        return
 
+    # Determine the correct zone based on the receiver type
     if receiver_type == "CHEKT":
+        zone = mapping.get('chekt_zone')
         if zone:
+            logger.info(f"Triggering CHEKT event in zone {zone} for device {device_id}")
             trigger_chekt_event(zone, event_description)
         else:
             logger.warning(f"No CHEKT zone configured for device {device_id}")
+    
     elif receiver_type == "SIA":
+        zone = mapping.get('sia_zone')
         sia_config = config_data.get('sia', {})
         if zone:
+            logger.info(f"Sending SIA event in zone {zone} for device {device_id}")
             send_sia_message(device_id, event_description, zone, sia_config)
         else:
             logger.warning(f"No SIA zone configured for device {device_id}")
+
     else:
         logger.error(f"Unknown receiver type: {receiver_type}")
 
