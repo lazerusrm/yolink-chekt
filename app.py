@@ -946,7 +946,7 @@ def save_zone():
     if not device_id:
         return jsonify({'status': 'error', 'message': 'Device ID is required.'}), 400
 
-    # Load configuration to determine receiver type
+    # Load configuration to determine the receiver type
     config_data = load_config()
     receiver_type = config_data.get("receiver_type", "CHEKT").upper()
 
@@ -956,24 +956,33 @@ def save_zone():
     except Exception as e:
         return jsonify({'status': 'error', 'message': f'Error loading mappings: {str(e)}'}), 500
 
-    # Find the target mapping list based on receiver type
-    target_mapping = 'mappings'
-    mappings_list = mappings_data.get(target_mapping, [])
+    # Determine the target key based on receiver type
+    target_zone_key = 'chekt_zone' if receiver_type == 'CHEKT' else 'sia_zone'
+    target_description_key = 'zone_description' if receiver_type == 'CHEKT' else 'sia_zone_description'
+    mappings_list = mappings_data.get('mappings', [])
 
-    # Locate the existing mapping for the device
+    # Find any existing mapping for the device
     existing_mapping = next((m for m in mappings_list if m['yolink_device_id'] == device_id), None)
 
+    # Handle case where zone is blank (remove the device from mapping)
     if zone == "":
-        # Remove mapping if zone is blank
         if existing_mapping:
-            mappings_list.remove(existing_mapping)
+            mappings_list.remove(existing_mapping)  # Remove the device mapping if it exists
     else:
+        # If zone is specified, update or add it to the mapping
         if existing_mapping:
-            existing_mapping['chekt_zone'] = zone
+            existing_mapping[target_zone_key] = zone  # Update the appropriate zone field
+            existing_mapping[target_description_key] = data.get('description', 'Unknown Zone')
         else:
-            mappings_list.append({'yolink_device_id': device_id, 'chekt_zone': zone})
+            # Add a new mapping with the appropriate zone and description
+            mappings_list.append({
+                'yolink_device_id': device_id,
+                target_zone_key: zone,
+                target_description_key: data.get('description', 'Unknown Zone')
+            })
 
-    # Save mappings back to the file
+    # Save the updated mappings back to mappings.yaml
+    mappings_data['mappings'] = mappings_list
     try:
         save_mappings(mappings_data)
     except Exception as e:
