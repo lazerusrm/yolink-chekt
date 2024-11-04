@@ -648,6 +648,73 @@ def get_logs():
     except FileNotFoundError:
         return jsonify({"status": "error", "message": "Log file not found."})
 
+@app.route('/check_mqtt_status', methods=['GET'])
+def check_mqtt_status():
+    global mqtt_client_instance
+    try:
+        if mqtt_client_instance and mqtt_client_instance.is_connected():
+            return jsonify({"status": "success", "message": "MQTT connection is active."})
+        else:
+            return jsonify({"status": "error", "message": "MQTT connection is inactive."})
+    except Exception as e:
+        logger.error(f"Error checking MQTT status: {str(e)}")
+        return jsonify({"status": "error", "message": "Error checking MQTT status."})
+
+@app.route('/check_chekt_status', methods=['GET'])
+def check_chekt_status():
+    config = load_config()
+    chekt_ip = config['chekt'].get('ip')
+    chekt_port = config['chekt'].get('port')
+    api_token = config['chekt'].get('api_token')
+
+    if not chekt_ip or not chekt_port:
+        return jsonify({"status": "error", "message": "CHEKT API configuration is missing."})
+
+    url = f"http://{chekt_ip}:{chekt_port}/api/v1/"
+    headers = {
+        'Authorization': f"Bearer {api_token}",
+        'Content-Type': 'application/json'
+    }
+
+    try:
+        response = requests.get(url, headers=headers)
+        if response.status_code == 200:
+            return jsonify({"status": "success", "message": "CHEKT server is active."})
+        else:
+            return jsonify({"status": "error", "message": f"Failed to connect to CHEKT server. Status code: {response.status_code}"})
+    except Exception as e:
+        logger.error(f"Error connecting to CHEKT server: {str(e)}")
+        return jsonify({"status": "error", "message": "Error connecting to CHEKT server."})
+
+@app.route('/get_sensor_data', methods=['GET'])
+def get_sensor_data():
+    devices_data = load_devices()
+    mappings_data = load_mappings()
+
+    devices = devices_data.get('devices', [])
+    device_mappings = {m['yolink_device_id']: m for m in mappings_data.get('mappings', [])}
+
+    all_sensors = []
+    for sensor in devices:
+        device_id = sensor.get('deviceId')
+        mapping = device_mappings.get(device_id, {})
+        chekt_zone = mapping.get('chekt_zone', 'N/A')
+        last_seen = sensor.get('last_seen', 'Unknown')
+
+        all_sensors.append({
+            'deviceId': device_id,
+            'name': sensor.get('name', 'Unknown'),
+            'state': sensor.get('state', 'Unknown'),
+            'battery': sensor.get('battery', 'Unknown'),
+            'temperature': sensor.get('temperature', 'Unknown'),
+            'humidity': sensor.get('humidity', 'Unknown'),
+            'signal': sensor.get('signal', 'Unknown'),
+            'last_seen': last_seen,
+            'chekt_zone': chekt_zone
+        })
+
+    return jsonify({'devices': all_sensors})
+
 # MQTT Configuration and Callbacks
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
