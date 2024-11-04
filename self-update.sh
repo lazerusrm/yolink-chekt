@@ -59,40 +59,6 @@ install_docker_compose() {
   echo "Docker Compose installed successfully."
 }
 
-# Function to adjust security modules if necessary
-adjust_security_modules() {
-  echo "Checking security modules (AppArmor and SELinux)..."
-
-  # Check AppArmor
-  if command_exists aa-status; then
-    aa_status=$(aa-status | grep "profiles are loaded")
-    if [[ $aa_status == *"profiles are loaded"* ]]; then
-      echo "AppArmor is active. Attempting to adjust Docker AppArmor profile."
-      # Adjust Docker's AppArmor profile to allow necessary operations
-      sudo aa-complain /etc/apparmor.d/docker || echo "Could not set Docker AppArmor profile to complain mode."
-      echo "AppArmor adjustment completed."
-    else
-      echo "AppArmor is not active."
-    fi
-  else
-    echo "AppArmor is not installed."
-  fi
-
-  # Check SELinux
-  if command_exists sestatus; then
-    selinux_status=$(sestatus | grep "SELinux status" | awk '{print $3}')
-    if [[ $selinux_status == "enabled" ]]; then
-      echo "SELinux is active. Setting to permissive mode temporarily."
-      setenforce 0 || echo "Could not set SELinux to permissive mode."
-      echo "SELinux set to permissive mode."
-    else
-      echo "SELinux is not enforcing."
-    fi
-  else
-    echo "SELinux is not installed."
-  fi
-}
-
 # Ensure the script is run as root
 if [ "$EUID" -ne 0 ]; then
   handle_error "This script must be run as root."
@@ -131,9 +97,6 @@ echo "Ensuring Docker service is running..."
 systemctl enable docker || handle_error "Failed to enable Docker service."
 systemctl start docker || handle_error "Failed to start Docker service."
 echo "Docker service is running."
-
-# Adjust security modules to prevent permission issues
-adjust_security_modules
 
 # Create required directories if they do not exist
 echo "Ensuring application directories exist..."
@@ -212,7 +175,7 @@ services_running() {
 # Navigate to the application directory
 cd "$APP_DIR" || handle_error "Failed to navigate to $APP_DIR."
 
-# Export to disable BuildKit
+# Export to disable BuildKit (if necessary)
 export DOCKER_BUILDKIT=0
 echo "Docker BuildKit disabled."
 
