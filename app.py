@@ -715,6 +715,34 @@ def get_sensor_data():
 
     return jsonify({'devices': all_sensors})
 
+# Load devices from devices.yaml
+def load_devices():
+    try:
+        with open(devices_file, 'r') as file:
+            return yaml.safe_load(file) or {}
+    except FileNotFoundError:
+        return {'devices': []}  # Return empty devices list if file is missing
+
+# Load mappings from mappings.yaml
+def load_mappings():
+    try:
+        with open(mappings_file, 'r') as file:
+            return yaml.safe_load(file) or {'mappings': []}
+    except FileNotFoundError:
+        return {'mappings': []}  # Return empty mappings if file is missing
+
+@app.route('/config.html')
+@login_required
+def config_html():
+    devices_data = load_devices()
+    mappings_data = load_mappings()
+
+    devices = devices_data.get('devices', [])
+    device_mappings = {m['yolink_device_id']: m for m in mappings_data.get('mappings', [])}
+    config_data = load_config()
+
+    return render_template('config.html', devices=devices, mappings=device_mappings, config=config_data)
+
 # MQTT Configuration and Callbacks
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
