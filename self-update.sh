@@ -50,7 +50,7 @@ install_docker_compose() {
   mkdir -p /usr/lib/docker/cli-plugins/
   curl -SL "https://github.com/docker/compose/releases/download/${DOCKER_COMPOSE_VERSION}/docker-compose-linux-x86_64" -o /usr/lib/docker/cli-plugins/docker-compose || handle_error "Failed to download Docker Compose."
   chmod +x /usr/lib/docker/cli-plugins/docker-compose
-  ln -s /usr/lib/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose || handle_error "Failed to create symlink for Docker Compose."
+  ln -sf /usr/lib/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose || handle_error "Failed to create symlink for Docker Compose."
   echo "Docker Compose installed successfully."
 }
 
@@ -91,7 +91,7 @@ fi
 echo "Ensuring application directories exist..."
 mkdir -p "$APP_DIR" "$TEMPLATES_DIR" || handle_error "Failed to create application directories."
 
-# Backup current config.yaml if it exists
+# Function to backup a file if it exists
 backup_file() {
   local FILE="$1"
   local BACKUP="$2"
@@ -103,6 +103,19 @@ backup_file() {
   fi
 }
 
+# Function to restore a file from backup if backup exists
+restore_file() {
+  local BACKUP="$1"
+  local FILE="$2"
+  if [ -f "$BACKUP" ]; then
+    mv "$BACKUP" "$FILE" || handle_error "Failed to restore $(basename "$FILE") from backup"
+    echo "$(basename "$FILE") restored."
+  else
+    echo "Warning: Backup not found. $(basename "$FILE") was not restored."
+  fi
+}
+
+# Backup current config files if they exist
 backup_file "$CONFIG_FILE" "$CONFIG_BACKUP"
 backup_file "$MAPPINGS_FILE" "$MAPPINGS_BACKUP"
 backup_file "$DEVICES_FILE" "$DEVICES_BACKUP"
@@ -115,17 +128,6 @@ echo "Unzipping latest code..."
 unzip -o "$APP_DIR/repo.zip" -d "$APP_DIR" || handle_error "Unzip failed."
 
 # Restore configuration files after update
-restore_file() {
-  local BACKUP="$1"
-  local FILE="$2"
-  if [ -f "$BACKUP" ]; then
-    mv "$BACKUP" "$FILE" || handle_error "Failed to restore $(basename "$FILE") from backup"
-    echo "$(basename "$FILE") restored."
-  else
-    echo "Warning: Backup not found. $(basename "$FILE") was not restored."
-  fi
-}
-
 restore_file "$CONFIG_BACKUP" "$CONFIG_FILE"
 restore_file "$MAPPINGS_BACKUP" "$MAPPINGS_FILE"
 restore_file "$DEVICES_BACKUP" "$DEVICES_FILE"
@@ -142,9 +144,24 @@ echo "Cleaning up temporary files..."
 rm -rf "$APP_DIR/yolink-chekt-main"
 rm "$APP_DIR/repo.zip"
 
+# Function to determine if Docker Compose services are already running
+services_running() {
+  docker compose ps -q | grep -q . 
+}
+
+# Navigate to the application directory
+cd "$APP_DIR" || handle_error "Failed to navigate to $APP_DIR."
+
 # Rebuild Docker containers with the latest code
 echo "Rebuilding Docker containers..."
-docker compose down || handle_error "Docker Compose down failed."
+
+if services_running; then
+  echo "Existing Docker containers detected. Restarting containers..."
+  docker compose down || handle_error "Docker Compose down failed."
+else
+  echo "No existing Docker containers detected. Starting containers..."
+fi
+
 docker compose up --build -d || handle_error "Docker Compose up failed."
 
 # Check if the config.html file is in the container after the rebuild
@@ -160,4 +177,4 @@ else
   handle_error "config.html not found in the container."
 fi
 
-echo "Updates applied successfully!"
+echo "Installation/Update applied successfully!"
