@@ -18,12 +18,23 @@ handle_error() {
   exit 1
 }
 
-# Ensure curl is installed
-if ! command -v curl &> /dev/null; then
-  echo "curl not found. Installing curl..."
-  apt-get update && apt-get install -y curl || handle_error "Failed to install curl."
-  echo "curl installed successfully."
-fi
+# Function to check and install a dependency if it is missing
+check_and_install() {
+  if ! command -v "$1" &> /dev/null; then
+    echo "$1 not found. Installing $1..."
+    apt-get update && apt-get install -y "$1" || handle_error "Failed to install $1."
+    echo "$1 installed successfully."
+  fi
+}
+
+# Check and install required dependencies
+check_and_install curl
+check_and_install unzip
+check_and_install rsync
+
+# Create required directories if they do not exist
+echo "Ensuring application directories exist..."
+mkdir -p "$APP_DIR" "$TEMPLATES_DIR" || handle_error "Failed to create application directories."
 
 # Backup current config.yaml if it exists
 if [ -f "$CONFIG_FILE" ]; then
@@ -80,10 +91,6 @@ fi
 
 # Move extracted files while excluding config.yaml, mappings.yaml, and devices.yaml
 echo "Updating application files..."
-if ! command -v rsync &> /dev/null; then
-  handle_error "rsync not found. Please install rsync."
-fi
-
 rsync -a --exclude='config.yaml' --exclude='mappings.yaml' --exclude='devices.yaml' "$APP_DIR/yolink-chekt-main/" "$APP_DIR/" || handle_error "Move extracted files failed."
 
 # Set appropriate permissions for the self-update script
