@@ -754,7 +754,7 @@ def on_connect(client, userdata, flags, rc):
     else:
         logger.error(f"Failed to connect to MQTT broker. Return code: {rc}")
 
-ddef on_message(client, userdata, msg):
+def on_message(client, userdata, msg):
     logger.info(f"Received message on topic {msg.topic}")
 
     try:
