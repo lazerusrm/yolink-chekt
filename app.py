@@ -420,6 +420,24 @@ def setup_totp(username):
     flash('User not found or already configured.')
     return redirect(url_for('login'))
 
+@app.route('/config')
+@login_required
+def config():
+    # Load devices and mappings from YAML files
+    devices_data = load_devices()  # Load devices.yaml
+    mappings_data = load_mappings()  # Load mappings.yaml
+
+    devices = devices_data.get('devices', [])
+    mappings = mappings_data.get('mappings', []) if mappings_data else []
+
+    # Prepare a dictionary to easily access the mappings by device ID
+    device_mappings = {m['yolink_device_id']: m for m in mappings}
+
+    # Load configuration for pre-filling the form
+    config_data = load_config()
+
+    return render_template('config.html', devices=devices, mappings=device_mappings, config=config_data)
+
 # User creation (not in original code but implied)
 @app.route('/create_user', methods=['GET', 'POST'])
 def create_user():
