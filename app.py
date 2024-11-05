@@ -846,7 +846,7 @@ def get_zone(device_id):
         return mapping.get('chekt_zone') or mapping.get('sia_zone')
     return None
 
-def trigger_alert(device_id, state, device_type, zone):
+def trigger_alert(device_id, state, device_type):
     event_description = map_state_to_event(state, device_type)
     
     # Retrieve receiver_type from config
@@ -855,7 +855,7 @@ def trigger_alert(device_id, state, device_type, zone):
         logger.error(f"Invalid receiver type in config: {receiver_type}. Defaulting to CHEKT.")
         receiver_type = "CHEKT"
     
-    # Load mappings and retrieve the correct zone based on the receiver type
+    # Load mappings and retrieve the correct zone based on receiver type
     mappings_data = load_mappings()
     mapping = next((m for m in mappings_data.get('mappings', []) if m['yolink_device_id'] == device_id), None)
     
@@ -866,20 +866,20 @@ def trigger_alert(device_id, state, device_type, zone):
     # Determine the correct zone based on the receiver type
     if receiver_type == "CHEKT":
         chekt_zone = mapping.get('chekt_zone')
-        if chekt_zone:
+        if chekt_zone and chekt_zone.strip() and chekt_zone != 'N/A':
             logger.info(f"Triggering CHEKT event in zone {chekt_zone} for device {device_id}")
             trigger_chekt_event(chekt_zone, event_description)
         else:
-            logger.warning(f"No CHEKT zone configured for device {device_id}")
+            logger.warning(f"No valid CHEKT zone found for device {device_id}. Mapping details: {mapping}")
     
     elif receiver_type == "SIA":
         sia_zone = mapping.get('sia_zone')
         sia_config = config_data.get('sia', {})
-        if sia_zone:
+        if sia_zone and sia_zone.strip() and sia_zone != 'N/A':
             logger.info(f"Sending SIA event in zone {sia_zone} for device {device_id}")
             send_sia_message(device_id, event_description, sia_zone, sia_config)
         else:
-            logger.warning(f"No SIA zone configured for device {device_id}")
+            logger.warning(f"No valid SIA zone found for device {device_id}. Mapping details: {mapping}")
 
     else:
         logger.error(f"Unknown receiver type: {receiver_type}")
