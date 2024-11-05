@@ -789,7 +789,7 @@ def on_message(client, userdata, msg):
                         zone = mapping.get('chekt_zone' if receiver_type == "CHEKT" else 'sia_zone')
                         if zone and zone.strip():  # Ensure zone is valid
                             logger.info(f"Triggering {receiver_type} alert in zone {zone} for device {device_id}")
-                            trigger_alert(device_id, state, device_type, zone)
+                            trigger_alert(device_id, state, device_type)
                         else:
                             logger.warning(f"No valid zone for device {device_id} with receiver {receiver_type}. Skipping trigger.")
                     else:
