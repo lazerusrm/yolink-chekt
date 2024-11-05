@@ -887,7 +887,7 @@ def trigger_alert(device_id, state, device_type):
 # CHEKT Functions
 def trigger_chekt_event(device_id, event_description, chekt_zone):
     # Construct the API URL using the chekt_zone
-    chekt_api_url = f"http://{config_data['chekt']['ip']}:{config_data['chekt']['port']}/api/v1/zones/{chekt_zone}/events"
+    chekt_api_url = f"http://{config_data['chekt']['ip']}:{config_data['chekt']['port']}/api/v1/channels/{chekt_zone}/events"
     
     # Basic authentication setup
     api_key = config_data['chekt']['api_token']
