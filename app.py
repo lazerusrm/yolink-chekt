@@ -18,6 +18,7 @@ import io
 import secrets
 import pytz
 import socket  # For SIA TCP communication
+import struct
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes  # For SIA encryption
 from cryptography.hazmat.backends import default_backend
 from binascii import hexlify, unhexlify
@@ -884,7 +885,7 @@ def trigger_alert(device_id, state, device_type):
     else:
         logger.error(f"Unknown receiver type: {receiver_type}")
 
-# CHEKT Functions
+# CHEKT Function, triggers associated zone from device field.
 def trigger_chekt_event(device_id, event_description, chekt_zone):
     # Construct the API URL using the chekt_zone
     chekt_api_url = f"http://{config_data['chekt']['ip']}:{config_data['chekt']['port']}/api/v1/channels/{chekt_zone}/events"
@@ -927,28 +928,41 @@ def trigger_chekt_event(device_id, event_description, chekt_zone):
 
 
 # SIA Functions
-def send_sia_message(device_id, event_description, zone, sia_config):
+def send_sia_message(device_id, event_description, zone, sia_config, event_type="BA"):
+    """
+    Send a SIA DC-09 compliant message to the central monitoring station.
+    
+    Args:
+        device_id (str): ID of the YoLink device.
+        event_description (str): Description of the event.
+        zone (str): Zone number associated with the event.
+        sia_config (dict): Configuration dictionary with SIA settings.
+        event_type (str): Type of SIA event, default is "BA" (Burglary Alarm).
+    """
     try:
+        # Retrieve required SIA configuration parameters
         account_id = sia_config.get('account_id')
         transmitter_id = sia_config.get('transmitter_id')
-        contact_id = sia_config.get('contact_id', 'BA')  # Default to 'BA' (Burglary Alarm)
         encryption_key_hex = sia_config.get('encryption_key', '')
         sia_ip = sia_config.get('ip')
         sia_port = int(sia_config.get('port', 0))
 
-        if not sia_ip or not sia_port or not account_id or not transmitter_id:
+        if not all([sia_ip, sia_port, account_id, transmitter_id]):
             logger.error("SIA configuration is incomplete.")
             return
 
-        # Create the SIA message
+        # Default to BA for Burglary Alarm if no specific event type is specified
+        contact_id = event_type  # "BA" for burglary alarms, "OA" for Open Alarm, "CA" for Close Alarm, etc.
+
+        # Construct the SIA message
         message = f'"{account_id}" {transmitter_id} {contact_id} {zone} {event_description}\r\n'
 
-        # Encrypt the message if encryption key is provided
+        # Encrypt the message if an encryption key is provided
         if encryption_key_hex:
             encryption_key = unhexlify(encryption_key_hex)
             cipher = Cipher(algorithms.AES(encryption_key), modes.CBC(b'\x00' * 16), backend=default_backend())
             encryptor = cipher.encryptor()
-            # Pad the message to be multiple of block size (16 bytes)
+            # Pad the message to be a multiple of 16 bytes
             pad_length = 16 - (len(message) % 16)
             padded_message = message + chr(pad_length) * pad_length
             encrypted_message = encryptor.update(padded_message.encode()) + encryptor.finalize()
