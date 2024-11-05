@@ -868,7 +868,7 @@ def trigger_alert(device_id, state, device_type):
         chekt_zone = mapping.get('chekt_zone')
         if chekt_zone and chekt_zone.strip() and chekt_zone != 'N/A':
             logger.info(f"Triggering CHEKT event in zone {chekt_zone} for device {device_id}")
-            trigger_chekt_event(chekt_zone, event_description)
+            trigger_chekt_event(device_id, event_description, chekt_zone)
         else:
             logger.warning(f"No valid CHEKT zone found for device {device_id}. Mapping details: {mapping}")
     
@@ -885,54 +885,46 @@ def trigger_alert(device_id, state, device_type):
         logger.error(f"Unknown receiver type: {receiver_type}")
 
 # CHEKT Functions
-def trigger_chekt_event(yolink_device_id, event_description):
-    # Load mappings to find the chekt_zone for the specific device
-    mappings_data = load_mappings()
-    mapping = next((m for m in mappings_data.get('mappings', []) if m['yolink_device_id'] == yolink_device_id), None)
+def trigger_chekt_event(device_id, event_description, chekt_zone):
+    # Construct the API URL using the chekt_zone
+    chekt_api_url = f"http://{config_data['chekt']['ip']}:{config_data['chekt']['port']}/api/v1/zones/{chekt_zone}/events"
     
-    if mapping and mapping.get('chekt_zone') and mapping['chekt_zone'] != 'N/A':
-        chekt_zone = mapping['chekt_zone']
-        
-        # Construct the API URL using the chekt_zone
-        chekt_api_url = f"http://{config_data['chekt']['ip']}:{config_data['chekt']['port']}/api/v1/zones/{chekt_zone}/events"
-        
-        # Basic authentication setup
-        api_key = config_data['chekt']['api_token']
-        auth_header = base64.b64encode(f"apikey:{api_key}".encode()).decode()
-        
-        headers = {
-            "Authorization": f"Basic {auth_header}",
-            "Content-Type": "application/json"
-        }
-        
-        chekt_payload = {
-            "event_description": event_description
-        }
+    # Basic authentication setup
+    api_key = config_data['chekt']['api_token']
+    auth_header = base64.b64encode(f"apikey:{api_key}".encode()).decode()
+    
+    headers = {
+        "Authorization": f"Basic {auth_header}",
+        "Content-Type": "application/json"
+    }
+    
+    chekt_payload = {
+        "event_description": event_description
+    }
 
-        logger.info(f"Attempting to post event to CHEKT at URL: {chekt_api_url} with payload: {chekt_payload}")
-        try:
-            response = requests.post(chekt_api_url, headers=headers, json=chekt_payload)
-            
-            # Check if the response is JSON
-            if response.headers.get("Content-Type") == "application/json":
-                response_data = response.json()
-                if response.status_code in [200, 202]:
-                    logger.info(f"Success: Event triggered on zone {chekt_zone}. Response: {response_data}")
-                else:
-                    logger.error(f"Failed to trigger event on zone {chekt_zone}. Status code: {response.status_code}, Response: {response_data}")
+    logger.info(f"Attempting to post event to CHEKT for device {device_id} at URL: {chekt_api_url} with payload: {chekt_payload}")
+    try:
+        response = requests.post(chekt_api_url, headers=headers, json=chekt_payload)
+        
+        # Check if the response is JSON
+        if response.headers.get("Content-Type") == "application/json":
+            response_data = response.json()
+            if response.status_code in [200, 202]:
+                logger.info(f"Success: Event triggered on zone {chekt_zone} for device {device_id}. Response: {response_data}")
             else:
-                # Log and handle non-JSON response
-                if response.status_code in [200, 202]:
-                    logger.info(f"Event triggered on zone {chekt_zone}, but response is not JSON. Response: {response.text}")
-                else:
-                    logger.error(f"Failed to trigger event. Status code: {response.status_code}, Response text: {response.text}")
-                    
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Request error while triggering CHEKT event: {str(e)}")
-        except json.JSONDecodeError as e:
-            logger.error(f"JSON decode error while parsing CHEKT event response: {str(e)}")
-    else:
-        logger.warning(f"No valid CHEKT zone found for device {yolink_device_id}. Event not triggered.")
+                logger.error(f"Failed to trigger event on zone {chekt_zone} for device {device_id}. Status code: {response.status_code}, Response: {response_data}")
+        else:
+            # Log and handle non-JSON response
+            if response.status_code in [200, 202]:
+                logger.info(f"Event triggered on zone {chekt_zone} for device {device_id}, but response is not JSON. Response: {response.text}")
+            else:
+                logger.error(f"Failed to trigger event. Status code: {response.status_code}, Response text: {response.text}")
+                
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Request error while triggering CHEKT event for device {device_id}: {str(e)}")
+    except json.JSONDecodeError as e:
+        logger.error(f"JSON decode error while parsing CHEKT event response: {str(e)}")
+
 
 # SIA Functions
 def send_sia_message(device_id, event_description, zone, sia_config):
