@@ -4,6 +4,13 @@ yolink:
   secret_key: "your_secret_key"
   token: ""  # Placeholder for storing the generated access token
 
+mqtt_monitor:
+  url: 'mqtt://monitor.industrialcamera.com'
+  port: 1883
+  username: '<mqtt_user>'
+  password: '<password>'
+  client_id: 'monitor_client_id'  # Optional
+
 mqtt:
   url: "mqtt://api.yosmart.com"
   port: 8003
@@ -35,3 +42,22 @@ monitor:
 timezone: "America/Denver"  # Default timezone
 
 users: {}
+
+
+
+chekt:
+  api_token: Q0tCNTExMjU2LXBu.2z9isHkAV9Q8qkjg8Womy8txBok
+  ip: 10.250.250.72
+  port: '30003'
+mqtt:
+  port: 8003
+  topic: yl-home/${Home ID}/+/report
+  url: mqtt://api.yosmart.com
+timezone: America/Denver
+users:
+  lazerusrm:
+    password: $2b$12$S8pxgNMwI6CT8chALR15oe0XktLaY0v5TCRRc/9qYzYgr8PEHqC76
+    totp_secret: UBISMR5YBOWYZCBHZ76PXQWW6HZMFW5Q
+yolink:
+  secret_key: sec_v1_h0K5kZpcupZt35GdBkIfXw==
+  uaid: ua_DBCAA464829A474EA5F272B4428CD4CE
