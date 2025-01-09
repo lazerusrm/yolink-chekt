@@ -7,7 +7,6 @@ services:
       - .:/app
       - ./logs:/app/logs
     environment:
-      - FLASK_ENV=production  # Optional: ensure Flask is running in production mode
       - FLASK_ENV=production
       - LOG_DIR=/app/logs
     restart: unless-stopped  # Ensure the container restarts automatically unless stopped manually
