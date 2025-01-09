@@ -178,7 +178,8 @@ def send_home_info_via_mqtt():
 # YoLink Token Management
 # ------------------------------------------------------------------------------
 def is_token_expired():
-    expiry_time = config_data['yolink'].get('token_expiry', 0)
+    yolink_data = config_data.get('yolink', {})
+    expiry_time = yolink_data.get('token_expiry', 0)
     current_time = time.time()
     return current_time >= expiry_time
 
@@ -843,86 +844,82 @@ def trigger_alert(device_id, state, device_type):
     else:
         logger.error(f"Unknown receiver type: {receiver_type}")
 
-def trigger_chekt_event(device_id, event_description, chekt_zone):
-    # Construct the API URL using the chekt_zone
-    chekt_api_url = f"http://{config_data['chekt']['ip']}:{config_data['chekt']['port']}/api/v1/zones/{chekt_zone}/events"
-    
-    if mapping and mapping.get('chekt_zone') and mapping['chekt_zone'] != 'N/A':
-        chekt_zone = mapping['chekt_zone']
-        
-        # Construct the API URL using the chekt_zone
-        chekt_api_url = f"http://{config_data['chekt']['ip']}:{config_data['chekt']['port']}/api/v1/zones/{chekt_zone}/events"
-        
+def trigger_chekt_event(device_id, event_description, chekt_zone, mapping=None):
+    """
+    Triggers an event on the CHEKT server for a specific zone.
+
+    Parameters:
+    - device_id (str): The ID of the device triggering the event.
+    - event_description (str): Description of the event.
+    - chekt_zone (str): The default zone to trigger the event in.
+    - mapping (dict, optional): Mapping information for the device.
+    """
+    try:
+        # Load CHEKT configuration
+        chekt_config = config_data.get('chekt', {})
+        ip = chekt_config.get('ip')
+        port = chekt_config.get('port')
+        api_token = chekt_config.get('api_token')
+
+        # Validate CHEKT configuration
+        if not ip or not port:
+            logger.error("CHEKT IP or Port not configured or missing in config.yaml.")
+            return
+
+        if not api_token:
+            logger.error("CHEKT API token missing from configuration. Cannot trigger CHEKT event.")
+            return
+
+        # Determine the appropriate CHEKT zone
+        if mapping and mapping.get('chekt_zone') and mapping['chekt_zone'] != 'N/A':
+            chekt_zone = mapping['chekt_zone']
+            logger.debug(f"Using mapped CHEKT zone: {chekt_zone} for device {device_id}")
+        else:
+            logger.debug(f"Using default CHEKT zone: {chekt_zone} for device {device_id}")
+
+        # Construct the API URL using the determined chekt_zone
+        chekt_api_url = f"http://{ip}:{port}/api/v1/zones/{chekt_zone}/events"
+
         # Basic authentication setup
-        api_key = config_data['chekt']['api_token']
-        auth_header = base64.b64encode(f"apikey:{api_key}".encode()).decode()
-        
+        auth_string = f"apikey:{api_token}"
+        auth_header = base64.b64encode(auth_string.encode()).decode()
         headers = {
             "Authorization": f"Basic {auth_header}",
             "Content-Type": "application/json"
         }
-        
+
+        # Prepare the payload
         chekt_payload = {
             "event_description": event_description
         }
-    # Basic authentication setup
-    api_key = config_data['chekt']['api_token']
-    auth_header = base64.b64encode(f"apikey:{api_key}".encode()).decode()
-    
-    headers = {
-        "Authorization": f"Basic {auth_header}",
-        "Content-Type": "application/json"
-    }
-    
-    chekt_payload = {
-        "event_description": event_description
-    }
 
         logger.info(f"Attempting to post event to CHEKT at URL: {chekt_api_url} with payload: {chekt_payload}")
-        try:
-            response = requests.post(chekt_api_url, headers=headers, json=chekt_payload)
-            
-            # Check if the response is JSON
-            if response.headers.get("Content-Type") == "application/json":
-                response_data = response.json()
-                if response.status_code in [200, 202]:
-                    logger.info(f"Success: Event triggered on zone {chekt_zone}. Response: {response_data}")
-                else:
-                    logger.error(f"Failed to trigger event on zone {chekt_zone}. Status code: {response.status_code}, Response: {response_data}")
-    logger.info(f"Attempting to post event to CHEKT for device {device_id} at URL: {chekt_api_url} with payload: {chekt_payload}")
-    try:
-        response = requests.post(chekt_api_url, headers=headers, json=chekt_payload)
-        
+
+        # Send the POST request to CHEKT
+        response = requests.post(chekt_api_url, headers=headers, json=chekt_payload, timeout=10)
+
         # Check if the response is JSON
-        if response.headers.get("Content-Type") == "application/json":
+        content_type = response.headers.get("Content-Type", "")
+        if "application/json" in content_type:
             response_data = response.json()
             if response.status_code in [200, 202]:
-                logger.info(f"Success: Event triggered on zone {chekt_zone} for device {device_id}. Response: {response_data}")
+                logger.info(f"Success: Event triggered on zone '{chekt_zone}' for device '{device_id}'. Response: {response_data}")
             else:
-                # Log and handle non-JSON response
-                if response.status_code in [200, 202]:
-                    logger.info(f"Event triggered on zone {chekt_zone}, but response is not JSON. Response: {response.text}")
-                else:
-                    logger.error(f"Failed to trigger event. Status code: {response.status_code}, Response text: {response.text}")
-                    
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Request error while triggering CHEKT event: {str(e)}")
-        except json.JSONDecodeError as e:
-            logger.error(f"JSON decode error while parsing CHEKT event response: {str(e)}")
-    else:
-        logger.warning(f"No valid CHEKT zone found for device {yolink_device_id}. Event not triggered.")
-                logger.error(f"Failed to trigger event on zone {chekt_zone} for device {device_id}. Status code: {response.status_code}, Response: {response_data}")
+                logger.error(f"Failed to trigger event on zone '{chekt_zone}' for device '{device_id}'. "
+                             f"Status code: {response.status_code}, Response: {response_data}")
         else:
-            # Log and handle non-JSON response
             if response.status_code in [200, 202]:
-                logger.info(f"Event triggered on zone {chekt_zone} for device {device_id}, but response is not JSON. Response: {response.text}")
+                logger.info(f"Event triggered on zone '{chekt_zone}' for device '{device_id}', but response is not JSON. Response: {response.text}")
             else:
-                logger.error(f"Failed to trigger event. Status code: {response.status_code}, Response text: {response.text}")
-                
+                logger.error(f"Failed to trigger event on zone '{chekt_zone}' for device '{device_id}'. "
+                             f"Status code: {response.status_code}, Response text: {response.text}")
+
     except requests.exceptions.RequestException as e:
-        logger.error(f"Request error while triggering CHEKT event for device {device_id}: {str(e)}")
+        logger.error(f"Request error while triggering CHEKT event for device '{device_id}': {str(e)}")
     except json.JSONDecodeError as e:
-        logger.error(f"JSON decode error while parsing CHEKT event response: {str(e)}")
+        logger.error(f"JSON decode error while parsing CHEKT event response for device '{device_id}': {str(e)}")
+    except Exception as e:
+        logger.error(f"Unexpected error in trigger_chekt_event for device '{device_id}': {str(e)}")
 
 def send_sia_message(device_id, event_description, zone, sia_config, event_type="BA"):
     """
@@ -939,34 +936,75 @@ def send_sia_message(device_id, event_description, zone, sia_config, event_type=
         # Retrieve required SIA configuration parameters
         account_id = sia_config.get('account_id')
         transmitter_id = sia_config.get('transmitter_id')
-        contact_id = sia_config.get('contact_id', 'BA')  # Default to 'BA' (Burglary Alarm)
         encryption_key_hex = sia_config.get('encryption_key', '')
         sia_ip = sia_config.get('ip')
         sia_port = int(sia_config.get('port', 0))
 
-        if not sia_ip or not sia_port or not account_id or not transmitter_id:
         if not all([sia_ip, sia_port, account_id, transmitter_id]):
             logger.error("SIA configuration is incomplete.")
             return
 
         # Create the SIA message
-        # Default to BA for Burglary Alarm if no specific event type is specified
         contact_id = event_type  # "BA" for burglary alarms, "OA" for Open Alarm, "CA" for Close Alarm, etc.
 
         # Construct the SIA message
         message = f'"{account_id}" {transmitter_id} {contact_id} {zone} {event_description}\r\n'
 
-        # Encrypt the message if encryption key is provided
         # Encrypt the message if an encryption key is provided
         if encryption_key_hex:
             encryption_key = unhexlify(encryption_key_hex)
             cipher = Cipher(algorithms.AES(encryption_key), modes.CBC(b'\x00' * 16), backend=default_backend())
             encryptor = cipher.encryptor()
-            # Pad the message to be multiple of block size (16 bytes)
-            # Pad the message to be a multiple of 16 bytes
+            # Pad the message to be a multiple of 16 bytes (AES block size)
             pad_length = 16 - (len(message) % 16)
             padded_message = message + chr(pad_length) * pad_length
             encrypted_message = encryptor.update(padded_message.encode()) + encryptor.finalize()
+            final_message = encrypted_message
+            logger.debug(f"Encrypted SIA message: {hexlify(encrypted_message).decode()}")
+        else:
+            final_message = message.encode()
+            logger.debug(f"SIA message without encryption: {message.strip()}")
+
+        # Establish TCP connection and send the message
+        with socket.create_connection((sia_ip, sia_port), timeout=10) as sock:
+            sock.sendall(final_message)
+            logger.info(f"SIA message sent to {sia_ip}:{sia_port} for device '{device_id}'.")
+    
+    except socket.timeout:
+        logger.error(f"Timeout while connecting to SIA server at {sia_ip}:{sia_port}.")
+    except socket.error as e:
+        logger.error(f"Socket error while sending SIA message: {str(e)}")
+    except Exception as e:
+        logger.error(f"Unexpected error in send_sia_message for device '{device_id}': {str(e)}")
+
+@app.route('/check_chekt_status', methods=['GET'])  # ADDED
+def check_chekt_status():
+    """
+    Attempt to connect to the CHEKT server via TCP to verify that we can reach it.
+    """
+    config = load_config()
+    chekt_config = config.get("chekt", {})
+    ip = chekt_config.get("ip")
+    port = chekt_config.get("port")
+
+    if not ip or not port:
+        logger.error("CHEKT IP or Port not configured or missing in config.yaml.")
+        return jsonify({"status": "error", "message": "CHEKT IP/Port not configured."}), 400
+
+    try:
+        # Attempt a short TCP connection to verify the CHEKT server is reachable
+        with socket.create_connection((ip, int(port)), timeout=5):
+            logger.info(f"Successfully connected to CHEKT at {ip}:{port}")
+        return jsonify({"status": "success", "message": "Successfully connected to CHEKT server."})
+    except socket.timeout:
+        logger.error(f"Timeout while connecting to CHEKT server at {ip}:{port}.")
+        return jsonify({"status": "error", "message": "Connection to CHEKT server timed out."}), 500
+    except socket.error as e:
+        logger.error(f"Socket error while connecting to CHEKT server: {str(e)}")
+        return jsonify({"status": "error", "message": f"Failed to connect to CHEKT server: {str(e)}"}), 500
+    except Exception as e:
+        logger.error(f"Unexpected error while connecting to CHEKT server: {str(e)}")
+        return jsonify({"status": "error", "message": f"Unexpected error: {str(e)}"}), 500
 
 @app.route('/save_zone', methods=['POST'])
 def save_zone():
