@@ -165,7 +165,7 @@ def send_home_info_via_mqtt():
     secret_key = config_data.get("yolink", {}).get("secret_key")
 
     if not home_id or not uaid or not secret_key:
-        logger.error("Missing home_id, uaid, or secret_key in configuration.")
+        logger.debug("Skipping send_home_info_via_mqtt(): missing home_id or YoLink credentials.")
         return
 
     payload = {
