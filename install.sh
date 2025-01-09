@@ -1,9 +1,27 @@
 #!/bin/bash
 
-# Define variables
-REPO_URL="https://github.com/lazerusrm/yolink-chekt/archive/refs/heads/main.zip"
-APP_DIR="/opt/yolink-chekt"
-DOCKER_COMPOSE_VERSION="v2.29.5"
+# Ensure the script is run with bash
+if [ -z "$BASH_VERSION" ]; then
+  echo "Please run this script with bash."
+  exit 1
+fi
+
+# Check if the script is run as root
+if [ "$EUID" -ne 0 ]; then
+  echo "Please run as root or use sudo."
+  exit 1
+fi
+
+# Define variables with defaults
+REPO_URL="${REPO_URL:-https://github.com/lazerusrm/yolink-chekt/archive/refs/heads/main.zip}"
+APP_DIR="${APP_DIR:-/opt/yolink-chekt}"
+DOCKER_COMPOSE_VERSION="${DOCKER_COMPOSE_VERSION:-v2.29.5}"
+
+LOG_FILE="/var/log/yolink-installer.log"
+exec > >(tee -i $LOG_FILE)
+exec 2>&1
+
+echo "Starting Yolink CHEKT Installer at $(date)"
 
 # Update package list
 apt-get update || { echo "apt-get update failed."; exit 1; }

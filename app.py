@@ -25,15 +25,34 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes  # 
 from cryptography.hazmat.backends import default_backend
 from binascii import hexlify, unhexlify
 
+# ------------------------------------------------------------------------------
+# 1. Update Logging Configuration to Use a Relative Path (./logs) by Default
+# ------------------------------------------------------------------------------
+LOG_DIR = os.getenv("LOG_DIR", "./logs")  # Use environment variable if set, otherwise ./logs
+os.makedirs(LOG_DIR, exist_ok=True)
+
+log_file = os.path.join(LOG_DIR, "application.log")
+
+# Configure logging to write to both file and console
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler(log_file),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger()
+
+# ------------------------------------------------------------------------------
 # Initialize Flask app
+# ------------------------------------------------------------------------------
 app = Flask(__name__)
 app.secret_key = secrets.token_hex(32)  # Generate a secure, random 32-byte hex key
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', filename='application.log')
-logger = logging.getLogger()
-
+# ------------------------------------------------------------------------------
 # Global variables and configurations
+# ------------------------------------------------------------------------------
 mqtt_client_instance = None  # Global variable to store the YoLink MQTT client instance
 monitor_mqtt_client = None  # Global variable to store the MQTT client instance for monitor.industrialcamera.com
 temp_user_data = {}  # Holds temporary data for users not yet verified
@@ -51,19 +70,25 @@ bcrypt = Bcrypt(app)
 login_manager = LoginManager(app)
 login_manager.login_view = 'login'  # Redirect to login page if not logged in
 
+# ------------------------------------------------------------------------------
 # Define a User class for Flask-Login
+# ------------------------------------------------------------------------------
 class User(UserMixin):
     def __init__(self, username):
         self.id = username  # Flask-Login requires that the `id` property be set
 
+# ------------------------------------------------------------------------------
 # Implement the user_loader function
+# ------------------------------------------------------------------------------
 @login_manager.user_loader
 def load_user(username):
     if username in users_db:
         return User(username)
     return None
 
-# Load configuration
+# ------------------------------------------------------------------------------
+# Load & Save Configuration
+# ------------------------------------------------------------------------------
 def load_config():
     global config_data, users_db
     if os.path.exists(config_file):
@@ -94,41 +119,40 @@ def load_config():
     users_db = config_data.get('users', {})
     return config_data
 
-# Save configuration
 def save_config(data):
     global config_data
     config_data.update(data)
     with open(config_file, 'w') as file:
         yaml.dump(config_data, file)
 
-# Generic load function for other YAML files
 def load_yaml(file_path):
     if os.path.exists(file_path):
         with open(file_path, 'r') as yaml_file:
             return yaml.safe_load(yaml_file)
     return {}
 
-# Generic save function for other YAML files
 def save_to_yaml(file_path, data):
     with open(file_path, 'w') as yaml_file:
         yaml.dump(data, yaml_file)
 
+# ------------------------------------------------------------------------------
 # Helper function to get the monitor API key (deprecated if using MQTT)
+# ------------------------------------------------------------------------------
 def get_monitor_api_key():
     return os.getenv('MONITOR_API_KEY') or config_data.get('monitor', {}).get('api_key')
 
-# Monitor API key (if needed)
 monitor_api_key = get_monitor_api_key()
 
-# Remove send_data_to_monitor function if not needed
 def send_data_to_monitor(data):
     # Deprecated if using MQTT
     pass
 
+# ------------------------------------------------------------------------------
+# Example function to send Home info via MQTT
+# ------------------------------------------------------------------------------
 def send_home_info_via_mqtt():
     global mqtt_client_instance
 
-    # Load configuration
     home_id = config_data.get("home_id")
     uaid = config_data.get("yolink", {}).get("uaid")
     secret_key = config_data.get("yolink", {}).get("secret_key")
@@ -137,24 +161,22 @@ def send_home_info_via_mqtt():
         logger.error("Missing home_id, uaid, or secret_key in configuration.")
         return
 
-    # Construct the payload
     payload = {
         "home_id": home_id,
         "uaid": uaid,
         "secret_key": secret_key
     }
-
-    # Define the topic
     topic = f"homes/{home_id}/info"
 
     try:
-        # Publish the message with retain=True
         mqtt_client_instance.publish(topic, json.dumps(payload), retain=True)
         logger.info(f"Sent home info to topic {topic}")
     except Exception as e:
         logger.error(f"Error sending home info via MQTT: {str(e)}")
 
-# YoLink Token Management Functions
+# ------------------------------------------------------------------------------
+# YoLink Token Management
+# ------------------------------------------------------------------------------
 def is_token_expired():
     expiry_time = config_data['yolink'].get('token_expiry', 0)
     current_time = time.time()
@@ -174,12 +196,9 @@ def generate_yolink_token(uaid, secret_key):
 
             if token:
                 expiry_time = time.time() + expires_in - 60  # Subtract 60 seconds for early refresh
-
-                # Store token and expiry time in config
                 config_data['yolink']['token'] = token
                 config_data['yolink']['token_expiry'] = expiry_time
                 save_config(config_data)
-
                 return token
             else:
                 logger.error("Failed to obtain YoLink token. Check UAID and Secret Key.")
@@ -193,7 +212,7 @@ def handle_token_expiry():
     token = generate_yolink_token(config_data['yolink']['uaid'], config_data['yolink']['secret_key'])
     if token:
         config_data['yolink']['token'] = token
-        save_config(config_data)  # Save the updated token
+        save_config(config_data)
         return token
     else:
         logger.error("Failed to generate a new YoLink token.")
@@ -201,8 +220,6 @@ def handle_token_expiry():
 
 def force_generate_token_and_client():
     config = load_config()
-
-    # Check if token is expired or missing
     if is_token_expired():
         token = generate_yolink_token(config['yolink']['uaid'], config['yolink']['secret_key'])
         if not token:
@@ -211,10 +228,12 @@ def force_generate_token_and_client():
     else:
         token = config['yolink']['token']
 
-    # Always generate a new client ID for MQTT
     client_id = str(uuid.uuid4())
     return token, client_id
 
+# ------------------------------------------------------------------------------
+# Timezone Conversion
+# ------------------------------------------------------------------------------
 def convert_to_timezone(timestamp):
     timezone_name = config_data.get('timezone', 'UTC')
     try:
@@ -225,49 +244,44 @@ def convert_to_timezone(timestamp):
     utc_time = datetime.fromtimestamp(timestamp, pytz.UTC)
     return utc_time.astimezone(target_timezone)
 
+# ------------------------------------------------------------------------------
+# Device Data Updates
+# ------------------------------------------------------------------------------
 def update_device_data(device_id, payload):
     logger.info(f"Updating device data for Device ID: {device_id}")
 
-    # Load the devices.yaml file
     timezone_name = config_data.get('timezone', 'UTC')
     devices_data = load_yaml(devices_file) or {'devices': []}
-
     now = datetime.now(pytz.timezone(timezone_name)).strftime('%Y-%m-%dT%H:%M:%S')
 
-    # Find the device in devices.yaml based on the device ID
     device_found = False
     for device in devices_data.get('devices', []):
         if device['deviceId'] == device_id:
             device_found = True
-
-            # Update common fields like state, battery, etc.
             device['state'] = payload['data'].get('state', device.get('state', 'unknown'))
             device['battery'] = payload['data'].get('battery', device.get('battery', 'unknown'))
 
-            # Check if temperature and humidity data are present and update accordingly
+            # Temperature / Humidity
             if 'temperature' in payload['data']:
                 temperature = payload['data'].get('temperature')
-                mode = payload['data'].get('mode', 'c')  # Default to Celsius if mode is not present
-
+                mode = payload['data'].get('mode', 'c')
                 if temperature is not None:
-                    if mode == 'c':  # Convert from Celsius to Fahrenheit if mode is 'c'
+                    if mode == 'c':
                         device['temperature'] = celsius_to_fahrenheit(temperature)
                     else:
                         device['temperature'] = temperature
                 else:
                     device['temperature'] = 'unknown'
 
-            # Handle humidity, if available
             if 'humidity' in payload['data']:
                 device['humidity'] = payload['data'].get('humidity', device.get('humidity', 'unknown'))
             else:
                 device['humidity'] = 'unknown'
 
-            # Capture the alarm limits for temperature and humidity
             device['tempLimit'] = payload['data'].get('tempLimit', device.get('tempLimit', {'max': None, 'min': None}))
             device['humidityLimit'] = payload['data'].get('humidityLimit', device.get('humidityLimit', {'max': None, 'min': None}))
 
-            # Handle alarm conditions
+            # Alarms
             if 'alarm' in payload['data']:
                 alarm_data = payload['data'].get('alarm', {})
                 device['alarm'] = {
@@ -286,14 +300,14 @@ def update_device_data(device_id, payload):
                     'highHumidity': False,
                 }
 
-            # Update signal strength from LoRa info
+            # Signal Strength
             lora_info = payload['data'].get('loraInfo', {})
             if 'signal' in lora_info:
                 device['signal'] = lora_info.get('signal')
             else:
                 device['signal'] = 'unknown'
 
-            # Update the last seen timestamp
+            # Last seen
             device['last_seen'] = now
 
             # Prepare the data to send to the monitoring server
@@ -318,13 +332,14 @@ def update_device_data(device_id, payload):
     if not device_found:
         logger.warning(f"Device {device_id} not found in devices.yaml.")
 
-    # Save the updated devices.yaml
     save_to_yaml(devices_file, devices_data)
 
-# Helper function to convert Celsius to Fahrenheit
 def celsius_to_fahrenheit(celsius):
     return (celsius * 9/5) + 32
 
+# ------------------------------------------------------------------------------
+# YoLink API Class
+# ------------------------------------------------------------------------------
 class YoLinkAPI:
     def __init__(self, token):
         self.base_url = "https://api.yosmart.com/open/yolink/v2/api"
@@ -374,7 +389,9 @@ class YoLinkAPI:
             logger.error(f"Error retrieving device list: {str(e)}")
             return None
 
-# Authentication routes and functions
+# ------------------------------------------------------------------------------
+# Authentication Routes
+# ------------------------------------------------------------------------------
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if current_user.is_authenticated:
@@ -386,7 +403,7 @@ def login():
         password = request.form.get('password')
         totp_code = request.form.get('totp_code')
 
-        # Check for TOTP submission if password already verified
+        # TOTP step
         if session.get('password_verified') == username:
             user = users_db.get(username)
             if user and 'totp_secret' in user:
@@ -400,10 +417,9 @@ def login():
                     flash('Invalid TOTP code. Please try again.')
                     return render_template('login.html', totp_required=True, username=username)
 
-        # Handle initial login with username and password
+        # Initial login with username/password
         if username and username in users_db:
             user = users_db[username]
-
             if bcrypt.check_password_hash(user['password'], password):
                 session['password_verified'] = username
                 return render_template('login.html', totp_required=True, username=username)
@@ -425,18 +441,13 @@ def logout():
 def setup_totp(username):
     if request.method == 'POST':
         totp_code = request.form['totp_code']
-
-        # Retrieve the temporary TOTP secret generated during user creation
         user = temp_user_data.get(username)
         if user:
             totp = pyotp.TOTP(user['totp_secret'])
             if totp.verify(totp_code):
-                # Verification successful - move user to users_db and save to config.yaml
                 users_db[username] = user
                 config_data['users'] = users_db
                 save_config(config_data)
-
-                # Clean up temporary data and confirm success
                 temp_user_data.pop(username, None)
                 flash('TOTP setup complete. You can now log in.')
                 return redirect(url_for('login'))
@@ -444,12 +455,11 @@ def setup_totp(username):
                 flash('Invalid TOTP code. Please try again.')
                 return redirect(url_for('setup_totp', username=username))
 
-    # For GET requests, generate the QR code only if the user hasn’t been verified yet
+    # Generate the QR code for TOTP
     if username not in users_db and username in temp_user_data:
         totp_secret = temp_user_data[username]['totp_secret']
         otp_uri = pyotp.TOTP(totp_secret).provisioning_uri(username, issuer_name="YoLink-Monitor")
 
-        # Generate and encode the QR code
         qr = qrcode.make(otp_uri)
         img_io = io.BytesIO()
         qr.save(img_io, 'PNG')
@@ -461,25 +471,6 @@ def setup_totp(username):
     flash('User not found or already configured.')
     return redirect(url_for('login'))
 
-@app.route('/config')
-@login_required
-def config():
-    # Load devices and mappings from YAML files
-    devices_data = load_devices()  # Load devices.yaml
-    mappings_data = load_mappings()  # Load mappings.yaml
-
-    devices = devices_data.get('devices', [])
-    mappings = mappings_data.get('mappings', []) if mappings_data else []
-
-    # Prepare a dictionary to easily access the mappings by device ID
-    device_mappings = {m['yolink_device_id']: m for m in mappings}
-
-    # Load configuration for pre-filling the form
-    config_data = load_config()
-
-    return render_template('config.html', devices=devices, mappings=device_mappings, config=config_data)
-
-# User creation
 @app.route('/create_user', methods=['GET', 'POST'])
 def create_user():
     if request.method == 'POST':
@@ -492,7 +483,6 @@ def create_user():
         hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
         totp_secret = pyotp.random_base32()
 
-        # Temporarily store user in temp_user_data until TOTP setup is complete
         temp_user_data[username] = {
             'password': hashed_password,
             'totp_secret': totp_secret
@@ -502,30 +492,34 @@ def create_user():
 
     return render_template('create_user.html')
 
-# Configuration routes and functions
+# ------------------------------------------------------------------------------
+# Configuration Routes
+# ------------------------------------------------------------------------------
+@app.route('/config')
+@login_required
+def config():
+    devices_data = load_devices()
+    mappings_data = load_mappings()
+    devices = devices_data.get('devices', [])
+    mappings = mappings_data.get('mappings', []) if mappings_data else []
+
+    device_mappings = {m['yolink_device_id']: m for m in mappings}
+    config_data = load_config()
+
+    return render_template('config.html', devices=devices, mappings=device_mappings, config=config_data)
+
 @app.route('/save_config', methods=['POST'])
 def save_config_route():
     try:
-        # Get the incoming configuration data from the POST request
         new_config_data = request.get_json()
-
         if not new_config_data:
             return jsonify({"status": "error", "message": "Invalid or empty configuration data."}), 400
 
-        # Log the received configuration for debugging
         logger.debug(f"Received configuration data: {new_config_data}")
-
-        # Load existing configuration
         current_config = load_config()
-
-        # Update the configuration with new values
         current_config.update(new_config_data)
-
-        # Save the updated configuration to the config.yaml file
         save_config(current_config)
-
         return jsonify({"status": "success", "message": "Configuration saved successfully."})
-
     except Exception as e:
         logger.error(f"Error saving configuration: {str(e)}", exc_info=True)
         return jsonify({"status": "error", "message": "Internal Server Error"}), 500
@@ -533,33 +527,25 @@ def save_config_route():
 @app.route('/save_mapping', methods=['POST'])
 def save_mapping():
     try:
-        # Get the incoming mappings data from the POST request
         new_mappings = request.get_json()
         if not new_mappings or 'mappings' not in new_mappings:
             logger.error(f"Invalid or empty mappings received: {new_mappings}")
             return jsonify({"status": "error", "message": "Invalid mappings data."}), 400
 
         logger.debug(f"Received new mappings: {new_mappings}")
-
-        # Load the existing mappings from the file
         existing_mappings = load_yaml(mappings_file) or {'mappings': []}
 
-        # Iterate over the new mappings and update or append them to the existing mappings
         for new_mapping in new_mappings['mappings']:
             device_id = new_mapping.get('yolink_device_id')
             existing_mapping = next((m for m in existing_mappings['mappings'] if m['yolink_device_id'] == device_id), None)
-
             if existing_mapping:
                 existing_mapping.update(new_mapping)
             else:
                 existing_mappings['mappings'].append(new_mapping)
 
-        # Save the updated mappings back to the file
         save_to_yaml(mappings_file, existing_mappings)
         logger.debug(f"Updated mappings: {existing_mappings}")
-
         return jsonify({"status": "success", "message": "Mapping saved successfully."})
-
     except Exception as e:
         logger.error(f"Error in save_mapping: {str(e)}", exc_info=True)
         return jsonify({"status": "error", "message": "Internal Server Error"}), 500
@@ -573,37 +559,27 @@ def refresh_yolink_devices():
         return jsonify({"status": "error", "message": "No token available. Please generate a token first."})
 
     yolink_api = YoLinkAPI(token)
-
-    # Fetch home info
     home_info = yolink_api.get_home_info()
     if not home_info or home_info.get("code") != "000000":
         return jsonify({"status": "error", "message": f"Failed to retrieve home info: {home_info.get('desc', 'Unknown error')}"})
 
     home_id = home_info["data"]["id"]
-
-    # Fetch devices from YoLink API
     devices = yolink_api.get_device_list()
     if not devices or devices.get("code") != "000000":
         return jsonify({"status": "error", "message": f"Failed to retrieve devices: {devices.get('desc', 'Unknown error')}"})
 
-    # Load the existing devices.yaml
     existing_devices_data = load_yaml(devices_file) or {}
-    existing_devices = {device['deviceId']: device for device in existing_devices_data.get('devices', [])}
+    existing_devices = {d['deviceId']: d for d in existing_devices_data.get('devices', [])}
 
-    # Load existing mappings to preserve zones
     mappings_data = load_yaml(mappings_file) or {'mappings': []}
     mappings_dict = {m['yolink_device_id']: m for m in mappings_data.get('mappings', [])}
 
-    # Merge new device list with existing devices to retain dynamic fields
     new_devices = []
     for device in devices["data"]["devices"]:
         device_id = device["deviceId"]
-
-        # Fetch the device name and signal strength from the API response
         device_name = device.get('name', f"Device {device_id[-4:]}")
         signal_strength = device.get('loraInfo', {}).get('signal', 'unknown')
 
-        # Initialize new device structure with default values
         device_data = {
             'deviceId': device_id,
             'name': device_name,
@@ -625,7 +601,6 @@ def refresh_yolink_devices():
         }
 
         if device_id in existing_devices:
-            # Preserve dynamic fields from existing devices
             existing_device = existing_devices[device_id]
             device_data.update({
                 'state': existing_device.get('state', 'unknown'),
@@ -639,37 +614,26 @@ def refresh_yolink_devices():
                 'last_seen': existing_device.get('last_seen', 'never')
             })
 
-        # Update mappings with SIA fields if they exist, or initialize if not
         if device_id in mappings_dict:
             mapping = mappings_dict[device_id]
-            mapping['sia_zone_description'] = device_name  # Map device name to SIA zone description
-            mapping['sia_signal_strength'] = signal_strength  # Map signal strength to SIA signal strength
+            mapping['sia_zone_description'] = device_name
+            mapping['sia_signal_strength'] = signal_strength
         else:
             mappings_data['mappings'].append({
                 'yolink_device_id': device_id,
-                'sia_zone': '',  # Populate if needed
+                'sia_zone': '',
                 'sia_zone_description': device_name,
                 'sia_signal_strength': signal_strength,
                 'chekt_zone': 'N/A'
             })
 
-        # Add chekt_zone from mappings if available
         device_data['chekt_zone'] = mappings_dict.get(device_id, {}).get('chekt_zone', 'N/A')
-
-        # Add device to the new devices list
         new_devices.append(device_data)
 
-    # Save the merged device data back to devices.yaml
-    data_to_save = {
-        "homes": {"id": home_id},
-        "devices": new_devices
-    }
+    data_to_save = {"homes": {"id": home_id}, "devices": new_devices}
     save_to_yaml(devices_file, data_to_save)
-
-    # Save updated mappings to mappings.yaml
     save_to_yaml(mappings_file, mappings_data)
 
-    # Restart the MQTT client after refreshing devices
     if mqtt_client_instance:
         mqtt_client_instance.disconnect()
         mqtt_client_instance.loop_stop()
@@ -683,8 +647,8 @@ def refresh_yolink_devices():
 @app.route('/get_logs', methods=['GET'])
 def get_logs():
     try:
-        with open('application.log', 'r') as log_file:
-            logs = log_file.read()
+        with open(log_file, 'r') as lf:
+            logs = lf.read()
         return jsonify({"status": "success", "logs": logs})
     except FileNotFoundError:
         return jsonify({"status": "error", "message": "Log file not found."})
@@ -730,15 +694,13 @@ def get_sensor_data():
 
     return jsonify({'devices': all_sensors})
 
-# Load devices from devices.yaml
 def load_devices():
     try:
         with open(devices_file, 'r') as file:
             return yaml.safe_load(file) or {}
     except FileNotFoundError:
-        return {'devices': []}  # Return empty devices list if file is missing
+        return {'devices': []}
 
-# Load mappings from mappings.yaml with additional logging
 def load_mappings():
     try:
         with open(mappings_file, 'r') as yaml_file:
@@ -754,14 +716,14 @@ def load_mappings():
 def config_html():
     devices_data = load_devices()
     mappings_data = load_mappings()
-
     devices = devices_data.get('devices', [])
     device_mappings = {m['yolink_device_id']: m for m in mappings_data.get('mappings', [])}
     config_data = load_config()
-
     return render_template('config.html', devices=devices, mappings=device_mappings, config=config_data)
 
+# ------------------------------------------------------------------------------
 # MQTT Configuration and Callbacks for YoLink
+# ------------------------------------------------------------------------------
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
         logger.info(f"Successfully connected to YoLink MQTT broker. Subscribing to topic: {userdata['topic']}")
@@ -771,38 +733,29 @@ def on_connect(client, userdata, flags, rc):
 
 def on_message(client, userdata, msg):
     logger.info(f"Received message on topic {msg.topic}")
-
     try:
-        # Parse payload
         payload = json.loads(msg.payload.decode("utf-8"))
         device_id = payload.get('deviceId')
         state = payload['data'].get('state', 'Unknown state')
         event_type = payload.get('event', 'Unknown event').lower()
 
-        # Log essential device information
         if device_id:
             logger.info(f"Device ID: {device_id}, State: {state}, Event Type: {event_type}")
             update_device_data(device_id, payload)
 
-            # Check if the event is an alert or should trigger based on state
             if "alert" in event_type or state in ['open', 'closed', 'alert']:
                 device_type = parse_device_type(event_type, payload)
-
-                # Only log when the device event should trigger an action
                 if device_type and should_trigger_event(state, device_type):
-                    # Validate receiver type and set to CHEKT by default if invalid
                     receiver_type = config_data.get("receiver_type", "CHEKT").upper()
                     if receiver_type not in ["CHEKT", "SIA"]:
                         receiver_type = "CHEKT"
 
-                    # Retrieve zone from mappings without logging the full data
                     mappings_data = load_mappings()
                     mapping = next((m for m in mappings_data.get('mappings', []) if m['yolink_device_id'] == device_id), None)
 
                     if mapping:
-                        # Select the correct zone for the configured receiver type
                         zone = mapping.get('chekt_zone' if receiver_type == "CHEKT" else 'sia_zone')
-                        if zone and zone.strip():  # Ensure zone is valid
+                        if zone and zone.strip():
                             logger.info(f"Triggering {receiver_type} alert in zone {zone} for device {device_id}")
                             trigger_alert(device_id, state, device_type)
                         else:
@@ -815,11 +768,9 @@ def on_message(client, userdata, msg):
                 logger.debug(f"Non-alert event received for device {device_id}. State updated only.")
         else:
             logger.warning("Message received without device ID.")
-
     except Exception as e:
         logger.error(f"Error processing message: {str(e)}")
 
-# Helper functions for event handling
 def parse_device_type(event_type, payload):
     if "motionsensor" in event_type.lower():
         return 'motion'
@@ -862,22 +813,17 @@ def get_zone(device_id):
 
 def trigger_alert(device_id, state, device_type):
     event_description = map_state_to_event(state, device_type)
-
-    # Retrieve receiver_type from config
     receiver_type = config_data.get("receiver_type", "CHEKT").upper()
     if receiver_type not in ["CHEKT", "SIA"]:
         logger.error(f"Invalid receiver type in config: {receiver_type}. Defaulting to CHEKT.")
         receiver_type = "CHEKT"
 
-    # Load mappings and retrieve the correct zone based on receiver type
     mappings_data = load_mappings()
     mapping = next((m for m in mappings_data.get('mappings', []) if m['yolink_device_id'] == device_id), None)
-
     if not mapping:
         logger.warning(f"No mapping found for device {device_id}")
         return
 
-    # Determine the correct zone based on the receiver type
     if receiver_type == "CHEKT":
         chekt_zone = mapping.get('chekt_zone')
         if chekt_zone and chekt_zone.strip() and chekt_zone != 'N/A':
@@ -894,16 +840,13 @@ def trigger_alert(device_id, state, device_type):
             send_sia_message(device_id, event_description, sia_zone, sia_config)
         else:
             logger.warning(f"No valid SIA zone found for device {device_id}. Mapping details: {mapping}")
-
     else:
         logger.error(f"Unknown receiver type: {receiver_type}")
 
-# CHEKT Function, triggers associated zone from device field.
 def trigger_chekt_event(device_id, event_description, chekt_zone):
     # Implement your CHEKT event trigger logic here
     pass
 
-# SIA Functions
 def send_sia_message(device_id, event_description, zone, sia_config, event_type="BA"):
     # Implement your SIA message sending logic here
     pass
@@ -917,42 +860,34 @@ def save_zone():
     if not device_id:
         return jsonify({'status': 'error', 'message': 'Device ID is required.'}), 400
 
-    # Load configuration to determine the receiver type
     config_data = load_config()
     receiver_type = config_data.get("receiver_type", "CHEKT").upper()
 
-    # Load mappings file
     try:
         mappings_data = load_mappings()
     except Exception as e:
         return jsonify({'status': 'error', 'message': f'Error loading mappings: {str(e)}'}), 500
 
-    # Determine the target key based on receiver type
     target_zone_key = 'chekt_zone' if receiver_type == 'CHEKT' else 'sia_zone'
     target_description_key = 'zone_description' if receiver_type == 'CHEKT' else 'sia_zone_description'
     mappings_list = mappings_data.get('mappings', [])
 
-    # Find any existing mapping for the device
     existing_mapping = next((m for m in mappings_list if m['yolink_device_id'] == device_id), None)
 
-    # Handle case where zone is blank (remove the device from mapping)
     if zone == "":
         if existing_mapping:
-            mappings_list.remove(existing_mapping)  # Remove the device mapping if it exists
+            mappings_list.remove(existing_mapping)
     else:
-        # If zone is specified, update or add it to the mapping
         if existing_mapping:
-            existing_mapping[target_zone_key] = zone  # Update the appropriate zone field
+            existing_mapping[target_zone_key] = zone
             existing_mapping[target_description_key] = data.get('description', 'Unknown Zone')
         else:
-            # Add a new mapping with the appropriate zone and description
             mappings_list.append({
                 'yolink_device_id': device_id,
                 target_zone_key: zone,
                 target_description_key: data.get('description', 'Unknown Zone')
             })
 
-    # Save the updated mappings back to mappings.yaml
     mappings_data['mappings'] = mappings_list
     try:
         save_mappings(mappings_data)
@@ -961,7 +896,6 @@ def save_zone():
 
     return jsonify({'status': 'success', 'message': f'{receiver_type} zone saved successfully.'}), 200
 
-# Function to save mappings to mappings.yaml
 def save_mappings(data):
     try:
         with open(mappings_file, 'w') as yaml_file:
@@ -970,7 +904,9 @@ def save_mappings(data):
     except Exception as e:
         logger.error(f"Error saving mappings: {str(e)}")
 
-# Periodic Tasks
+# ------------------------------------------------------------------------------
+# Periodic Tasks (If Needed)
+# ------------------------------------------------------------------------------
 def check_sensor_last_seen():
     # Implement your sensor checking logic here
     pass
@@ -979,52 +915,44 @@ def send_monthly_test_signal():
     # Implement your monthly test signal logic here
     pass
 
+# ------------------------------------------------------------------------------
+# Main MQTT Client Loop
+# ------------------------------------------------------------------------------
 def run_mqtt_client():
     global mqtt_client_instance
-
     config = load_config()
-
     try:
-        # Generate new token and client ID
         token, client_id = force_generate_token_and_client()
         if not token:
             logger.error("Failed to obtain a valid YoLink token. MQTT client will not start.")
             return
 
-        # Load Home ID from devices.yaml
         devices_data = load_yaml(devices_file)
         home_id = devices_data.get('homes', {}).get('id')
         if not home_id:
             logger.error("Home ID not found in devices.yaml. Please refresh YoLink devices.")
             return
 
-        # Fetch MQTT configuration
         mqtt_broker_url = config['mqtt']['url'].replace("mqtt://", "")
         mqtt_broker_port = int(config['mqtt']['port'])
         mqtt_topic = config['mqtt']['topic'].replace("${Home ID}", home_id)
 
-        # Set up the MQTT client and subscribe to the correct topic
         mqtt_client = mqtt.Client(client_id=client_id, userdata={"topic": mqtt_topic})
         mqtt_client.on_connect = on_connect
         mqtt_client.on_message = on_message
-
-        # Set up MQTT credentials with the YoLink token
         mqtt_client.username_pw_set(username=token, password=None)
 
-        # Update the global variable for the MQTT client
         mqtt_client_instance = mqtt_client
-
-        # Connect to the MQTT broker
         logger.info(f"Connecting to MQTT broker at {mqtt_broker_url} on port {mqtt_broker_port}")
         mqtt_client.connect(mqtt_broker_url, mqtt_broker_port)
-
-        # Start the MQTT loop
         mqtt_client.loop_forever()
 
     except Exception as e:
         logger.error(f"MQTT client encountered an error: {str(e)}")
 
-# Monitor MQTT Client Initialization and Callbacks
+# ------------------------------------------------------------------------------
+# Monitor MQTT Client
+# ------------------------------------------------------------------------------
 def initialize_monitor_mqtt_client():
     global monitor_mqtt_client
     config = load_config()
@@ -1036,7 +964,6 @@ def initialize_monitor_mqtt_client():
     mqtt_password = mqtt_config.get('password')
     mqtt_client_id = mqtt_config.get('client_id', 'monitor_client_id')
 
-    # Set up the MQTT client
     monitor_mqtt_client = mqtt.Client(client_id=mqtt_client_id)
     if mqtt_username and mqtt_password:
         monitor_mqtt_client.username_pw_set(mqtt_username, mqtt_password)
@@ -1044,7 +971,6 @@ def initialize_monitor_mqtt_client():
     monitor_mqtt_client.on_connect = on_monitor_mqtt_connect
     monitor_mqtt_client.on_message = on_monitor_mqtt_message
 
-    # Connect to the MQTT broker
     logger.info(f"Connecting to monitor MQTT broker at {mqtt_broker_url}:{mqtt_broker_port}")
     try:
         monitor_mqtt_client.connect(mqtt_broker_url, mqtt_broker_port)
@@ -1055,7 +981,6 @@ def initialize_monitor_mqtt_client():
 def on_monitor_mqtt_connect(client, userdata, flags, rc):
     if rc == 0:
         logger.info("Connected to monitor MQTT broker successfully.")
-        # Subscribe to topics if you need to receive messages
         client.subscribe('monitor/commands')
     else:
         logger.error(f"Failed to connect to monitor MQTT broker. Return code: {rc}")
@@ -1068,11 +993,9 @@ def on_monitor_mqtt_message(client, userdata, msg):
 def handle_monitor_mqtt_message(topic, payload):
     command = payload.get('command')
     if command == 'arm':
-        # Implement your arm logic here
         logger.info("Arming the system as per monitor server command.")
         system_status['armed'] = True
     elif command == 'disarm':
-        # Implement your disarm logic here
         logger.info("Disarming the system as per monitor server command.")
         system_status['armed'] = False
     else:
@@ -1101,19 +1024,18 @@ def trigger_monitor_event(device_id, event_description, data=None):
         payload.update(data)
     publish_to_monitor(topic, payload)
 
+# ------------------------------------------------------------------------------
+# Main Entry Point
+# ------------------------------------------------------------------------------
 @app.route('/')
 @login_required
 def index():
     devices_data = load_yaml(devices_file)
     mappings_data = load_yaml(mappings_file)
-
     devices = devices_data.get('devices', [])
     mappings = mappings_data.get('mappings', {}) if mappings_data else {}
 
-    # Prepare a dictionary to easily access the mappings by device ID
     device_mappings = {m['yolink_device_id']: m for m in mappings}
-
-    # Load configuration for pre-filling the form
     config_data = load_config()
 
     return render_template('index.html', devices=devices, mappings=device_mappings, config=config_data)
@@ -1121,7 +1043,7 @@ def index():
 if __name__ == "__main__":
     load_config()
 
-    # Start background tasks
+    # Optionally start background tasks:
     # check_sensor_last_seen()
     # send_monthly_test_signal()
 
@@ -1133,4 +1055,5 @@ if __name__ == "__main__":
     # Initialize and start the monitor MQTT client
     initialize_monitor_mqtt_client()
     send_home_info_via_mqtt()
+
     app.run(host='0.0.0.0', port=5000)
