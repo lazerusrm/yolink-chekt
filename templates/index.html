@@ -185,19 +185,6 @@
             font-size: 0.9rem;
             font-weight: bold;
         }
-
-        /* New Styles for Sensor Check-In Status */
-        .sensor-status {
-            display: flex;
-            align-items: center;
-            margin-top: 10px;
-        }
-
-        .sensor-status img {
-            width: 20px;
-            height: 20px;
-            margin-right: 5px;
-        }
     </style>
 </head>
 
@@ -251,14 +238,14 @@
                 <img src="" alt="CHEKT Server Status" id="chekt-icon" class="hidden">
                 <span id="chekt-message">Checking CHEKT server status...</span>
             </div>
+
+            <!-- Update Yolink Devices Button -->
+            <button id="update-devices" class="btn btn-secondary mt-3">Update Yolink Devices</button>
+
+            <!-- Loading spinner for refresh -->
+            <div id="refresh-spinner" class="spinner hidden" style="margin-left: 10px;"></div>
+            <span id="refresh-message" style="color: yellow; margin-left: 10px;"></span>
         </div>
-
-        <!-- Update Yolink Devices Button -->
-        <button id="update-devices" class="btn btn-secondary mt-3">Update Yolink Devices</button>
-
-        <!-- Loading spinner for refresh -->
-        <div id="refresh-spinner" class="spinner hidden" style="margin-left: 10px;"></div>
-        <span id="refresh-message" style="color: yellow; margin-left: 10px;"></span>
 
         <!-- Sensor Data Section -->
         <div class="sensor-data">
@@ -394,31 +381,36 @@
             return "Invalid date";  // Return 'Invalid date' if not valid
         }
 
-        // Function to determine sensor status based on last_seen and system uptime
-        function determineSensorStatus(sensor, uptimeSeconds) {
-            // Define thresholds in seconds
-            const WARNING_THRESHOLD = 4 * 60 * 60 + 15 * 60; // 4 hours 15 minutes = 15300 seconds
-            const ALARM_THRESHOLD = 5 * 60 * 60; // 5 hours = 18000 seconds
+        // Function to get border class based on sensor status
+        function getBorderClass(sensor, uptimeSeconds) {
+            let additionalClass = '';
 
-            // If system uptime is less than 4 hours, do not perform check
-            if (uptimeSeconds < 4 * 60 * 60) {
-                return 'active';
+            if (uptimeSeconds > 14400) { // 4 hours in seconds
+                const lastSeenTime = new Date(sensor.last_seen).getTime();
+                const currentTime = new Date().getTime();
+                const diffMinutes = (currentTime - lastSeenTime) / (1000 * 60); // Difference in minutes
+
+                if (diffMinutes > 300) { // 5 hours = 300 minutes
+                    additionalClass = 'alarm';
+                } else if (diffMinutes > 255) { // 4h15m = 255 minutes
+                    additionalClass = 'warning';
+                }
             }
 
-            const lastSeenTime = new Date(sensor.last_seen).getTime();
-            const currentTime = new Date().getTime();
-            const diffSeconds = (currentTime - lastSeenTime) / 1000; // Difference in seconds
-
-            if (diffSeconds > ALARM_THRESHOLD) {
-                return 'alarm';
-            } else if (diffSeconds > WARNING_THRESHOLD) {
-                return 'warning';
-            } else {
-                return 'active';
-            }
+            const existingClass = sensor.alarm ? 'alarm' : (sensor.warning ? 'warning' : '');
+            return `${existingClass} ${additionalClass}`.trim();
         }
 
-        // Function to fetch and update sensor data along with system uptime
+        // Function to highlight fields in alarm/warning state
+        function getHighlightClass(value, min, max) {
+            if (value === undefined || value === null || value === 'unknown') return '';
+            if (value > max || value < min) {
+                return 'alarm';
+            }
+            return '';
+        }
+
+        // Function to fetch and update sensor data
         function updateSensorData() {
             toggleSpinnerSpeed(true); // Fast spin when reloading
             // Fetch sensor data and system uptime simultaneously
@@ -446,16 +438,8 @@
                     const batteryInfo = getBatteryInfo(sensor.battery);
                     const lastSeenLocal = formatLocalTime(sensor.last_seen);  // Convert last_seen to local time
 
-                    // Determine sensor status based on last_seen and system uptime
-                    const sensorStatus = determineSensorStatus(sensor, uptimeSeconds);
-
-                    // Get the appropriate border class based on sensor status
-                    let borderClass = '';
-                    if (sensorStatus === 'alarm') {
-                        borderClass = 'alarm';
-                    } else if (sensorStatus === 'warning') {
-                        borderClass = 'warning';
-                    }
+                    // Get the appropriate border class based on alarm condition and uptime
+                    const borderClass = getBorderClass(sensor, uptimeSeconds);
 
                     // Highlight classes for temperature, humidity, signal, and battery
                     const tempHighlight = getHighlightClass(sensor.temperature, sensor.tempLimit?.min, sensor.tempLimit?.max);
@@ -465,20 +449,6 @@
 
                     // Get CHEKT zone (ensure sensor.chekt_zone is available)
                     const chektZone = (sensor.chekt_zone && sensor.chekt_zone.trim() !== '' && sensor.chekt_zone.trim().toLowerCase() !== 'n/a') ? `Zone ${sensor.chekt_zone.trim()}` : 'No Zone';
-
-                    // Determine sensor status message and icon
-                    let statusIcon = '';
-                    let statusMessage = '';
-                    if (sensorStatus === 'alarm') {
-                        statusIcon = 'https://img.icons8.com/color/48/000000/cancel.png';
-                        statusMessage = 'Sensor Check-In Alarm: Not active';
-                    } else if (sensorStatus === 'warning') {
-                        statusIcon = 'https://img.icons8.com/color/48/000000/warning-shield.png';
-                        statusMessage = 'Sensor Check-In Warning: Not active';
-                    } else {
-                        statusIcon = 'https://img.icons8.com/color/48/000000/checkmark.png';
-                        statusMessage = 'Sensor Check-In Active';
-                    }
 
                     const sensorHTML = `
                         <div class="sensor ${borderClass}">
@@ -494,10 +464,6 @@
                             ${sensor.humidity && sensor.humidity !== 'unknown' ? `<p class="sensor-data-item ${humidityHighlight}">Humidity: ${sensor.humidity}%</p>` : ''}
                             ${sensor.signal !== undefined ? `<p class="sensor-data-item ${signalHighlight}">Signal: ${sensor.signal} dBm (${signalQuality})</p>` : ''}
                             ${sensor.last_seen ? `<p class="sensor-data-item">Last Seen: ${lastSeenLocal}</p>` : ''}
-                            <div class="sensor-status">
-                                <img src="${statusIcon}" alt="Sensor Status">
-                                <span>${statusMessage}</span>
-                            </div>
                             <span class="save-confirmation" id="save-confirmation-${sensor.deviceId}" style="display: none;">Saved!</span>
                         </div>
                     `;
