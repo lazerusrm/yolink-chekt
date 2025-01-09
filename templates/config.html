@@ -7,7 +7,9 @@
     <title>YoLink to CHEKT & SIA Configuration</title>
     <!-- Bootstrap CSS -->
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css">
-    <!-- Custom Styles -->
+    <!-- Font Awesome CSS -->
+    <!-- Using the latest version of Font Awesome 6 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css" integrity="sha512-Kc323vGBEqzTmouAECnVceyQqyqdsSiqLQISBL29aUW4U/M7pSPA/gEUZQqv1cwx4OnYxTxve5UMg5GT6L4JJg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
     <style>
         body {
             background-color: #1e1e1e;
@@ -21,6 +23,9 @@
             display: flex;
             align-items: center;
             margin-top: 10px;
+            background-color: #2a2a2a;
+            padding: 15px;
+            border-radius: 10px;
         }
         .status img {
             width: 20px;
@@ -28,7 +33,7 @@
             margin-right: 10px;
         }
         .hidden {
-            display: none;
+            display: none !important;
         }
         .form-section {
             background-color: #2a2a2a;
@@ -62,14 +67,6 @@
         .btn-success:hover {
             background-color: #218838;
         }
-        .table {
-            background-color: #2a2a2a;
-            color: #ffffff;
-        }
-        .table th,
-        .table td {
-            border-color: #444;
-        }
         .log {
             background-color: #2a2a2a;
             padding: 15px;
@@ -97,7 +94,8 @@
     <!-- Navigation Bar -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
         <a class="navbar-brand" href="#">YoLink to CHEKT & SIA</a>
-        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav"     aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav" 
+            aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
             <span class="navbar-toggler-icon"></span>
         </button>
         <div class="collapse navbar-collapse" id="navbarNav">
@@ -123,28 +121,64 @@
         <!-- Status Section -->
         <div class="mb-4">
             <h3>Status</h3>
-            <div id="mqtt-status" class="status">
-                <img src="" alt="" id="mqtt-icon" class="hidden">
-                <span id="mqtt-message">Checking MQTT connection...</span>
+            <!-- YoLink MQTT Status -->
+            <div id="yolink-mqtt-status" class="status mb-2">
+                <img src="" alt="YoLink MQTT Status" id="yolink-mqtt-icon" class="hidden">
+                <span id="yolink-mqtt-message">Checking YoLink MQTT connection...</span>
             </div>
-            <div id="receiver-status" class="status">
-                <img src="" alt="" id="receiver-icon" class="hidden">
+            <!-- Monitor MQTT Status -->
+            <div id="monitor-mqtt-status" class="status mb-2">
+                <img src="" alt="Monitor MQTT Status" id="monitor-mqtt-icon" class="hidden">
+                <span id="monitor-mqtt-message">Checking Monitor MQTT connection...</span>
+            </div>
+            <!-- Receiver Server Status -->
+            <div id="receiver-status" class="status mb-2">
+                <img src="" alt="Receiver Server Status" id="receiver-icon" class="hidden">
                 <span id="receiver-message">Checking Receiver server status...</span>
             </div>
         </div>
 
         <!-- Configuration Form -->
         <form id="config-form" class="form-section">
+            <!-- YoLink Configuration -->
             <h2>YoLink Configuration</h2>
             <div class="form-group">
-                <label for="uaid">UAID</label>
-                <input type="text" id="uaid" name="uaid" class="form-control" value="{{ config.yolink.uaid }}" required>
+                <label for="yolink_url">YoLink MQTT URL</label>
+                <input type="text" id="yolink_url" name="yolink_url" class="form-control" value="{{ config.mqtt.url }}" required>
             </div>
             <div class="form-group">
-                <label for="secret_key">Secret Key</label>
-                <input type="text" id="secret_key" name="secret_key" class="form-control" value="{{ config.yolink.secret_key }}" required>
+                <label for="yolink_port">YoLink MQTT Port</label>
+                <input type="number" id="yolink_port" name="yolink_port" class="form-control" value="{{ config.mqtt.port }}" required>
+            </div>
+            <div class="form-group">
+                <label for="yolink_username">YoLink MQTT Username</label>
+                <input type="text" id="yolink_username" name="yolink_username" class="form-control" value="{{ config.mqtt.username }}" required>
+            </div>
+            <div class="form-group">
+                <label for="yolink_password">YoLink MQTT Password</label>
+                <input type="password" id="yolink_password" name="yolink_password" class="form-control" value="{{ config.mqtt.password }}" required>
             </div>
 
+            <!-- Monitor MQTT Configuration -->
+            <h2>Monitor MQTT Configuration</h2>
+            <div class="form-group">
+                <label for="monitor_mqtt_url">Monitor MQTT URL</label>
+                <input type="text" id="monitor_mqtt_url" name="monitor_mqtt_url" class="form-control" value="{{ config.mqtt_monitor.url }}" required>
+            </div>
+            <div class="form-group">
+                <label for="monitor_mqtt_port">Monitor MQTT Port</label>
+                <input type="number" id="monitor_mqtt_port" name="monitor_mqtt_port" class="form-control" value="{{ config.mqtt_monitor.port }}" required>
+            </div>
+            <div class="form-group">
+                <label for="monitor_mqtt_username">Monitor MQTT Username</label>
+                <input type="text" id="monitor_mqtt_username" name="monitor_mqtt_username" class="form-control" value="{{ config.mqtt_monitor.username }}" required>
+            </div>
+            <div class="form-group">
+                <label for="monitor_mqtt_password">Monitor MQTT Password</label>
+                <input type="password" id="monitor_mqtt_password" name="monitor_mqtt_password" class="form-control" value="{{ config.mqtt_monitor.password }}" required>
+            </div>
+
+            <!-- Alert Receiver Configuration -->
             <h2>Alert Receiver Configuration</h2>
             <div class="form-group">
                 <label for="receiver_type">Select Alert Receiver</label>
@@ -166,13 +200,13 @@
                     <input type="number" id="chekt_port" name="chekt_port" class="form-control" value="{{ config.chekt.port }}">
                 </div>
                 <div class="form-group">
-                    <label for="chekt_token">CHEKT API Token</label>
-                    <input type="text" id="chekt_token" name="chekt_token" class="form-control" value="{{ config.chekt.api_token }}">
+                    <label for="chekt_api_token">CHEKT API Token</label>
+                    <input type="text" id="chekt_api_token" name="chekt_api_token" class="form-control" value="{{ config.chekt.api_token }}">
                 </div>
             </div>
 
             <!-- SIA Configuration -->
-            <div id="sia-config" class="sia-config">
+            <div id="sia-config" class="sia-config" style="display: none;">
                 <h2>SIA Configuration</h2>
                 <div class="form-group">
                     <label for="sia_ip">SIA IP Address</label>
@@ -200,6 +234,7 @@
                 </div>
             </div>
 
+            <!-- Monitor API Key Configuration -->
             <h2>Monitor Configuration</h2>
             <div class="form-group">
                 <label for="monitor_api_key">Monitor API Key</label>
@@ -223,7 +258,7 @@
 
             <button type="submit" class="btn btn-primary">Save Configuration</button>
             <div id="config-status" class="status mt-2">
-                <img src="" alt="" id="config-icon" class="hidden">
+                <img src="" alt="Configuration Status" id="config-icon" class="hidden">
                 <span id="config-message"></span>
             </div>
         </form>
@@ -232,7 +267,7 @@
         <div class="mb-4">
             <button type="button" id="refresh-devices-btn" class="btn btn-success">Refresh YoLink Devices</button>
             <div id="yolink-status" class="status mt-2">
-                <img src="" alt="" id="yolink-icon" class="hidden">
+                <img src="" alt="YoLink Devices Refresh Status" id="yolink-icon" class="hidden">
                 <span id="yolink-message"></span>
             </div>
         </div>
@@ -261,14 +296,16 @@
             $('#log-area').scrollTop($('#log-area')[0].scrollHeight);
         }
 
-        // Function to update status messages
+        // Function to update status with icon and message
         function updateStatus(elementId, iconId, message, success) {
-            const icon = success ? 'https://img.icons8.com/color/48/000000/checkmark.png' : 'https://img.icons8.com/color/48/000000/cancel.png';
+            const icon = success 
+                ? 'https://img.icons8.com/color/48/000000/checkmark.png' 
+                : 'https://img.icons8.com/color/48/000000/cancel.png';
             $('#' + iconId).attr('src', icon).removeClass('hidden');
             $('#' + elementId).text(message);
         }
 
-        // Function to check system statuses
+        // Function to check system statuses via AJAX
         function checkStatus(url, elementId, iconId, successMessage, errorMessage) {
             $.ajax({
                 type: "GET",
@@ -338,39 +375,28 @@
             }
         }
 
-        // Initial setup when document is ready
-        $(document).ready(function () {
-            // Check statuses
-            checkStatus('/check_mqtt_status', 'mqtt-message', 'mqtt-icon', 'MQTT connection is active.', 'MQTT connection is inactive.');
-            checkStatus('/check_receiver_status', 'receiver-message', 'receiver-icon', 'Receiver server is alive.', 'Failed to connect to Receiver server.');
-
-            // Fetch logs initially and set interval for live updates
-            fetchLogs();
-            setInterval(fetchLogs, 5000); // Update logs every 5 seconds
-
-            // Toggle receiver configuration sections based on initial value
-            toggleReceiverConfig();
-
-            // Change event for receiver type selection
-            $('#receiver_type').change(function() {
-                toggleReceiverConfig();
-            });
-        });
-
-        // Save configuration form
+        // Function to save configuration form
         $('#config-form').on('submit', function (e) {
             e.preventDefault();
 
             var configData = {
-                yolink: {
-                    uaid: $('#uaid').val(),
-                    secret_key: $('#secret_key').val()
+                mqtt: {
+                    url: $('#yolink_url').val(),
+                    port: $('#yolink_port').val(),
+                    username: $('#yolink_username').val(),
+                    password: $('#yolink_password').val()
+                },
+                mqtt_monitor: {
+                    url: $('#monitor_mqtt_url').val(),
+                    port: $('#monitor_mqtt_port').val(),
+                    username: $('#monitor_mqtt_username').val(),
+                    password: $('#monitor_mqtt_password').val()
                 },
                 receiver_type: $('#receiver_type').val(),
                 chekt: {
                     ip: $('#chekt_ip').val(),
                     port: $('#chekt_port').val(),
-                    api_token: $('#chekt_token').val()
+                    api_token: $('#chekt_api_token').val()
                 },
                 sia: {
                     ip: $('#sia_ip').val(),
@@ -397,7 +423,8 @@
                     updateStatus('config-message', 'config-icon', 'Configuration saved successfully.', true);
                     addToLog(response.message);
                     // Recheck statuses after saving
-                    checkStatus('/check_mqtt_status', 'mqtt-message', 'mqtt-icon', 'MQTT connection is active.', 'MQTT connection is inactive.');
+                    checkStatus('/check_mqtt_status', 'yolink-mqtt-message', 'yolink-mqtt-icon', 'YoLink MQTT connection is active.', 'YoLink MQTT connection is inactive.');
+                    checkStatus('/check_monitor_mqtt_status', 'monitor-mqtt-message', 'monitor-mqtt-icon', 'Monitor MQTT connection is active.', 'Monitor MQTT connection is inactive.');
                     checkStatus('/check_receiver_status', 'receiver-message', 'receiver-icon', 'Receiver server is alive.', 'Failed to connect to Receiver server.');
                 },
                 error: function (xhr, status, error) {
@@ -407,8 +434,70 @@
             });
         });
 
-        // ... (rest of your JavaScript code remains unchanged) ...
+        // Function to toggle receiver configuration sections on page load and receiver type change
+        function toggleReceiverConfigVisibility() {
+            toggleReceiverConfig();
+        }
 
+        $(document).ready(function () {
+            // Initialize receiver config visibility
+            toggleReceiverConfigVisibility();
+
+            // Check statuses
+            checkStatus(
+                '/check_mqtt_status', 
+                'yolink-mqtt-message', 
+                'yolink-mqtt-icon', 
+                'YoLink MQTT connection is active.', 
+                'YoLink MQTT connection is inactive.'
+            );
+            checkStatus(
+                '/check_monitor_mqtt_status', 
+                'monitor-mqtt-message', 
+                'monitor-mqtt-icon', 
+                'Monitor MQTT connection is active.', 
+                'Monitor MQTT connection is inactive.'
+            );
+            checkStatus(
+                '/check_receiver_status', 
+                'receiver-message', 
+                'receiver-icon', 
+                'Receiver server is alive.', 
+                'Failed to connect to Receiver server.'
+            );
+
+            // Fetch and update logs initially and set interval for live updates
+            fetchLogs();
+            setInterval(fetchLogs, 5000); // Update logs every 5 seconds
+
+            // Change event for receiver type selection
+            $('#receiver_type').change(function() {
+                toggleReceiverConfigVisibility();
+            });
+        });
+
+        // Refresh YoLink Devices button action
+        $('#refresh-devices-btn').click(function() {
+            $('#yolink-icon').addClass('hidden');
+            $('#yolink-message').text('Refreshing YoLink devices...');
+            $.ajax({
+                type: "GET",
+                url: "/refresh_yolink_devices",  // Backend route to update devices
+                success: function (response) {
+                    if (response.status === "success") {
+                        updateStatus('yolink-message', 'yolink-icon', 'YoLink devices refreshed successfully.', true);
+                        addToLog(response.message);
+                    } else {
+                        updateStatus('yolink-message', 'yolink-icon', 'Failed to refresh YoLink devices.', false);
+                        addToLog('Error: ' + response.message);
+                    }
+                },
+                error: function (xhr, status, error) {
+                    updateStatus('yolink-message', 'yolink-icon', 'Failed to refresh YoLink devices.', false);
+                    addToLog('Error: ' + xhr.responseText);
+                }
+            });
+        });
     </script>
 </body>
 </html>
