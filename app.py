@@ -25,6 +25,9 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes  # 
 from cryptography.hazmat.backends import default_backend
 from binascii import hexlify, unhexlify
 
+# Record the system's start time
+system_start_time = time.time()
+
 # ------------------------------------------------------------------------------
 # 1. Update Logging Configuration to Use a Relative Path (./logs) by Default
 # ------------------------------------------------------------------------------
@@ -715,7 +718,7 @@ def config_html():
     return render_template('config.html', devices=devices, mappings=device_mappings, config=config_data)
 
 # ------------------------------------------------------------------------------
-# Status Check Route
+# Status Checks Routes
 # ------------------------------------------------------------------------------
 
 @app.route('/check_all_mqtt_status', methods=['GET'])
@@ -757,6 +760,11 @@ def check_mqtt_status():
     except Exception as e:
         logger.error(f"Error checking MQTT status: {str(e)}")
         return jsonify({"status": "error", "message": "Error checking MQTT status."})
+
+@app.route('/system_uptime', methods=['GET'])
+def system_uptime():
+    uptime_seconds = time.time() - system_start_time
+    return jsonify({"uptime_seconds": uptime_seconds})
         
 # ------------------------------------------------------------------------------
 # MQTT Configuration and Callbacks for YoLink

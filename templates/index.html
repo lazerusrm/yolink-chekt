@@ -192,7 +192,8 @@
     <!-- Navigation Bar -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
         <a class="navbar-brand" href="#">YoLink to CHEKT</a>
-        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav" 
+            aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
             <span class="navbar-toggler-icon"></span>
         </button>
         <div class="collapse navbar-collapse" id="navbarNav">
@@ -222,19 +223,19 @@
             
             <!-- YoLink MQTT Status -->
             <div id="yolink-mqtt-status" class="status-item mb-2">
-                <img src="" alt="" id="yolink-mqtt-icon" class="hidden">
+                <img src="" alt="YoLink MQTT Status" id="yolink-mqtt-icon" class="hidden">
                 <span id="yolink-mqtt-message">Checking YoLink MQTT connection...</span>
             </div>
 
             <!-- Monitor MQTT Status -->
             <div id="monitor-mqtt-status" class="status-item mb-2">
-                <img src="" alt="" id="monitor-mqtt-icon" class="hidden">
+                <img src="" alt="Monitor MQTT Status" id="monitor-mqtt-icon" class="hidden">
                 <span id="monitor-mqtt-message">Checking Monitor MQTT connection...</span>
             </div>
 
             <!-- CHEKT Server Status -->
             <div id="chekt-status" class="status-item mb-2">
-                <img src="" alt="" id="chekt-icon" class="hidden">
+                <img src="" alt="CHEKT Server Status" id="chekt-icon" class="hidden">
                 <span id="chekt-message">Checking CHEKT server status...</span>
             </div>
 
@@ -380,23 +381,24 @@
             return "Invalid date";  // Return 'Invalid date' if not valid
         }
 
-        // Check for alarm condition or poor battery/signal and return appropriate class
-        function getBorderClass(sensor) {
-            const tempExceedsLimit = sensor.temperature && sensor.tempLimit && (sensor.temperature > sensor.tempLimit.max || sensor.temperature < sensor.tempLimit.min);
-            const signalPoor = sensor.signal <= -115 && sensor.signal >= -140;
-            const signalWarning = sensor.signal <= -111 && sensor.signal >= -115;
-            const batteryWarning = sensor.battery === 1;
-            const batteryCritical = sensor.battery === 0;
+        // Function to get border class based on sensor status
+        function getBorderClass(sensor, uptimeSeconds) {
+            let additionalClass = '';
 
-            if (tempExceedsLimit || sensor.alarm?.highHumidity || sensor.alarm?.lowBattery || batteryCritical || signalPoor) {
-                return 'alarm';
+            if (uptimeSeconds > 14400) { // 4 hours in seconds
+                const lastSeenTime = new Date(sensor.last_seen).getTime();
+                const currentTime = new Date().getTime();
+                const diffMinutes = (currentTime - lastSeenTime) / (1000 * 60); // Difference in minutes
+
+                if (diffMinutes > 300) { // 5 hours = 300 minutes
+                    additionalClass = 'alarm';
+                } else if (diffMinutes > 255) { // 4h15m = 255 minutes
+                    additionalClass = 'warning';
+                }
             }
 
-            if (batteryWarning || signalWarning) {
-                return 'warning';
-            }
-
-            return '';
+            const existingClass = sensor.alarm ? 'alarm' : (sensor.warning ? 'warning' : '');
+            return `${existingClass} ${additionalClass}`.trim();
         }
 
         // Function to highlight fields in alarm/warning state
@@ -411,58 +413,68 @@
         // Function to fetch and update sensor data
         function updateSensorData() {
             toggleSpinnerSpeed(true); // Fast spin when reloading
-            $.ajax({
-                type: "GET",
-                url: "/get_sensor_data",  // This endpoint will fetch data from devices.yaml
-                success: function (sensorData) {
-                    const sensorList = $('#sensor-list');
-                    sensorList.empty(); // Clear the current list
+            // Fetch sensor data and system uptime simultaneously
+            $.when(
+                $.ajax({
+                    type: "GET",
+                    url: "/get_sensor_data",
+                }),
+                $.ajax({
+                    type: "GET",
+                    url: "/system_uptime",
+                })
+            ).done(function (sensorResponse, uptimeResponse) {
+                const sensorData = sensorResponse[0];
+                const uptimeData = uptimeResponse[0];
+                const uptimeSeconds = uptimeData.uptime_seconds;
 
-                    sensorData.devices.sort(compareSensors); // Sort sensors
+                const sensorList = $('#sensor-list');
+                sensorList.empty(); // Clear the current list
 
-                    sensorData.devices.forEach(sensor => {
-                        const signalQuality = getSignalQuality(sensor.signal);
-                        const batteryInfo = getBatteryInfo(sensor.battery);
-                        const lastSeenLocal = formatLocalTime(sensor.last_seen);  // Convert last_seen to local time
+                sensorData.devices.sort(compareSensors); // Sort sensors
 
-                        // Get the appropriate border class based on alarm condition
-                        const borderClass = getBorderClass(sensor);
+                sensorData.devices.forEach(sensor => {
+                    const signalQuality = getSignalQuality(sensor.signal);
+                    const batteryInfo = getBatteryInfo(sensor.battery);
+                    const lastSeenLocal = formatLocalTime(sensor.last_seen);  // Convert last_seen to local time
 
-                        // Highlight classes for temperature, humidity, signal, and battery
-                        const tempHighlight = getHighlightClass(sensor.temperature, sensor.tempLimit?.min, sensor.tempLimit?.max);
-                        const humidityHighlight = getHighlightClass(sensor.humidity, sensor.humidityLimit?.min, sensor.humidityLimit?.max);
-                        const signalHighlight = sensor.signal <= -115 ? 'warning' : '';
-                        const batteryHighlight = sensor.battery === 0 ? 'alarm' : sensor.battery === 1 ? 'warning' : '';
+                    // Get the appropriate border class based on alarm condition and uptime
+                    const borderClass = getBorderClass(sensor, uptimeSeconds);
 
-                        // Get CHEKT zone (ensure sensor.chekt_zone is available)
-                        const chektZone = (sensor.chekt_zone && sensor.chekt_zone.trim() !== '' && sensor.chekt_zone.trim().toLowerCase() !== 'n/a') ? `Zone ${sensor.chekt_zone.trim()}` : 'No Zone';
+                    // Highlight classes for temperature, humidity, signal, and battery
+                    const tempHighlight = getHighlightClass(sensor.temperature, sensor.tempLimit?.min, sensor.tempLimit?.max);
+                    const humidityHighlight = getHighlightClass(sensor.humidity, sensor.humidityLimit?.min, sensor.humidityLimit?.max);
+                    const signalHighlight = sensor.signal <= -115 ? 'warning' : '';
+                    const batteryHighlight = sensor.battery === 0 ? 'alarm' : sensor.battery === 1 ? 'warning' : '';
 
-                        const sensorHTML = `
-                            <div class="sensor ${borderClass}">
-                                <p class="sensor-name">${sensor.name || 'Unknown Device'}</p>
-                                <span class="chekt-zone" onclick="makeZoneEditable(this, '${sensor.deviceId}')">${chektZone}</span>
-                                ${sensor.state && sensor.state !== 'unknown' ? `<p class="sensor-data-item">State: ${sensor.state}</p>` : ''}
-                                ${batteryInfo.percentage !== 'N/A' && sensor.battery !== undefined ? `
-                                <p class="sensor-data-item ${batteryHighlight}">
-                                    <i class="fas ${batteryInfo.iconClass} battery-icon"></i>
-                                    Battery: ${batteryInfo.percentage}
-                                </p>` : ''}
-                                ${sensor.temperature && sensor.temperature !== 'unknown' ? `<p class="sensor-data-item ${tempHighlight}">Temperature: ${sensor.temperature}°F</p>` : ''}
-                                ${sensor.humidity && sensor.humidity !== 'unknown' ? `<p class="sensor-data-item ${humidityHighlight}">Humidity: ${sensor.humidity}%</p>` : ''}
-                                ${sensor.signal !== undefined ? `<p class="sensor-data-item ${signalHighlight}">Signal: ${sensor.signal} dBm (${signalQuality})</p>` : ''}
-                                ${sensor.last_seen ? `<p class="sensor-data-item">Last Seen: ${lastSeenLocal}</p>` : ''}
-                                <span class="save-confirmation" id="save-confirmation-${sensor.deviceId}" style="display: none;">Saved!</span>
-                            </div>
-                        `;
-                        sensorList.append(sensorHTML);
-                    });
+                    // Get CHEKT zone (ensure sensor.chekt_zone is available)
+                    const chektZone = (sensor.chekt_zone && sensor.chekt_zone.trim() !== '' && sensor.chekt_zone.trim().toLowerCase() !== 'n/a') ? `Zone ${sensor.chekt_zone.trim()}` : 'No Zone';
 
-                    toggleSpinnerSpeed(false); // Slow spin after data is updated
-                },
-                error: function () {
-                    $('#sensor-list').html('<p>Error loading sensor data.</p>');
-                    toggleSpinnerSpeed(false); // Slow spin if there's an error
-                }
+                    const sensorHTML = `
+                        <div class="sensor ${borderClass}">
+                            <p class="sensor-name">${sensor.name || 'Unknown Device'}</p>
+                            <span class="chekt-zone" onclick="makeZoneEditable(this, '${sensor.deviceId}')">${chektZone}</span>
+                            ${sensor.state && sensor.state !== 'unknown' ? `<p class="sensor-data-item">State: ${sensor.state}</p>` : ''}
+                            ${batteryInfo.percentage !== 'N/A' && sensor.battery !== undefined ? `
+                            <p class="sensor-data-item ${batteryHighlight}">
+                                <i class="fas ${batteryInfo.iconClass} battery-icon"></i>
+                                Battery: ${batteryInfo.percentage}
+                            </p>` : ''}
+                            ${sensor.temperature && sensor.temperature !== 'unknown' ? `<p class="sensor-data-item ${tempHighlight}">Temperature: ${sensor.temperature}°F</p>` : ''}
+                            ${sensor.humidity && sensor.humidity !== 'unknown' ? `<p class="sensor-data-item ${humidityHighlight}">Humidity: ${sensor.humidity}%</p>` : ''}
+                            ${sensor.signal !== undefined ? `<p class="sensor-data-item ${signalHighlight}">Signal: ${sensor.signal} dBm (${signalQuality})</p>` : ''}
+                            ${sensor.last_seen ? `<p class="sensor-data-item">Last Seen: ${lastSeenLocal}</p>` : ''}
+                            <span class="save-confirmation" id="save-confirmation-${sensor.deviceId}" style="display: none;">Saved!</span>
+                        </div>
+                    `;
+                    sensorList.append(sensorHTML);
+                });
+
+                toggleSpinnerSpeed(false); // Slow spin after data is updated
+            }).fail(function () {
+                console.log('Error fetching sensor data or system uptime.');
+                toggleSpinnerSpeed(false);
+                $('#sensor-list').html('<p>Error loading sensor data or system uptime.</p>');
             });
         }
 
@@ -552,7 +564,7 @@
                 'Failed to connect to CHEKT server.'
             );
 
-            // Fetch and update sensor data from devices.yaml
+            // Fetch and update sensor data from devices.yaml and system uptime
             updateSensorData();
 
             // Auto-update sensor data every 10 seconds
