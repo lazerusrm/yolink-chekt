@@ -571,7 +571,14 @@ def refresh_yolink_devices():
     if not home_info or home_info.get("code") != "000000":
         return jsonify({"status": "error", "message": f"Failed to retrieve home info: {home_info.get('desc', 'Unknown error')}"})
 
+    # ---------------------------------------------------------
+    # 1. Grab the home_id from the YoLink API response
+    # ---------------------------------------------------------
     home_id = home_info["data"]["id"]
+    config['home_id'] = home_id  # Store in config at top-level
+    save_config(config)          # Persist to config.yaml
+
+    # Get the list of devices from YoLink
     devices = yolink_api.get_device_list()
     if not devices or devices.get("code") != "000000":
         return jsonify({"status": "error", "message": f"Failed to retrieve devices: {devices.get('desc', 'Unknown error')}"})
@@ -586,6 +593,7 @@ def refresh_yolink_devices():
     for device in devices["data"]["devices"]:
         device_id = device["deviceId"]
         device_name = device.get('name', f"Device {device_id[-4:]}")
+
         signal_strength = device.get('loraInfo', {}).get('signal', 'unknown')
 
         device_data = {
@@ -608,6 +616,7 @@ def refresh_yolink_devices():
             'last_seen': 'never'
         }
 
+        # Merge existing data if we already have this device in devices.yaml
         if device_id in existing_devices:
             existing_device = existing_devices[device_id]
             device_data.update({
@@ -622,6 +631,7 @@ def refresh_yolink_devices():
                 'last_seen': existing_device.get('last_seen', 'never')
             })
 
+        # Update or create a mapping entry if needed
         if device_id in mappings_dict:
             mapping = mappings_dict[device_id]
             mapping['sia_zone_description'] = device_name
@@ -635,13 +645,18 @@ def refresh_yolink_devices():
                 'chekt_zone': 'N/A'
             })
 
+        # Also store the CHEKT zone for UI
         device_data['chekt_zone'] = mappings_dict.get(device_id, {}).get('chekt_zone', 'N/A')
         new_devices.append(device_data)
 
+    # Save the updated devices list (with home_id in "homes" block)
     data_to_save = {"homes": {"id": home_id}, "devices": new_devices}
     save_to_yaml(devices_file, data_to_save)
     save_to_yaml(mappings_file, mappings_data)
 
+    # ---------------------------------------------------------
+    # Restart YoLink MQTT Client with the updated home_id
+    # ---------------------------------------------------------
     if mqtt_client_instance:
         mqtt_client_instance.disconnect()
         mqtt_client_instance.loop_stop()
@@ -650,7 +665,13 @@ def refresh_yolink_devices():
     mqtt_thread.daemon = True
     mqtt_thread.start()
 
-    return jsonify({"status": "success", "message": "YoLink devices refreshed and MQTT client restarted."})
+    # ---------------------------------------------------------
+    # 2. After success, call send_home_info_via_mqtt()
+    #    so it uses the newly updated home_id, uaid, secret_key.
+    # ---------------------------------------------------------
+    send_home_info_via_mqtt()
+
+    return jsonify({"status": "success", "message": "YoLink devices refreshed, MQTT client restarted, and home info published."})
 
 @app.route('/get_logs', methods=['GET'])
 def get_logs():
@@ -1264,6 +1285,4 @@ if __name__ == "__main__":
 
     # Initialize and start the monitor MQTT client
     initialize_monitor_mqtt_client()
-    send_home_info_via_mqtt()
-
     app.run(host='0.0.0.0', port=5000)
