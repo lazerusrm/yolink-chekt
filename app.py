@@ -70,6 +70,10 @@ bcrypt = Bcrypt(app)
 login_manager = LoginManager(app)
 login_manager.login_view = 'login'  # Redirect to login page if not logged in
 
+# Global MQTT connection status variables
+yolink_mqtt_status = {'connected': False}
+monitor_mqtt_status = {'connected': False}
+
 # ------------------------------------------------------------------------------
 # Define a User class for Flask-Login
 # ------------------------------------------------------------------------------
@@ -654,18 +658,6 @@ def get_logs():
     except FileNotFoundError:
         return jsonify({"status": "error", "message": "Log file not found."})
 
-@app.route('/check_mqtt_status', methods=['GET'])
-def check_mqtt_status():
-    global mqtt_client_instance
-    try:
-        if mqtt_client_instance and mqtt_client_instance.is_connected():
-            return jsonify({"status": "success", "message": "MQTT connection is active."})
-        else:
-            return jsonify({"status": "error", "message": "MQTT connection is inactive."})
-    except Exception as e:
-        logger.error(f"Error checking MQTT status: {str(e)}")
-        return jsonify({"status": "error", "message": "Error checking MQTT status."})
-
 @app.route('/get_sensor_data', methods=['GET'])
 def get_sensor_data():
     devices_data = load_devices()
@@ -723,6 +715,50 @@ def config_html():
     return render_template('config.html', devices=devices, mappings=device_mappings, config=config_data)
 
 # ------------------------------------------------------------------------------
+# Status Check Route
+# ------------------------------------------------------------------------------
+
+@app.route('/check_all_mqtt_status', methods=['GET'])
+def check_all_mqtt_status():
+    """
+    Returns JSON object with the connectivity status of both YoLink MQTT and Monitor MQTT.
+    Example response:
+    {
+      "yolink": "connected",
+      "monitor": "disconnected"
+    }
+    """
+    return jsonify({
+        'yolink': 'connected' if yolink_mqtt_status['connected'] else 'disconnected',
+        'monitor': 'connected' if monitor_mqtt_status['connected'] else 'disconnected'
+    })
+
+@app.route('/check_monitor_mqtt_status', methods=['GET'])
+def check_monitor_mqtt_status():
+    global monitor_mqtt_client
+    try:
+        if monitor_mqtt_client and monitor_mqtt_client.is_connected():
+            return jsonify({"status": "success", "message": "Monitor MQTT connection is active."})
+        else:
+            return jsonify({"status": "error", "message": "Monitor MQTT connection is inactive."})
+    except Exception as e:
+        logger.error(f"Error checking monitor MQTT status: {str(e)}")
+        return jsonify({"status": "error", "message": "Error checking monitor MQTT status."})
+
+
+@app.route('/check_mqtt_status', methods=['GET'])
+def check_mqtt_status():
+    global mqtt_client_instance
+    try:
+        if mqtt_client_instance and mqtt_client_instance.is_connected():
+            return jsonify({"status": "success", "message": "MQTT connection is active."})
+        else:
+            return jsonify({"status": "error", "message": "MQTT connection is inactive."})
+    except Exception as e:
+        logger.error(f"Error checking MQTT status: {str(e)}")
+        return jsonify({"status": "error", "message": "Error checking MQTT status."})
+        
+# ------------------------------------------------------------------------------
 # MQTT Configuration and Callbacks for YoLink
 # ------------------------------------------------------------------------------
 def on_connect(client, userdata, flags, rc):
@@ -731,6 +767,11 @@ def on_connect(client, userdata, flags, rc):
         client.subscribe(userdata['topic'])
     else:
         logger.error(f"Failed to connect to YoLink MQTT broker. Return code: {rc}")
+
+def on_disconnect(client, userdata, rc):
+    # This will be triggered whenever the MQTT client disconnects for any reason.
+    yolink_mqtt_status['connected'] = False
+    logger.warning("YoLink MQTT client disconnected from the broker.")
 
 def on_message(client, userdata, msg):
     logger.info(f"Received message on topic {msg.topic}")
@@ -1071,7 +1112,7 @@ def send_monthly_test_signal():
     pass
 
 # ------------------------------------------------------------------------------
-# Main MQTT Client Loop
+# Yolink MQTT Client Loop
 # ------------------------------------------------------------------------------
 def run_mqtt_client():
     global mqtt_client_instance
@@ -1094,6 +1135,7 @@ def run_mqtt_client():
 
         mqtt_client = mqtt.Client(client_id=client_id, userdata={"topic": mqtt_topic})
         mqtt_client.on_connect = on_connect
+        mqtt_client.on_disconnect = on_disconnect
         mqtt_client.on_message = on_message
         mqtt_client.username_pw_set(username=token, password=None)
 
@@ -1124,6 +1166,7 @@ def initialize_monitor_mqtt_client():
         monitor_mqtt_client.username_pw_set(mqtt_username, mqtt_password)
 
     monitor_mqtt_client.on_connect = on_monitor_mqtt_connect
+    monitor_mqtt_client.on_disconnect = on_monitor_mqtt_disconnect
     monitor_mqtt_client.on_message = on_monitor_mqtt_message
 
     logger.info(f"Connecting to monitor MQTT broker at {mqtt_broker_url}:{mqtt_broker_port}")
@@ -1139,7 +1182,11 @@ def on_monitor_mqtt_connect(client, userdata, flags, rc):
         client.subscribe('monitor/commands')
     else:
         logger.error(f"Failed to connect to monitor MQTT broker. Return code: {rc}")
-
+        
+def on_monitor_mqtt_disconnect(client, userdata, rc):
+    monitor_mqtt_status['connected'] = False
+    logger.warning("Monitor MQTT client disconnected from broker.")
+    
 def on_monitor_mqtt_message(client, userdata, msg):
     logger.info(f"Received message from monitor MQTT broker on topic {msg.topic}")
     payload = json.loads(msg.payload.decode('utf-8'))

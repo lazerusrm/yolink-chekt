@@ -45,8 +45,11 @@ password: 'SKunkworks1!"
 
 timezone: "America/Denver"  # Default timezone
 
+files:
+  device_file: devices.yaml
+  map_file: mappings.yaml
+  
 users: {}
-
 
 chekt:
   api_token: Q0tCNTExMjU2LXBu.2z9isHkAV9Q8qkjg8Womy8txBok

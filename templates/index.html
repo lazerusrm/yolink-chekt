@@ -4,7 +4,7 @@
     <!-- Meta and Title -->
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Yolink to CHEKT Status</title>
+    <title>YoLink to CHEKT Status</title>
     <!-- Bootstrap CSS -->
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css">
     <!-- Font Awesome CSS -->
@@ -219,11 +219,21 @@
         <!-- Status check for MQTT and CHEKT -->
         <div class="status">
             <h2>Status <span id="loading-spinner" class="spinner"></span></h2> <!-- Spinner always visible -->
-            <div id="mqtt-status" class="status-item">
-                <img src="" alt="" id="mqtt-icon" class="hidden">
-                <span id="mqtt-message">Checking MQTT connection...</span>
+            
+            <!-- YoLink MQTT Status -->
+            <div id="yolink-mqtt-status" class="status-item mb-2">
+                <img src="" alt="" id="yolink-mqtt-icon" class="hidden">
+                <span id="yolink-mqtt-message">Checking YoLink MQTT connection...</span>
             </div>
-            <div id="chekt-status" class="status-item">
+
+            <!-- Monitor MQTT Status -->
+            <div id="monitor-mqtt-status" class="status-item mb-2">
+                <img src="" alt="" id="monitor-mqtt-icon" class="hidden">
+                <span id="monitor-mqtt-message">Checking Monitor MQTT connection...</span>
+            </div>
+
+            <!-- CHEKT Server Status -->
+            <div id="chekt-status" class="status-item mb-2">
                 <img src="" alt="" id="chekt-icon" class="hidden">
                 <span id="chekt-message">Checking CHEKT server status...</span>
             </div>
@@ -265,13 +275,16 @@
             }
         }
 
-        // Status check and sensor data updates go here
+        // Function to update status with icon and message
         function updateStatus(elementId, iconId, message, success) {
-            const icon = success ? 'https://img.icons8.com/color/48/000000/checkmark.png' : 'https://img.icons8.com/color/48/000000/cancel.png';
+            const icon = success 
+                ? 'https://img.icons8.com/color/48/000000/checkmark.png' 
+                : 'https://img.icons8.com/color/48/000000/cancel.png';
             $('#' + iconId).attr('src', icon).removeClass('hidden');
             $('#' + elementId).text(message);
         }
 
+        // Function to check status via AJAX
         function checkStatus(url, elementId, iconId, successMessage, errorMessage) {
             $.ajax({
                 type: "GET",
@@ -289,7 +302,7 @@
             });
         }
 
-        // Function to dynamically determine signal quality
+        // Function to determine signal quality
         function getSignalQuality(signal) {
             if (signal >= -70) {
                 return "Excellent";
@@ -512,10 +525,34 @@
         }
 
         $(document).ready(function () {
-            checkStatus('/check_mqtt_status', 'mqtt-message', 'mqtt-icon', 'MQTT connection is active.', 'MQTT connection is inactive.');
-            checkStatus('/check_chekt_status', 'chekt-message', 'chekt-icon', 'CHEKT server is alive.', 'Failed to connect to CHEKT server.');
+            // 1. Check YoLink MQTT Status
+            checkStatus(
+                '/check_mqtt_status', 
+                'yolink-mqtt-message', 
+                'yolink-mqtt-icon', 
+                'YoLink MQTT connection is active.', 
+                'YoLink MQTT connection is inactive.'
+            );
 
-            // Call function to update sensor data from devices.yaml
+            // 2. Check Monitor MQTT Status
+            checkStatus(
+                '/check_monitor_mqtt_status', 
+                'monitor-mqtt-message', 
+                'monitor-mqtt-icon', 
+                'Monitor MQTT connection is active.', 
+                'Monitor MQTT connection is inactive.'
+            );
+
+            // 3. Check CHEKT Server Status
+            checkStatus(
+                '/check_chekt_status', 
+                'chekt-message', 
+                'chekt-icon', 
+                'CHEKT server is alive.', 
+                'Failed to connect to CHEKT server.'
+            );
+
+            // Fetch and update sensor data from devices.yaml
             updateSensorData();
 
             // Auto-update sensor data every 10 seconds
