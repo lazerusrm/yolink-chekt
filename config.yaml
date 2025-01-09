@@ -39,10 +39,13 @@ sia:
 monitor:
   api_key: "your_monitor_api_key"  # Monitor API key
 
+mqtt_monitor:
+username: 'mqtt_user'
+password: 'SKunkworks1!"
+
 timezone: "America/Denver"  # Default timezone
 
 users: {}
-
 
 
 chekt:
