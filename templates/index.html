@@ -185,18 +185,6 @@
             font-size: 0.9rem;
             font-weight: bold;
         }
-
-        /* (Optional) Additional styling for sensor status area */
-        .sensor-status {
-            display: flex;
-            align-items: center;
-            margin-top: 10px;
-        }
-        .sensor-status img {
-            width: 20px;
-            height: 20px;
-            margin-right: 5px;
-        }
     </style>
 </head>
 
@@ -393,41 +381,8 @@
             return "Invalid date";  // Return 'Invalid date' if not valid
         }
 
-        // 1) OPTIONAL: Define thresholds for sensor check-in
-        //    We'll display a sensor status (active/warning/alarm) below each sensor
-        //    based on these thresholds:
-        //    - Warning: last seen > 4h15m
-        //    - Alarm: last seen > 5h
-        //    - If system uptime < 4h, do not apply checks
-
-        function determineSensorCheckin(sensor, uptimeSeconds) {
-            // Convert 4h15m => 15300s, 5h => 18000s
-            const WARNING_THRESHOLD = 4 * 3600 + 15 * 60; 
-            const ALARM_THRESHOLD = 5 * 3600; 
-
-            // If system uptime < 4h => always "active" (skip check)
-            if (uptimeSeconds < 4 * 3600) {
-                return { icon: 'https://img.icons8.com/color/48/000000/checkmark.png', message: 'Sensor Check-In Active' };
-            }
-
-            // Compute how long since sensor was last seen
-            const lastSeenMs = new Date(sensor.last_seen).getTime();
-            const nowMs = Date.now();
-            const diffSec = (nowMs - lastSeenMs) / 1000;
-
-            if (diffSec > ALARM_THRESHOLD) {
-                return { icon: 'https://img.icons8.com/color/48/000000/cancel.png', message: 'Sensor Check-In Alarm: Not active' };
-            } else if (diffSec > WARNING_THRESHOLD) {
-                return { icon: 'https://img.icons8.com/color/48/000000/warning-shield.png', message: 'Sensor Check-In Warning: Not active' };
-            } 
-            return { icon: 'https://img.icons8.com/color/48/000000/checkmark.png', message: 'Sensor Check-In Active' };
-        }
-
-        // 2) Add logic to incorporate sensor check-in display within the existing sensor cards
-
         // Function to get border class based on sensor status
         function getBorderClass(sensor, uptimeSeconds) {
-            // Original logic
             let additionalClass = '';
 
             if (uptimeSeconds > 14400) { // 4 hours in seconds
@@ -476,80 +431,46 @@
                 const sensorList = $('#sensor-list');
                 sensorList.empty(); // Clear the current list
 
-                // Sort sensors
-                sensorData.devices.sort(compareSensors);
+                sensorData.devices.sort(compareSensors); // Sort sensors
 
                 sensorData.devices.forEach(sensor => {
                     const signalQuality = getSignalQuality(sensor.signal);
                     const batteryInfo = getBatteryInfo(sensor.battery);
                     const lastSeenLocal = formatLocalTime(sensor.last_seen);  // Convert last_seen to local time
 
-                    // Evaluate border class (existing logic)
+                    // Get the appropriate border class based on alarm condition and uptime
                     const borderClass = getBorderClass(sensor, uptimeSeconds);
 
-                    // Evaluate highlights for sensor fields
+                    // Highlight classes for temperature, humidity, signal, and battery
                     const tempHighlight = getHighlightClass(sensor.temperature, sensor.tempLimit?.min, sensor.tempLimit?.max);
                     const humidityHighlight = getHighlightClass(sensor.humidity, sensor.humidityLimit?.min, sensor.humidityLimit?.max);
                     const signalHighlight = sensor.signal <= -115 ? 'warning' : '';
                     const batteryHighlight = sensor.battery === 0 ? 'alarm' : sensor.battery === 1 ? 'warning' : '';
 
-                    // Evaluate sensor check-in icon/message
-                    const checkinStatus = determineSensorCheckin(sensor, uptimeSeconds);
+                    // Get CHEKT zone (ensure sensor.chekt_zone is available)
+                    const chektZone = (sensor.chekt_zone && sensor.chekt_zone.trim() !== '' && sensor.chekt_zone.trim().toLowerCase() !== 'n/a') ? `Zone ${sensor.chekt_zone.trim()}` : 'No Zone';
 
-                    // Derive CHEKT zone label
-                    const chektZone = (sensor.chekt_zone && sensor.chekt_zone.trim() !== '' && sensor.chekt_zone.trim().toLowerCase() !== 'n/a') 
-                                      ? `Zone ${sensor.chekt_zone.trim()}` 
-                                      : 'No Zone';
-
-                    // Build final sensor card HTML
                     const sensorHTML = `
                         <div class="sensor ${borderClass}">
                             <p class="sensor-name">${sensor.name || 'Unknown Device'}</p>
                             <span class="chekt-zone" onclick="makeZoneEditable(this, '${sensor.deviceId}')">${chektZone}</span>
-
-                            ${sensor.state && sensor.state !== 'unknown' 
-                                ? `<p class="sensor-data-item">State: ${sensor.state}</p>` 
-                                : ''}
-
-                            ${batteryInfo.percentage !== 'N/A' && sensor.battery !== undefined 
-                                ? `<p class="sensor-data-item ${batteryHighlight}">
-                                     <i class="fas ${batteryInfo.iconClass} battery-icon"></i>
-                                     Battery: ${batteryInfo.percentage}
-                                   </p>` 
-                                : ''}
-
-                            ${sensor.temperature && sensor.temperature !== 'unknown' 
-                                ? `<p class="sensor-data-item ${tempHighlight}">Temperature: ${sensor.temperature}°F</p>` 
-                                : ''}
-
-                            ${sensor.humidity && sensor.humidity !== 'unknown' 
-                                ? `<p class="sensor-data-item ${humidityHighlight}">Humidity: ${sensor.humidity}%</p>` 
-                                : ''}
-
-                            ${sensor.signal !== undefined 
-                                ? `<p class="sensor-data-item ${signalHighlight}">
-                                     Signal: ${sensor.signal} dBm (${signalQuality})
-                                   </p>` 
-                                : ''}
-
-                            ${sensor.last_seen 
-                                ? `<p class="sensor-data-item">Last Seen: ${lastSeenLocal}</p>` 
-                                : ''}
-
-                            <!-- New sensor check-in status display -->
-                            <div class="sensor-status">
-                                <img src="${checkinStatus.icon}" alt="Sensor Status" />
-                                <span>${checkinStatus.message}</span>
-                            </div>
-
+                            ${sensor.state && sensor.state !== 'unknown' ? `<p class="sensor-data-item">State: ${sensor.state}</p>` : ''}
+                            ${batteryInfo.percentage !== 'N/A' && sensor.battery !== undefined ? `
+                            <p class="sensor-data-item ${batteryHighlight}">
+                                <i class="fas ${batteryInfo.iconClass} battery-icon"></i>
+                                Battery: ${batteryInfo.percentage}
+                            </p>` : ''}
+                            ${sensor.temperature && sensor.temperature !== 'unknown' ? `<p class="sensor-data-item ${tempHighlight}">Temperature: ${sensor.temperature}°F</p>` : ''}
+                            ${sensor.humidity && sensor.humidity !== 'unknown' ? `<p class="sensor-data-item ${humidityHighlight}">Humidity: ${sensor.humidity}%</p>` : ''}
+                            ${sensor.signal !== undefined ? `<p class="sensor-data-item ${signalHighlight}">Signal: ${sensor.signal} dBm (${signalQuality})</p>` : ''}
+                            ${sensor.last_seen ? `<p class="sensor-data-item">Last Seen: ${lastSeenLocal}</p>` : ''}
                             <span class="save-confirmation" id="save-confirmation-${sensor.deviceId}" style="display: none;">Saved!</span>
                         </div>
                     `;
-
                     sensorList.append(sensorHTML);
                 });
 
-                toggleSpinnerSpeed(false); // Return to slow spin
+                toggleSpinnerSpeed(false); // Slow spin after data is updated
             }).fail(function () {
                 console.log('Error fetching sensor data or system uptime.');
                 toggleSpinnerSpeed(false);
@@ -647,7 +568,7 @@
             updateSensorData();
 
             // Auto-update sensor data every 10 seconds
-            setInterval(updateSensorData, 10000);
+            setInterval(updateSensorData, 10000);  // 10000 ms = 10 seconds
 
             // Update Yolink Devices button action
             $('#update-devices').click(function() {
