@@ -60,10 +60,4 @@ mqtt:
   topic: yl-home/${Home ID}/+/report
   url: mqtt://api.yosmart.com
 timezone: America/Denver
-users:
-  lazerusrm:
-    password: $2b$12$S8pxgNMwI6CT8chALR15oe0XktLaY0v5TCRRc/9qYzYgr8PEHqC76
-    totp_secret: UBISMR5YBOWYZCBHZ76PXQWW6HZMFW5Q
-yolink:
-  secret_key: sec_v1_h0K5kZpcupZt35GdBkIfXw==
-  uaid: ua_DBCAA464829A474EA5F272B4428CD4CE
+users: {}
