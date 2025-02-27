@@ -1,7 +1,7 @@
 import os
 from flask import Flask, request, render_template, flash, redirect, url_for, session, jsonify
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
-import bcrypt
+from flask_bcrypt import Bcrypt  # Changed from 'import bcrypt'
 import pyotp
 import qrcode
 import io
@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "supersecretkey")
+bcrypt = Bcrypt(app)  # Initialize Flask-Bcrypt with the app
 
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -208,7 +209,7 @@ def config():
         return redirect(url_for("config"))
     return render_template("config.html", config=config_data)
 
-@app.route("/create_user", methods=["GET", "POST"])
+@app.route("/create_user", methods=["POST"])
 @login_required
 def create_user():
     username = request.form["username"]
