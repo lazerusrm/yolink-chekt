@@ -112,7 +112,7 @@ def on_connect(client: mqtt.Client, userdata, flags, rc: int) -> None:
         client.subscribe(topic)
         logger.info(f"Connected to MQTT broker and subscribed to {topic}")
     else:
-        logger.error(f"Connection failed with code {rc}")f
+        logger.error(f"Connection failed with code {rc}")
 
 def on_message(client: mqtt.Client, userdata, msg: mqtt.MQTTMessage) -> None:
     """Process incoming MQTT messages."""
