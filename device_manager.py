@@ -1,9 +1,10 @@
 import requests
 import time
-import json  # Added missing import
+import json
 import logging
 from config import load_config, save_config
 from db import redis_client
+from mappings import get_mappings, save_mappings  # Added missing imports
 
 logger = logging.getLogger(__name__)
 
@@ -16,66 +17,91 @@ def get_access_token(config):
         "client_id": config["yolink"]["uaid"],
         "client_secret": config["yolink"]["secret_key"]
     }
-    response = requests.post(url, data=payload)
-    data = response.json()
-    config["yolink"]["token"] = data["access_token"]
-    config["yolink"]["token_expiry"] = time.time() + data["expires_in"]
-    save_config(config)
-    return data["access_token"]
-
+    try:
+        response = requests.post(url, data=payload, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        if "access_token" not in data or "expires_in" not in data:
+            logger.error(f"Invalid token response: {data}")
+            return None
+        config["yolink"]["token"] = data["access_token"]
+        config["yolink"]["token_expiry"] = time.time() + data["expires_in"]
+        save_config(config)
+        return data["access_token"]
+    except requests.RequestException as e:
+        logger.error(f"Failed to get access token: {e}")
+        return None
 
 def refresh_yolink_devices():
     config = load_config()
     token = get_access_token(config)
+    if not token:
+        logger.error("No valid token available; aborting device refresh")
+        return
     url = "https://api.yosmart.com/open/yolink/v2/api"
     headers = {"Authorization": f"Bearer {token}"}
-    payload = {"method": "Home.getGeneralInfo"}
-    response = requests.post(url, headers=headers, json=payload)
-    data = response.json()
-    if data.get("code") != "000000":
-        logger.error(f"Failed to get home info: {data}")
-        return
-    home_id = data["data"]["id"]
-    config["home_id"] = home_id
-    save_config(config)
+    try:
+        payload = {"method": "Home.getGeneralInfo"}
+        response = requests.post(url, headers=headers, json=payload, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        if data.get("code") != "000000":
+            logger.error(f"Failed to get home info: {data}")
+            return
+        home_id = data["data"]["id"]
+        config["home_id"] = home_id
+        save_config(config)
 
-    payload = {"method": "Home.getDeviceList"}
-    response = requests.post(url, headers=headers, json=payload)
-    data = response.json()
-    if data.get("code") != "000000":
-        logger.error(f"Failed to get device list: {data}")
-        return
-    for device in data["data"]["devices"]:
-        device_id = device["deviceId"]
-        existing = get_device_data(device_id) or {}
-        device_data = {
-            "deviceId": device_id,
-            "name": device.get("name", f"Device {device_id[-4:]}"),
-            "state": existing.get("state", "unknown"),
-            "signal": device.get("loraInfo", {}).get("signal", "unknown"),
-            "last_seen": existing.get("last_seen", "never"),
-            "alarms": existing.get("alarms", {})
-        }
-        save_device_data(device_id, device_data)
+        payload = {"method": "Home.getDeviceList"}
+        response = requests.post(url, headers=headers, json=payload, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        if data.get("code") != "000000":
+            logger.error(f"Failed to get device list: {data}")
+            return
+        for device in data["data"]["devices"]:
+            device_id = device["deviceId"]
+            existing = get_device_data(device_id) or {}
+            device_data = {
+                "deviceId": device_id,
+                "name": device.get("name", f"Device {device_id[-4:]}"),
+                "state": existing.get("state", "unknown"),
+                "signal": device.get("loraInfo", {}).get("signal", "unknown"),
+                "last_seen": existing.get("last_seen", "never"),
+                "alarms": existing.get("alarms", {})
+            }
+            save_device_data(device_id, device_data)
 
-    # Update mappings
-    mappings = get_mappings()
-    for device in data["data"]["devices"]:
-        device_id = device["deviceId"]
-        if not any(m["yolink_device_id"] == device_id for m in mappings["mappings"]):
-            mappings["mappings"].append({
-                "yolink_device_id": device_id,
-                "receiver_device_id": ""  # Configurable via /config
-            })
-    save_mappings(mappings)
+        mappings = get_mappings()
+        for device in data["data"]["devices"]:
+            device_id = device["deviceId"]
+            if not any(m["yolink_device_id"] == device_id for m in mappings["mappings"]):
+                mappings["mappings"].append({
+                    "yolink_device_id": device_id,
+                    "receiver_device_id": ""
+                })
+        save_mappings(mappings)
+    except requests.RequestException as e:
+        logger.error(f"Failed to refresh devices: {e}")
 
 def get_all_devices():
-    keys = redis_client.keys("device:*")
-    return [json.loads(redis_client.get(key)) for key in keys]
+    try:
+        keys = redis_client.keys("device:*")
+        return [json.loads(redis_client.get(key)) for key in keys]
+    except (redis.RedisError, json.JSONDecodeError) as e:
+        logger.error(f"Failed to get all devices: {e}")
+        return []
 
 def get_device_data(device_id):
-    device_json = redis_client.get(f"device:{device_id}")
-    return json.loads(device_json) if device_json else None
+    try:
+        device_json = redis_client.get(f"device:{device_id}")
+        return json.loads(device_json) if device_json else None
+    except (redis.RedisError, json.JSONDecodeError) as e:
+        logger.error(f"Failed to get device data for {device_id}: {e}")
+        return None
 
 def save_device_data(device_id, data):
-    redis_client.set(f"device:{device_id}", json.dumps(data))
+    try:
+        redis_client.set(f"device:{device_id}", json.dumps(data))
+    except redis.RedisError as e:
+        logger.error(f"Failed to save device data for {device_id}: {e}")
