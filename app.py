@@ -30,7 +30,7 @@ app.secret_key = secrets.token_hex(32)
 app.config['SESSION_COOKIE_SECURE'] = True  # HTTPS only in production
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
-bcrypt = Bcrypt(app)
+bcrypt = Bcrypt(app)  # Initialize Flask-Bcrypt
 login_manager = LoginManager(app)
 login_manager.login_view = "login"
 
@@ -50,7 +50,7 @@ def initialize_default_user():
     if not config_data.get("users"):
         default_username = "admin"
         default_password = "skunkworks1"
-        hashed_password = bcrypt.hashpw(default_password.encode(), bcrypt.gensalt()).decode()
+        hashed_password = bcrypt.generate_password_hash(default_password).decode('utf-8')  # Use Flask-Bcrypt method
         config_data["users"] = {
             default_username: {
                 "password": hashed_password,
@@ -93,7 +93,8 @@ def login():
         password = request.form["password"]
         totp_code = request.form.get("totp_code")
         users = config_data.get("users", {})
-        if username in users and bcrypt.check_password_hash(users[username]["password"], password):
+        if username in users and bcrypt.check_password_hash(users[username]["password"],
+                                                            password):  # Use Flask-Bcrypt method
             if users[username].get("totp_secret") and not totp_code:
                 return render_template("login.html", totp_required=True, username=username, password=password)
             if totp_code and users[username].get("totp_secret"):
@@ -154,7 +155,7 @@ def create_user():
         flash("Username already exists", "error")
     else:
         config_data["users"][username] = {
-            "password": bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+            "password": bcrypt.generate_password_hash(password).decode('utf-8')  # Use Flask-Bcrypt method
         }
         save_config()
         flash("User created successfully", "success")
@@ -170,14 +171,15 @@ def change_password():
         confirm_password = request.form["confirm_password"]
         user_data = config_data["users"].get(current_user.id, {})
 
-        if not bcrypt.check_password_hash(user_data["password"], current_password):
+        if not bcrypt.check_password_hash(user_data["password"], current_password):  # Use Flask-Bcrypt method
             flash("Current password is incorrect", "error")
         elif new_password != confirm_password:
             flash("New passwords do not match", "error")
         elif len(new_password) < 8:
             flash("New password must be at least 8 characters", "error")
         else:
-            user_data["password"] = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt()).decode()
+            user_data["password"] = bcrypt.generate_password_hash(new_password).decode(
+                'utf-8')  # Use Flask-Bcrypt method
             user_data["force_password_change"] = False
             save_config()
             flash("Password changed successfully", "success")
@@ -329,7 +331,7 @@ def refresh_yolink_devices():
 
 if __name__ == "__main__":
     load_config()
-    initialize_default_user()  # Always create default user on startup if none exist
+    initialize_default_user()  # Create default admin if no users exist
     max_retries = 5
     retry_delay = 2
     for attempt in range(max_retries):
@@ -345,7 +347,6 @@ if __name__ == "__main__":
             time.sleep(retry_delay)
     load_devices_to_redis()
     load_mappings_to_redis()
-    # Start MQTT only if config is complete
     if config_data["yolink"]["uaid"] and config_data["yolink"]["secret_key"] and config_data["mqtt"]["url"]:
         mqtt_thread = threading.Thread(target=run_mqtt_client, daemon=True)
         mqtt_thread.start()
