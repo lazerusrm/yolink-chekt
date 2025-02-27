@@ -8,7 +8,7 @@ import io
 import base64
 import logging
 from config import load_config, save_config, get_user_data, save_user_data
-from db import redis_client
+from db import redis_client, ensure_redis_connection
 from device_manager import refresh_yolink_devices, get_all_devices, get_device_data, save_device_data
 from mappings import get_mappings, save_mapping
 from yolink_mqtt import run_mqtt_client, connected as yolink_connected
@@ -48,6 +48,11 @@ def init_default_user():
         hashed_password = bcrypt.generate_password_hash(default_password).decode('utf-8')
         user_data = {"password": hashed_password, "force_password_change": True}
         save_user_data(default_username, user_data)
+
+# Ensure Redis is connected before proceeding
+if not ensure_redis_connection():
+    logger.error("Exiting due to persistent Redis connection failure")
+    exit(1)
 
 init_default_user()
 
@@ -203,7 +208,7 @@ def config():
         return redirect(url_for("config"))
     return render_template("config.html", config=config_data)
 
-@app.route("/create_user", methods=["POST"])
+@app.route("/create_user", methods=["GET", "POST"])
 @login_required
 def create_user():
     username = request.form["username"]
