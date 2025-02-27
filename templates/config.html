@@ -65,7 +65,97 @@
 
         <!-- Configuration Form -->
         <form id="config-form" class="form-section" method="POST" action="{{ url_for('config') }}">
-            <!-- [Form content remains unchanged] -->
+            <h2>YoLink Configuration</h2>
+            <div class="form-group">
+                <label for="yolink_uaid">YoLink UAID</label>
+                <input type="text" id="yolink_uaid" name="yolink_uaid" class="form-control" value="{{ config.yolink.uaid|default('') }}" required>
+            </div>
+            <div class="form-group">
+                <label for="yolink_secret_key">YoLink Secret Key</label>
+                <input type="password" id="yolink_secret_key" name="yolink_secret_key" class="form-control" value="{{ config.yolink.secret_key|default('') }}" required>
+            </div>
+            <div class="form-group">
+                <label for="yolink_url">YoLink MQTT URL</label>
+                <input type="text" id="yolink_url" name="yolink_url" class="form-control" value="{{ config.mqtt.url|default('mqtt://api.yosmart.com') }}" required>
+            </div>
+            <div class="form-group">
+                <label for="yolink_port">YoLink MQTT Port</label>
+                <input type="number" id="yolink_port" name="yolink_port" class="form-control" value="{{ config.mqtt.port|default(8003) }}" min="1" max="65535" required>
+            </div>
+            <div class="form-group">
+                <label for="yolink_topic">YoLink MQTT Topic</label>
+                <input type="text" id="yolink_topic" name="yolink_topic" class="form-control" value="{{ config.mqtt.topic|default('yl-home/${Home ID}/+/report') }}" required>
+            </div>
+
+            <h2>Monitor MQTT Configuration</h2>
+            <div class="form-group">
+                <label for="monitor_mqtt_url">Monitor MQTT URL</label>
+                <input type="text" id="monitor_mqtt_url" name="monitor_mqtt_url" class="form-control" value="{{ config.mqtt_monitor.url|default('mqtt://monitor.industrialcamera.com') }}" required>
+            </div>
+            <div class="form-group">
+                <label for="monitor_mqtt_port">Monitor MQTT Port</label>
+                <input type="number" id="monitor_mqtt_port" name="monitor_mqtt_port" class="form-control" value="{{ config.mqtt_monitor.port|default(1883) }}" min="1" max="65535" required>
+            </div>
+            <div class="form-group">
+                <label for="monitor_mqtt_username">Monitor MQTT Username</label>
+                <input type="text" id="monitor_mqtt_username" name="monitor_mqtt_username" class="form-control" value="{{ config.mqtt_monitor.username|default('') }}">
+            </div>
+            <div class="form-group">
+                <label for="monitor_mqtt_password">Monitor MQTT Password</label>
+                <input type="password" id="monitor_mqtt_password" name="monitor_mqtt_password" class="form-control" value="{{ config.mqtt_monitor.password|default('') }}">
+            </div>
+
+            <h2>Receiver Configuration</h2>
+            <div class="form-group">
+                <label for="receiver_type">Receiver Type</label>
+                <select id="receiver_type" name="receiver_type" class="form-control" required>
+                    <option value="CHEKT" {% if config.receiver_type == 'CHEKT' %}selected{% endif %}>CHEKT</option>
+                    <option value="SIA" {% if config.receiver_type == 'SIA' %}selected{% endif %}>SIA</option>
+                </select>
+            </div>
+            <div id="chekt-config" class="form-group" {% if config.receiver_type != 'CHEKT' %}style="display: none;"{% endif %}>
+                <label for="chekt_api_token">CHEKT API Token</label>
+                <input type="text" id="chekt_api_token" name="chekt_api_token" class="form-control" value="{{ config.chekt.api_token|default('') }}">
+                <label for="chekt_ip">CHEKT Receiver IP</label>
+                <input type="text" id="chekt_ip" name="chekt_ip" class="form-control" value="{{ config.chekt.ip|default('') }}" required>
+                <label for="chekt_port">CHEKT Receiver Port</label>
+                <input type="number" id="chekt_port" name="chekt_port" class="form-control" value="{{ config.chekt.port|default(30003) }}" min="1" max="65535" required>
+            </div>
+            <div id="sia-config" class="form-group" {% if config.receiver_type != 'SIA' %}style="display: none;"{% endif %}>
+                <label for="sia_ip">SIA IP</label>
+                <input type="text" id="sia_ip" name="sia_ip" class="form-control" value="{{ config.sia.ip|default('') }}">
+                <label for="sia_port">SIA Port</label>
+                <input type="number" id="sia_port" name="sia_port" class="form-control" value="{{ config.sia.port|default('') }}" min="1" max="65535">
+                <label for="sia_account_id">SIA Account ID</label>
+                <input type="text" id="sia_account_id" name="sia_account_id" class="form-control" value="{{ config.sia.account_id|default('') }}">
+                <label for="sia_transmitter_id">SIA Transmitter ID</label>
+                <input type="text" id="sia_transmitter_id" name="sia_transmitter_id" class="form-control" value="{{ config.sia.transmitter_id|default('') }}">
+                <label for="sia_encryption_key">SIA Encryption Key</label>
+                <input type="text" id="sia_encryption_key" name="sia_encryption_key" class="form-control" value="{{ config.sia.encryption_key|default('') }}">
+            </div>
+
+            <h2>Monitor Configuration</h2>
+            <div class="form-group">
+                <label for="monitor_api_key">Monitor API Key</label>
+                <input type="text" id="monitor_api_key" name="monitor_api_key" class="form-control" value="{{ config.monitor.api_key|default('') }}">
+            </div>
+
+            <h2>General Settings</h2>
+            <div class="form-group">
+                <label for="door_open_timeout">Door Open Timeout (seconds)</label>
+                <input type="number" id="door_open_timeout" name="door_open_timeout" class="form-control" value="{{ config.door_open_timeout|default(30) }}" min="1" required>
+            </div>
+
+            <h2>Timezone</h2>
+            <div class="form-group">
+                <label for="timezone">Timezone</label>
+                <select id="timezone" name="timezone" class="form-control" required>
+                    <option value="UTC" {% if config.timezone == 'UTC' %}selected{% endif %}>UTC</option>
+                    <option value="America/New_York" {% if config.timezone == 'America/New_York' %}selected{% endif %}>America/New_York</option>
+                    <option value="America/Los_Angeles" {% if config.timezone == 'America/Los_Angeles' %}selected{% endif %}>America/Los_Angeles</option>
+                </select>
+            </div>
+
             <button type="submit" class="btn btn-primary">Save Configuration</button>
             <span id="save-status" class="ml-2"></span>
         </form>
@@ -162,7 +252,7 @@
                         setTimeout(() => $('#save-status').html(''), 2000);
                     },
                     error: function(xhr) {
-                        $('#save-status').html('<span style="color: #dc3545;">Error: ' + xhr.responseJSON.message + '</span>');
+                        $('#save-status').html('<span style="color: #dc3545;">Error: ' + (xhr.responseJSON ? xhr.responseJSON.message : 'Unknown error') + '</span>');
                     }
                 });
             });
