@@ -3,6 +3,7 @@ import logging
 from db import redis_client
 from utils import load_yaml
 from monitor_mqtt import trigger_monitor_event
+from mappings import get_mappings  # Add this line
 
 logger = logging.getLogger()
 
