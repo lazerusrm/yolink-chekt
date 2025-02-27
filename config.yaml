@@ -52,8 +52,8 @@ files:
 users: {}
 
 chekt:
-  api_token: Q0tCNTExMjU2LXBu.2z9isHkAV9Q8qkjg8Womy8txBok
-  ip: 10.250.250.72
+  api_token: 
+  ip: 
   port: '30003'
 mqtt:
   port: 8003
