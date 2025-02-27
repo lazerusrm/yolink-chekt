@@ -41,6 +41,7 @@ def refresh_yolink_devices():
     url = "https://api.yosmart.com/open/yolink/v2/api"
     headers = {"Authorization": f"Bearer {token}"}
     try:
+        # Get home info
         payload = {"method": "Home.getGeneralInfo"}
         response = requests.post(url, headers=headers, json=payload, timeout=10)
         response.raise_for_status()
@@ -52,6 +53,7 @@ def refresh_yolink_devices():
         config["home_id"] = home_id
         save_config(config)
 
+        # Get device list
         payload = {"method": "Home.getDeviceList"}
         response = requests.post(url, headers=headers, json=payload, timeout=10)
         response.raise_for_status()
@@ -59,30 +61,28 @@ def refresh_yolink_devices():
         if data.get("code") != "000000":
             logger.error(f"Failed to get device list: {data}")
             return
+
         for device in data["data"]["devices"]:
             device_id = device["deviceId"]
             existing = get_device_data(device_id) or {}
+            # Extract battery and signal, with fallbacks to existing data
+            battery = device.get("battery", existing.get("battery", "unknown"))
+            signal = device.get("loraInfo", {}).get("signal", existing.get("signal", "unknown"))
+
             device_data = {
                 "deviceId": device_id,
                 "name": device.get("name", f"Device {device_id[-4:]}"),
-                "type": device.get("type", "unknown"),  # Add device type
+                "type": device.get("type", "unknown"),
                 "state": existing.get("state", "unknown"),
-                "signal": device.get("loraInfo", {}).get("signal", "unknown"),
-                "battery": device.get("battery", None),
+                "signal": signal,
+                "battery": battery,
                 "last_seen": existing.get("last_seen", "never"),
-                "alarms": existing.get("alarms", {})
+                "alarms": existing.get("alarms", {}),
+                "temperature": device.get("temperature", existing.get("temperature", "unknown")),
+                "humidity": device.get("humidity", existing.get("humidity", "unknown")),
             }
             save_device_data(device_id, device_data)
 
-        mappings = get_mappings()
-        for device in data["data"]["devices"]:
-            device_id = device["deviceId"]
-            if not any(m["yolink_device_id"] == device_id for m in mappings["mappings"]):
-                mappings["mappings"].append({
-                    "yolink_device_id": device_id,
-                    "receiver_device_id": ""
-                })
-        save_mappings(mappings)
     except requests.RequestException as e:
         logger.error(f"Failed to refresh devices: {e}")
 

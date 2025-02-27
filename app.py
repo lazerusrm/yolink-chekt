@@ -247,22 +247,38 @@ def system_uptime():
 @app.route("/save_mapping", methods=["POST"])
 @login_required
 def save_mapping_route():
-    device_id = request.form["yolink_device_id"]
-    chekt_zone = request.form.get("chekt_zone", "")
+    data = request.get_json()
+    device_id = data.get("yolink_device_id")
+    chekt_zone = data.get("chekt_zone", "")
+    if not device_id:
+        return jsonify({"status": "error", "message": "Missing device ID"}), 400
     save_mapping(device_id, chekt_zone)
     return jsonify({"status": "success"})
+
 
 @app.route("/set_door_prop_alarm", methods=["POST"])
 @login_required
 def set_door_prop_alarm():
-    device_id = request.form["device_id"]
-    enabled = request.form["enabled"] == "true"
-    device = get_device_data(device_id)
-    if device:
-        device["door_prop_alarm"] = enabled
-        save_device_data(device_id, device)
-        return jsonify({"status": "success"})
-    return jsonify({"status": "error", "message": "Device not found"}), 404
+    data = request.get_json()
+    device_id = data.get("device_id")
+    enabled = data.get("enabled") == True  # Expecting boolean from frontend
+    if not device_id:
+        return jsonify({"status": "error", "message": "Missing device ID"}), 400
+
+    mappings = get_mappings()
+    for mapping in mappings["mappings"]:
+        if mapping["yolink_device_id"] == device_id:
+            mapping["door_prop_alarm"] = enabled
+            break
+    else:
+        # Create new mapping if it doesn’t exist
+        mappings["mappings"].append({
+            "yolink_device_id": device_id,
+            "chekt_zone": "N/A",
+            "door_prop_alarm": enabled
+        })
+    save_mappings(mappings)
+    return jsonify({"status": "success"})
 
 @app.route("/get_sensor_data")
 @login_required
@@ -274,12 +290,14 @@ def get_sensor_data():
         mapping = device_mappings.get(device["deviceId"], {})
         device["chekt_zone"] = mapping.get("chekt_zone", "N/A")
         device["door_prop_alarm"] = mapping.get("door_prop_alarm", False)
-        # Ensure all fields are included
+        # Ensure all fields are included with defaults
         device.setdefault("state", "unknown")
         device.setdefault("signal", "unknown")
+        device.setdefault("battery", "unknown")
         device.setdefault("last_seen", "never")
         device.setdefault("alarms", {})
-        device.setdefault("battery", None)  # Will update this in device_manager.py
+        device.setdefault("temperature", "unknown")
+        device.setdefault("humidity", "unknown")
     return jsonify({"devices": devices})
 
 @app.route("/get_logs", methods=["GET"])

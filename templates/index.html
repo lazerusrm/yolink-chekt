@@ -6,7 +6,7 @@
     <title>YoLink to CHEKT Status</title>
     <!-- Bootstrap CSS -->
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css">
-    <!-- Font Awesome CSS (latest version as per your original) -->
+    <!-- Font Awesome CSS -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css" integrity="sha512-Kc323vGBEqzTmouAECnVceyQqyqdsSiqLQISBL29aUW4U/M7pSPA/gEUZQqv1cwx4OnYxTxve5UMg5GT6L4JJg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
     <style>
         body {
@@ -297,24 +297,27 @@
                     const chektZone = sensor.chekt_zone && sensor.chekt_zone !== 'N/A' ? sensor.chekt_zone : 'No Zone';
                     const batteryInfo = getBatteryInfo(sensor.battery);
                     const signalQuality = getSignalQuality(sensor.signal);
-                    const signalHighlight = sensor.signal !== "unknown" && sensor.signal <= -115 ? 'warning' : '';
+                    const signalHighlight = sensor.signal !== "unknown" && sensor.signal != null && sensor.signal <= -115 ? 'warning' : '';
                     const batteryHighlight = sensor.battery === 0 ? 'alarm' : sensor.battery === 1 ? 'warning' : '';
-                    const displayState = (sensor.type === "Switch" && sensor.state === "open") ? "on" :
-                                         (sensor.type === "Switch" && sensor.state === "closed") ? "off" : sensor.state;
+                    const displayState = typeof sensor.state === 'object' ? JSON.stringify(sensor.state) :
+                                        (sensor.type === "Switch" && sensor.state === "open") ? "on" :
+                                        (sensor.type === "Switch" && sensor.state === "closed") ? "off" : sensor.state;
 
                     const sensorHTML = `
                         <div class="sensor ${borderClass}">
                             <p class="sensor-name">${sensor.name || 'Unknown Device'}</p>
                             <span class="chekt-zone" onclick="makeZoneEditable(this, '${sensor.deviceId}')">${chektZone}</span>
-                            ${sensor.type === 'door' ? `<span class="door-prop-toggle" onclick="makeDoorPropEditable(this, '${sensor.deviceId}')">${sensor.door_prop_alarm ? 'Enabled' : 'Disabled'}</span>` : ''}
+                            ${sensor.type === 'Door' ? `<span class="door-prop-toggle" onclick="makeDoorPropEditable(this, '${sensor.deviceId}')">${sensor.door_prop_alarm ? 'Enabled' : 'Disabled'}</span>` : ''}
                             ${sensor.state && sensor.state !== 'unknown' ? `<p class="sensor-data-item">State: ${displayState}</p>` : ''}
-                            ${sensor.battery != null ? `
+                            ${sensor.battery !== 'unknown' && sensor.battery != null ? `
                             <p class="sensor-data-item ${batteryHighlight}">
                                 <i class="fas ${batteryInfo.iconClass} battery-icon"></i>
                                 Battery: ${batteryInfo.percentage}
                             </p>` : ''}
-                            ${sensor.signal !== 'unknown' ? `<p class="sensor-data-item ${signalHighlight}">Signal: ${sensor.signal} dBm (${signalQuality})</p>` : ''}
-                            ${sensor.last_seen ? `<p class="sensor-data-item">Last Seen: ${lastSeenLocal}</p>` : ''}
+                            ${sensor.signal !== 'unknown' && sensor.signal != null ? `<p class="sensor-data-item ${signalHighlight}">Signal: ${sensor.signal} dBm (${signalQuality})</p>` : ''}
+                            ${sensor.temperature !== 'unknown' && sensor.temperature != null ? `<p class="sensor-data-item">Temperature: ${sensor.temperature}°F</p>` : ''}
+                            ${sensor.humidity !== 'unknown' && sensor.humidity != null ? `<p class="sensor-data-item">Humidity: ${sensor.humidity}%</p>` : ''}
+                            ${sensor.last_seen && sensor.last_seen !== 'never' ? `<p class="sensor-data-item">Last Seen: ${lastSeenLocal}</p>` : ''}
                             ${sensor.alarms && sensor.alarms.state ? `<p class="sensor-data-item" style="color: red;">Alarm: ${sensor.alarms.state}</p>` : ''}
                             <span class="save-confirmation" id="save-confirmation-${sensor.deviceId}" style="display: none;">Saved!</span>
                         </div>
@@ -375,7 +378,7 @@
             });
         }
 
-        // Make door prop alarm editable
+        // Make door prop alarm editable for contact sensors
         function makeDoorPropEditable(toggleSpan, deviceId) {
             const currentState = toggleSpan.textContent === 'Enabled';
             const input = document.createElement('input');
@@ -388,14 +391,24 @@
 
             function saveDoorProp() {
                 const enabled = input.checked;
-                $.post('/set_door_prop_alarm', { device_id: deviceId, enabled: enabled }, function(response) {
-                    if (response.status === 'success') {
-                        toggleSpan.textContent = enabled ? 'Enabled' : 'Disabled';
-                        toggleSpan.style.display = 'block';
-                        input.remove();
-                        const confirmation = document.getElementById(`save-confirmation-${deviceId}`);
-                        confirmation.style.display = 'inline';
-                        setTimeout(() => confirmation.style.display = 'none', 2000);
+                $.ajax({
+                    type: "POST",
+                    url: "/set_door_prop_alarm",
+                    contentType: "application/json",
+                    data: JSON.stringify({ device_id: deviceId, enabled: enabled }),
+                    success: function(response) {
+                        if (response.status === 'success') {
+                            toggleSpan.textContent = enabled ? 'Enabled' : 'Disabled';
+                            toggleSpan.style.display = 'block';
+                            input.remove();
+                            const confirmation = document.getElementById(`save-confirmation-${deviceId}`);
+                            confirmation.style.display = 'inline';
+                            setTimeout(() => confirmation.style.display = 'none', 2000);
+                        }
+                    },
+                    error: function(xhr) {
+                        console.log('Error saving door prop alarm: ' + xhr.responseText);
+                        alert('Error saving door prop alarm: ' + xhr.responseText);
                     }
                 });
             }
