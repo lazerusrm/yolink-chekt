@@ -7,6 +7,9 @@ import qrcode
 import io
 import base64
 import logging
+import time
+import psutil
+import json
 from config import load_config, save_config, get_user_data, save_user_data
 from db import redis_client, ensure_redis_connection
 from device_manager import refresh_yolink_devices, get_all_devices, get_device_data, save_device_data
@@ -233,6 +236,14 @@ def refresh_devices():
     flash("Devices refreshed successfully", "success")
     return redirect(url_for("index"))
 
+@app.route("/system_uptime")
+@login_required
+def system_uptime():
+    boot_time = psutil.boot_time()
+    current_time = time.time()
+    uptime_seconds = current_time - boot_time
+    return jsonify({"uptime_seconds": uptime_seconds})
+
 @app.route("/save_mapping", methods=["POST"])
 @login_required
 def save_mapping_route():
@@ -252,6 +263,24 @@ def set_door_prop_alarm():
         save_device_data(device_id, device)
         return jsonify({"status": "success"})
     return jsonify({"status": "error", "message": "Device not found"}), 404
+
+@app.route("/get_sensor_data")
+@login_required
+def get_sensor_data():
+    devices = get_all_devices()
+    mappings = get_mappings().get("mappings", [])
+    device_mappings = {m["yolink_device_id"]: m for m in mappings}
+    for device in devices:
+        mapping = device_mappings.get(device["deviceId"], {})
+        device["chekt_zone"] = mapping.get("chekt_zone", "N/A")
+        device["door_prop_alarm"] = mapping.get("door_prop_alarm", False)
+        # Ensure all fields are included
+        device.setdefault("state", "unknown")
+        device.setdefault("signal", "unknown")
+        device.setdefault("last_seen", "never")
+        device.setdefault("alarms", {})
+        device.setdefault("battery", None)  # Will update this in device_manager.py
+    return jsonify({"devices": devices})
 
 @app.route("/get_logs", methods=["GET"])
 @login_required

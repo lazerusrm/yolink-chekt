@@ -65,8 +65,10 @@ def refresh_yolink_devices():
             device_data = {
                 "deviceId": device_id,
                 "name": device.get("name", f"Device {device_id[-4:]}"),
+                "type": device.get("type", "unknown"),  # Add device type
                 "state": existing.get("state", "unknown"),
                 "signal": device.get("loraInfo", {}).get("signal", "unknown"),
+                "battery": device.get("battery", None),
                 "last_seen": existing.get("last_seen", "never"),
                 "alarms": existing.get("alarms", {})
             }
