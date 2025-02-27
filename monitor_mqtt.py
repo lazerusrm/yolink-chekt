@@ -1,56 +1,38 @@
 import paho.mqtt.client as mqtt
-import json
-from datetime import datetime
-import logging
-from config import config_data, monitor_mqtt_status  # Updated import
+import time
+from config import load_config
 
-logger = logging.getLogger(__name__)
-monitor_mqtt_client = None
+client = None
 
-def initialize_monitor_mqtt_client():
-    global monitor_mqtt_client
-    mqtt_config = config_data.get('mqtt_monitor', {})
-    if not mqtt_config.get('url'):
-        logger.warning("Monitor MQTT URL not configured; skipping initialization.")
-        return
-    monitor_mqtt_client = mqtt.Client(mqtt_config.get('client_id', 'monitor_client_id'))
-    monitor_mqtt_client.on_connect = on_monitor_mqtt_connect
-    monitor_mqtt_client.on_message = on_monitor_mqtt_message
-    monitor_mqtt_client.on_disconnect = on_monitor_mqtt_disconnect
-    if mqtt_config.get('username') and mqtt_config.get('password'):
-        monitor_mqtt_client.username_pw_set(mqtt_config['username'], mqtt_config['password'])
-    try:
-        monitor_mqtt_client.connect(mqtt_config['url'].replace('mqtt://', ''), mqtt_config.get('port', 1883))
-        monitor_mqtt_client.loop_start()
-    except Exception as e:
-        logger.error(f"Monitor MQTT error: {e}")
-
-def on_monitor_mqtt_connect(client, userdata, flags, rc):
+def on_connect(client, userdata, flags, rc):
     if rc == 0:
-        client.subscribe('monitor/commands')
         logger.info("Connected to monitor MQTT")
-        monitor_mqtt_status['connected'] = True
     else:
-        logger.error(f"Monitor MQTT connection failed with code {rc}")
+        logger.error(f"Monitor MQTT connection failed: {rc}")
 
-def on_monitor_mqtt_disconnect(client, userdata, rc):
-    monitor_mqtt_status['connected'] = False
-    logger.warning("Monitor MQTT disconnected")
+def on_disconnect(client, userdata, rc):
+    if rc != 0:
+        logger.warning("Monitor MQTT disconnected. Reconnecting...")
+        time.sleep(5)
+        run_monitor_mqtt()
 
-def on_monitor_mqtt_message(client, userdata, msg):
-    logger.info(f"Monitor message: {msg.payload.decode()}")
+def run_monitor_mqtt():
+    global client
+    config = load_config()
+    mqtt_config = config["mqtt_monitor"]
+    client = mqtt.Client(mqtt_config["client_id"])
+    client.username_pw_set(mqtt_config["username"], mqtt_config["password"])
+    client.on_connect = on_connect
+    client.on_disconnect = on_disconnect
+    client.connect(mqtt_config["url"].replace("mqtt://", ""), mqtt_config["port"])
+    client.loop_start()
 
-def publish_to_monitor(topic, payload):
-    if monitor_mqtt_client and monitor_mqtt_status['connected']:
-        monitor_mqtt_client.publish(f"monitor/{topic}", json.dumps(payload))
-    else:
-        logger.warning("Cannot publish to monitor MQTT; client not connected")
-
-def trigger_monitor_event(device_id, event_description, data=None):
-    payload = {'device_id': device_id, 'event_description': event_description, 'timestamp': datetime.utcnow().isoformat() + 'Z'}
-    if data:
-        payload.update(data)
-    publish_to_monitor('events', payload)
+def publish_update(device_id, data):
+    global client
+    if client and client.is_connected():
+        topic = f"monitor/devices/{device_id}"
+        client.publish(topic, json.dumps(data))
+        logger.info(f"Published update to monitor: {data}")
 
 if __name__ == "__main__":
-    initialize_monitor_mqtt_client()
+    run_monitor_mqtt()

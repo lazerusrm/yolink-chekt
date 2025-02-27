@@ -1,15 +1,12 @@
 import redis
-import logging
+import os
+from dotenv import load_dotenv
 
-logger = logging.getLogger(__name__)
+load_dotenv()
 
-# Use Docker Compose service name 'redis' instead of localhost
-redis_client = redis.Redis(host='redis', port=6379, decode_responses=True)
-
-def test_connection():
-    try:
-        redis_client.ping()
-        logger.info("Redis connection successful")
-    except redis.ConnectionError as e:
-        logger.error(f"Redis connection failed: {e}")
-        raise
+redis_client = redis.Redis(
+    host=os.getenv("REDIS_HOST", "localhost"),
+    port=int(os.getenv("REDIS_PORT", 6379)),
+    db=0,
+    decode_responses=True
+)

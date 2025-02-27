@@ -83,6 +83,7 @@
                     </p>
                     {% endif %}
                     {% if device.last_seen %}<p class="sensor-data-item">Last Seen: {{ device.last_seen }}</p>{% endif %}
+                    {% if device.alarms and device.alarms.state %}<p class="sensor-data-item" style="color: red;">Alarm: {{ device.alarms.state }}</p>{% endif %}
                     <span class="save-confirmation" id="save-confirmation-{{ device.deviceId }}" style="display: none;">Saved!</span>
                 </div>
                 {% endfor %}
@@ -152,14 +153,21 @@
             input.on('change', saveDoorProp);
         }
 
+        function refreshDashboard() {
+            $.get('/').then(function(data) {
+                $('#sensor-list').html($(data).find('#sensor-list').html());
+            });
+        }
+
         $(document).ready(function() {
             checkStatus('/check_mqtt_status', 'yolink-mqtt-message', 'yolink-mqtt-icon', 'YoLink MQTT connection is active.', 'YoLink MQTT connection is inactive.');
             checkStatus('/check_monitor_mqtt_status', 'monitor-mqtt-message', 'monitor-mqtt-icon', 'Monitor MQTT connection is active.', 'Monitor MQTT connection is inactive.');
             checkStatus('/check_receiver_status', 'receiver-message', 'receiver-icon', 'Receiver is alive.', 'Receiver connection failed.');
-            setInterval(function() {}, 10000); // Placeholder for updateSensorData if needed
+
+            setInterval(refreshDashboard, 5000);  // Auto-refresh every 5 seconds
 
             $('#update-devices').click(function() {
-                $.get('/refresh_yolink_devices', function(response) {
+                $.get('/refresh_devices', function(response) {  // Updated to /refresh_devices
                     updateStatus('refresh-message', 'refresh-icon', response.message, response.status === "success");
                     location.reload();
                 });
