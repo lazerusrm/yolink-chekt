@@ -70,9 +70,11 @@ def initialize_default_user():
 
 def refresh_yolink_token() -> bool:
     """Refresh YoLink token using UAID and Secret Key."""
+    load_config()
     yolink_config = config_data.get("yolink", {})
     uaid = yolink_config.get("uaid", "")
     secret_key = yolink_config.get("secret_key", "")
+    logger.info(f"Attempting token refresh with UAID: {uaid}, Secret Key: {secret_key}")
     if not uaid or not secret_key:
         logger.warning(f"UAID or Secret Key missing; token refresh skipped. UAID: {uaid}, Secret Key: {secret_key}")
         return False
@@ -233,7 +235,7 @@ def config():
                 "receiver_type": request.form["receiver_type"],
                 "chekt": {
                     "api_token": request.form["chekt_api_token"],
-                    "ip": request.form["chekt_ip"],  # Ensure this is captured
+                    "ip": request.form["chekt_ip"],
                     "port": chekt_port
                 },
                 "sia": {
@@ -256,6 +258,7 @@ def config():
             logger.error(f"Error saving config: {e}")
             flash("Failed to save configuration", "error")
         return redirect(url_for("config"))
+    load_config()  # Reload to ensure latest config.yaml values
     logger.info(f"Config data before rendering: {config_data}")
     return render_template("config.html", config=config_data)
 
