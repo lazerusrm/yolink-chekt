@@ -7,7 +7,6 @@
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css" integrity="sha512-Kc323vGBEqzTmouAECnVceyQqyqdsSiqLQISBL29aUW4U/M7pSPA/gEUZQqv1cwx4OnYxTxve5UMg5GT6L4JJg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
     <style>
-        /* Same styles as original */
         body {
             background-color: #1e1e1e;
             color: #ffffff;
@@ -70,6 +69,14 @@
         <form id="config-form" class="form-section" method="POST" action="{{ url_for('config') }}">
             <h2>YoLink Configuration</h2>
             <div class="form-group">
+                <label for="yolink_uaid">YoLink UAID</label>
+                <input type="text" id="yolink_uaid" name="yolink_uaid" class="form-control" value="{{ config.yolink.uaid }}" required>
+            </div>
+            <div class="form-group">
+                <label for="yolink_secret_key">YoLink Secret Key</label>
+                <input type="password" id="yolink_secret_key" name="yolink_secret_key" class="form-control" value="{{ config.yolink.secret_key }}" required>
+            </div>
+            <div class="form-group">
                 <label for="yolink_url">YoLink MQTT URL</label>
                 <input type="text" id="yolink_url" name="yolink_url" class="form-control" value="{{ config.mqtt.url }}" required>
             </div>
@@ -78,20 +85,16 @@
                 <input type="number" id="yolink_port" name="yolink_port" class="form-control" value="{{ config.mqtt.port }}" required>
             </div>
             <div class="form-group">
+                <label for="yolink_topic">YoLink MQTT Topic</label>
+                <input type="text" id="yolink_topic" name="yolink_topic" class="form-control" value="{{ config.mqtt.topic }}" required>
+            </div>
+            <div class="form-group">
                 <label for="yolink_username">YoLink MQTT Username</label>
                 <input type="text" id="yolink_username" name="yolink_username" class="form-control" value="{{ config.mqtt.username }}">
             </div>
             <div class="form-group">
                 <label for="yolink_password">YoLink MQTT Password</label>
                 <input type="password" id="yolink_password" name="yolink_password" class="form-control" value="{{ config.mqtt.password }}">
-            </div>
-            <div class="form-group">
-                <label for="yolink_csid">YoLink CSID</label>
-                <input type="text" id="yolink_csid" name="yolink_csid" class="form-control" value="{{ config.yolink.csid }}" required>
-            </div>
-            <div class="form-group">
-                <label for="yolink_csseckey">YoLink CSSECKEY</label>
-                <input type="text" id="yolink_csseckey" name="yolink_csseckey" class="form-control" value="{{ config.yolink.csseckey }}" required>
             </div>
 
             <h2>Monitor MQTT Configuration</h2>
@@ -120,12 +123,10 @@
                     <option value="SIA" {% if config.receiver_type == 'SIA' %}selected{% endif %}>SIA</option>
                 </select>
             </div>
-            <!-- CHEKT Configuration -->
             <div id="chekt-config" class="form-group" {% if config.receiver_type != 'CHEKT' %}style="display: none;"{% endif %}>
                 <label for="chekt_api_token">CHEKT API Token</label>
                 <input type="text" id="chekt_api_token" name="chekt_api_token" class="form-control" value="{{ config.chekt.api_token }}">
             </div>
-            <!-- SIA Configuration -->
             <div id="sia-config" class="form-group" {% if config.receiver_type != 'SIA' %}style="display: none;"{% endif %}>
                 <label for="sia_ip">SIA IP</label>
                 <input type="text" id="sia_ip" name="sia_ip" class="form-control" value="{{ config.sia.ip }}">

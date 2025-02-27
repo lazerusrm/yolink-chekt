@@ -24,8 +24,9 @@
         .spinner { border: 4px solid rgba(255, 255, 255, 0.3); border-top: 4px solid #ffffff; border-radius: 50%; width: 24px; height: 24px; display: inline-block; margin-left: 10px; vertical-align: middle; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         .hidden { display: none !important; }
-        .chekt-zone { color: red; font-size: 1.25rem; font-weight: bold; cursor: pointer; }
-        .chekt-zone-input { width: 60px; text-align: center; font-size: 1.25rem; font-weight: bold; color: red; background-color: transparent; border: none; border-bottom: 1px solid red; }
+        .chekt-zone, .door-prop-toggle { color: red; font-size: 1.25rem; font-weight: bold; cursor: pointer; display: block; margin-top: 5px; }
+        .chekt-zone-input { width: 60px; text-align: center; font-size: 1.25rem; font-weight: bold; color: red; background-color: transparent; border: none; border-bottom: 1px solid red; margin-top: 5px; }
+        .door-prop-input { width: auto; margin-top: 5px; }
         .save-confirmation { color: #00ff00; font-size: 0.9rem; font-weight: bold; }
     </style>
 </head>
@@ -71,6 +72,9 @@
                 <div class="sensor">
                     <p class="sensor-name">{{ device.name or 'Unknown Device' }}</p>
                     <span class="chekt-zone" onclick="makeZoneEditable(this, '{{ device.deviceId }}')">{{ device.chekt_zone if device.chekt_zone != 'N/A' else 'No Zone' }}</span>
+                    {% if device.type == 'door' %}
+                    <span class="door-prop-toggle" onclick="makeDoorPropEditable(this, '{{ device.deviceId }}')">{{ 'Enabled' if device.door_prop_alarm else 'Disabled' }}</span>
+                    {% endif %}
                     {% if device.state and device.state != 'unknown' %}<p class="sensor-data-item">State: {{ device.state }}</p>{% endif %}
                     {% if device.battery is not none %}
                     <p class="sensor-data-item">
@@ -106,12 +110,6 @@
             });
         }
 
-        function updateSensorData() {
-            $.get('/get_sensor_data', function(data) {
-                // Handled server-side in Jinja2 for initial render
-            });
-        }
-
         function makeZoneEditable(zoneSpan, deviceId) {
             const currentZone = zoneSpan.textContent.replace('No Zone', '').trim();
             const input = $('<input type="text" class="chekt-zone-input">').val(currentZone);
@@ -120,10 +118,12 @@
 
             function saveZone() {
                 const newZone = input.val().trim();
-                $.post('/save_mapping', { yolink_device_id: deviceId, chekt_zone: newZone }, function() {
-                    $(zoneSpan).text(newZone || 'No Zone').show();
-                    input.remove();
-                    $('#save-confirmation-' + deviceId).show().delay(2000).fadeOut();
+                $.post('/save_mapping', { yolink_device_id: deviceId, chekt_zone: newZone }, function(response) {
+                    if (response.status === 'success') {
+                        $(zoneSpan).text(newZone || 'No Zone').show();
+                        input.remove();
+                        $('#save-confirmation-' + deviceId).show().delay(2000).fadeOut();
+                    }
                 });
             }
 
@@ -132,16 +132,36 @@
             });
         }
 
+        function makeDoorPropEditable(toggleSpan, deviceId) {
+            const currentState = toggleSpan.textContent === 'Enabled';
+            const input = $('<input type="checkbox" class="door-prop-input">').prop('checked', currentState);
+            $(toggleSpan).hide().after(input);
+            input.focus();
+
+            function saveDoorProp() {
+                const enabled = input.prop('checked');
+                $.post('/set_door_prop_alarm', { device_id: deviceId, enabled: enabled }, function(response) {
+                    if (response.status === 'success') {
+                        $(toggleSpan).text(enabled ? 'Enabled' : 'Disabled').show();
+                        input.remove();
+                        $('#save-confirmation-' + deviceId).show().delay(2000).fadeOut();
+                    }
+                });
+            }
+
+            input.on('change', saveDoorProp);
+        }
+
         $(document).ready(function() {
             checkStatus('/check_mqtt_status', 'yolink-mqtt-message', 'yolink-mqtt-icon', 'YoLink MQTT connection is active.', 'YoLink MQTT connection is inactive.');
             checkStatus('/check_monitor_mqtt_status', 'monitor-mqtt-message', 'monitor-mqtt-icon', 'Monitor MQTT connection is active.', 'Monitor MQTT connection is inactive.');
             checkStatus('/check_receiver_status', 'receiver-message', 'receiver-icon', 'Receiver is alive.', 'Receiver connection failed.');
-            setInterval(updateSensorData, 10000);
+            setInterval(function() {}, 10000); // Placeholder for updateSensorData if needed
 
             $('#update-devices').click(function() {
                 $.get('/refresh_yolink_devices', function(response) {
                     updateStatus('refresh-message', 'refresh-icon', response.message, response.status === "success");
-                    location.reload(); // Refresh page to update sensor data
+                    location.reload();
                 });
             });
         });
