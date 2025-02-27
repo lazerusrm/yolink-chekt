@@ -10,6 +10,7 @@ import io
 import base64
 import requests
 import socket
+import time
 from config import load_config, save_config, config_data
 from yolink_mqtt import run_mqtt_client, generate_yolink_token, is_token_expired, device_data
 from device_manager import load_devices_to_redis, get_all_devices, get_device_data
@@ -25,7 +26,7 @@ yolink_mqtt_status = {"connected": False}
 monitor_mqtt_status = {"connected": False}
 
 app = Flask(__name__)
-app.secret_key = secrets.token_hex(32)  # Secure key generation
+app.secret_key = secrets.token_hex(32)
 app.config['SESSION_COOKIE_SECURE'] = True  # HTTPS only in production
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
@@ -57,7 +58,7 @@ def index():
     mappings = get_mappings().get("mappings", {})
     device_mappings = {m["yolink_device_id"]: m for m in mappings}
     for device in devices:
-        device.update(device_data.get(device["deviceId"], {}))  # Merge MQTT data
+        device.update(device_data.get(device["deviceId"], {}))
     return render_template("index.html", devices=devices, mappings=device_mappings, config=config_data)
 
 @app.route("/login", methods=["GET", "POST"])
@@ -132,7 +133,6 @@ def create_user():
 def config():
     if request.method == "POST":
         try:
-            # Validate inputs
             yolink_port = int(request.form["yolink_port"])
             monitor_port = int(request.form["monitor_mqtt_port"])
             sia_port = request.form.get("sia_port", "")
@@ -214,7 +214,6 @@ def check_monitor_mqtt_status():
 def check_receiver_status():
     receiver_type = config_data.get("receiver_type", "CHEKT")
     if receiver_type == "CHEKT":
-        # Placeholder for CHEKT status check
         return jsonify({"status": "success", "message": "Receiver is alive."})
     else:  # SIA
         sia_config = config_data.get("sia", {})
@@ -259,11 +258,20 @@ def refresh_yolink_devices():
 
 if __name__ == "__main__":
     load_config()
-    try:
-        redis_client.ping()
-    except Exception as e:
-        logger.error(f"Redis not available: {e}. Exiting.")
-        exit(1)
+    # Retry Redis connection with delay
+    max_retries = 5
+    retry_delay = 2
+    for attempt in range(max_retries):
+        try:
+            redis_client.ping()
+            logger.info("Connected to Redis successfully")
+            break
+        except redis.ConnectionError as e:
+            logger.warning(f"Redis connection attempt {attempt + 1}/{max_retries} failed: {e}")
+            if attempt == max_retries - 1:
+                logger.error(f"Redis not available after {max_retries} attempts: {e}. Exiting.")
+                exit(1)
+            time.sleep(retry_delay)
     load_devices_to_redis()
     load_mappings_to_redis()
     mqtt_thread = threading.Thread(target=run_mqtt_client, daemon=True)
