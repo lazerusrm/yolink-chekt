@@ -30,7 +30,7 @@ app.secret_key = secrets.token_hex(32)
 app.config['SESSION_COOKIE_SECURE'] = True  # HTTPS only in production
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
-bcrypt = Bcrypt(app)  # Initialize Flask-Bcrypt
+bcrypt = Bcrypt(app)
 login_manager = LoginManager(app)
 login_manager.login_view = "login"
 
@@ -50,7 +50,7 @@ def initialize_default_user():
     if not config_data.get("users"):
         default_username = "admin"
         default_password = "skunkworks1"
-        hashed_password = bcrypt.generate_password_hash(default_password).decode('utf-8')  # Use Flask-Bcrypt method
+        hashed_password = bcrypt.generate_password_hash(default_password).decode('utf-8')
         config_data["users"] = {
             default_username: {
                 "password": hashed_password,
@@ -93,8 +93,7 @@ def login():
         password = request.form["password"]
         totp_code = request.form.get("totp_code")
         users = config_data.get("users", {})
-        if username in users and bcrypt.check_password_hash(users[username]["password"],
-                                                            password):  # Use Flask-Bcrypt method
+        if username in users and bcrypt.check_password_hash(users[username]["password"], password):
             if users[username].get("totp_secret") and not totp_code:
                 return render_template("login.html", totp_required=True, username=username, password=password)
             if totp_code and users[username].get("totp_secret"):
@@ -155,7 +154,7 @@ def create_user():
         flash("Username already exists", "error")
     else:
         config_data["users"][username] = {
-            "password": bcrypt.generate_password_hash(password).decode('utf-8')  # Use Flask-Bcrypt method
+            "password": bcrypt.generate_password_hash(password).decode('utf-8')
         }
         save_config()
         flash("User created successfully", "success")
@@ -171,15 +170,14 @@ def change_password():
         confirm_password = request.form["confirm_password"]
         user_data = config_data["users"].get(current_user.id, {})
 
-        if not bcrypt.check_password_hash(user_data["password"], current_password):  # Use Flask-Bcrypt method
+        if not bcrypt.check_password_hash(user_data["password"], current_password):
             flash("Current password is incorrect", "error")
         elif new_password != confirm_password:
             flash("New passwords do not match", "error")
         elif len(new_password) < 8:
             flash("New password must be at least 8 characters", "error")
         else:
-            user_data["password"] = bcrypt.generate_password_hash(new_password).decode(
-                'utf-8')  # Use Flask-Bcrypt method
+            user_data["password"] = bcrypt.generate_password_hash(new_password).decode('utf-8')
             user_data["force_password_change"] = False
             save_config()
             flash("Password changed successfully", "success")
@@ -211,8 +209,8 @@ def config():
                 "yolink": {
                     "uaid": request.form["yolink_uaid"],
                     "secret_key": request.form["yolink_secret_key"],
-                    "token": config_data["yolink"].get("token", ""),
-                    "token_expiry": config_data["yolink"].get("token_expiry", 0)
+                    "token": config_data.get("yolink", {}).get("token", ""),
+                    "token_expiry": config_data.get("yolink", {}).get("token_expiry", 0)
                 },
                 "mqtt": {
                     "url": request.form["yolink_url"],
@@ -347,12 +345,16 @@ if __name__ == "__main__":
             time.sleep(retry_delay)
     load_devices_to_redis()
     load_mappings_to_redis()
-    if config_data["yolink"]["uaid"] and config_data["yolink"]["secret_key"] and config_data["mqtt"]["url"]:
+    # Use .get() to safely check config keys
+    yolink_config = config_data.get("yolink", {})
+    mqtt_config = config_data.get("mqtt", {})
+    mqtt_monitor_config = config_data.get("mqtt_monitor", {})
+    if yolink_config.get("uaid") and yolink_config.get("secret_key") and mqtt_config.get("url"):
         mqtt_thread = threading.Thread(target=run_mqtt_client, daemon=True)
         mqtt_thread.start()
     else:
         logger.warning("YoLink MQTT not started; configure UAID, Secret Key, and MQTT URL via UI first.")
-    if config_data["mqtt_monitor"]["url"]:
+    if mqtt_monitor_config.get("url"):
         initialize_monitor_mqtt_client()
     else:
         logger.warning("Monitor MQTT not started; configure MQTT Monitor URL via UI first.")
