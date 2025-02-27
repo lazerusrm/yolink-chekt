@@ -272,7 +272,8 @@ def config():
 def get_logs():
     try:
         with open("/app/logs/application.log", "r") as f:
-            logs = f.read()
+            lines = f.readlines()[-150:]  # Last 150 lines
+            logs = "".join(lines)
         return jsonify({"status": "success", "logs": logs})
     except FileNotFoundError:
         return jsonify({"status": "error", "message": "Log file not found"})
@@ -307,6 +308,22 @@ def check_receiver_status():
                 return jsonify({"status": "success", "message": "SIA server is alive."})
         except Exception as e:
             return jsonify({"status": "error", "message": f"Failed to connect to SIA server: {str(e)}"})
+
+
+@app.route("/check_all_statuses")
+@login_required
+def check_all_statuses():
+    return jsonify({
+        "yolink": {
+            "status": "success" if yolink_mqtt_status["connected"] else "error",
+            "message": "YoLink MQTT connection is active." if yolink_mqtt_status["connected"] else "YoLink MQTT connection is inactive."
+        },
+        "monitor": {
+            "status": "success" if monitor_mqtt_status["connected"] else "error",
+            "message": "Monitor MQTT connection is active." if monitor_mqtt_status["connected"] else "Monitor MQTT connection is inactive."
+        },
+        "receiver": check_receiver_status().get_json()  # Reuse existing logic
+    })
 
 
 @app.route("/save_mapping", methods=["POST"])
