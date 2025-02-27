@@ -26,8 +26,8 @@ yolink_mqtt_status = {"connected": False}
 monitor_mqtt_status = {"connected": False}
 
 app = Flask(__name__)
-app.secret_key = secrets.token_hex(32)
-app.config['SESSION_COOKIE_SECURE'] = True  # HTTPS only in production
+app.secret_key = secrets.token_hex(32)  # Ensure SECRET_KEY is unique and persistent
+app.config['SESSION_COOKIE_SECURE'] = False  # Set to True in production with HTTPS
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 bcrypt = Bcrypt(app)
@@ -75,7 +75,7 @@ def refresh_yolink_token() -> bool:
 @app.route("/")
 @login_required
 def index():
-    if config_data["users"].get(current_user.id, {}).get("force_password_change"):
+    if config_data["users"].get(current_user.id, {}).get("force_password_change", False):
         flash("Please change your default password before proceeding.", "warning")
         return redirect(url_for("change_password"))
     devices = get_all_devices()
@@ -102,10 +102,11 @@ def login():
                     flash("Invalid TOTP code", "error")
                     return render_template("login.html", totp_required=True, username=username, password=password)
             login_user(User(username))
-            if users[username].get("force_password_change"):
-                flash("Please change your default password.", "warning")
+            logger.info(f"User {username} logged in successfully")
+            next_page = request.args.get("next", url_for("index"))
+            if users[username].get("force_password_change", False):
                 return redirect(url_for("change_password"))
-            return redirect(url_for("index"))
+            return redirect(next_page)
         flash("Invalid credentials", "error")
     no_users = not config_data.get("users")
     return render_template("login.html", totp_required=False, no_users=no_users)
@@ -182,13 +183,14 @@ def change_password():
             save_config()
             flash("Password changed successfully", "success")
             return redirect(url_for("index"))
+        return render_template("change_password.html")
     return render_template("change_password.html")
 
 
 @app.route("/config", methods=["GET", "POST"])
 @login_required
 def config():
-    if config_data["users"].get(current_user.id, {}).get("force_password_change"):
+    if config_data["users"].get(current_user.id, {}).get("force_password_change", False):
         flash("Please change your default password before proceeding.", "warning")
         return redirect(url_for("change_password"))
     if request.method == "POST":
@@ -345,7 +347,6 @@ if __name__ == "__main__":
             time.sleep(retry_delay)
     load_devices_to_redis()
     load_mappings_to_redis()
-    # Use .get() to safely check config keys
     yolink_config = config_data.get("yolink", {})
     mqtt_config = config_data.get("mqtt", {})
     mqtt_monitor_config = config_data.get("mqtt_monitor", {})
