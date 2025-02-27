@@ -267,9 +267,13 @@
                 if (diffMinutes > 300) additionalClass = 'alarm'; // 5 hours
                 else if (diffMinutes > 255) additionalClass = 'warning'; // 4h15m
             }
-            const existingClass = sensor.alarms && (sensor.alarms.state && typeof sensor.alarms.state !== 'object' ? sensor.alarms.state : Object.values(sensor.alarms.state || {}).some(v => v)) ? 'alarm' : '';
+            const existingClass = sensor.alarms && Object.values(sensor.alarms.state || {}).some(v => v === true) ? 'alarm' : '';
             return `${existingClass} ${additionalClass}`.trim();
         }
+
+        // Device type capabilities
+        const batteryDeviceTypes = ["DoorSensor", "MotionSensor", "LeakSensor", "THSensor", "COSmokeSensor", "SmartRemoter", "PowerFailureAlarm", "Siren", "Finger", "LockV2"];
+        const tempHumidityDeviceTypes = ["THSensor"];
 
         // Fetch and update sensor data
         function updateSensorData() {
@@ -298,6 +302,8 @@
                     const displayState = typeof sensor.state === 'object' ? JSON.stringify(sensor.state) :
                                         (sensor.type === "Switch" && sensor.state === "open") ? "on" :
                                         (sensor.type === "Switch" && sensor.state === "closed") ? "off" : sensor.state;
+                    const hasBattery = batteryDeviceTypes.includes(sensor.type);
+                    const hasTempHumidity = tempHumidityDeviceTypes.includes(sensor.type);
 
                     const sensorHTML = `
                         <div class="sensor ${borderClass}">
@@ -305,17 +311,23 @@
                             <span class="chekt-zone" onclick="makeZoneEditable(this, '${sensor.deviceId}')">${chektZone}</span>
                             ${sensor.type === 'DoorSensor' ? `<span class="door-prop-toggle" onclick="makeDoorPropEditable(this, '${sensor.deviceId}')">${sensor.door_prop_alarm ? 'Enabled' : 'Disabled'}</span>` : ''}
                             ${sensor.state && sensor.state !== 'unknown' ? `<p class="sensor-data-item">State: ${displayState}</p>` : ''}
-                            <p class="sensor-data-item ${batteryHighlight}">
-                                <i class="fas ${batteryInfo.iconClass} battery-icon"></i>
-                                Battery: ${batteryInfo.percentage}
-                            </p>
-                            <p class="sensor-data-item ${signalHighlight}">
-                                Signal: ${sensor.signal !== "unknown" && sensor.signal != null ? `${sensor.signal} dBm (${signalQuality})` : 'N/A'}
-                            </p>
-                            ${sensor.temperature !== 'unknown' && sensor.temperature != null ? `<p class="sensor-data-item">Temperature: ${sensor.temperature}°F</p>` : ''}
-                            ${sensor.humidity !== 'unknown' && sensor.humidity != null ? `<p class="sensor-data-item">Humidity: ${sensor.humidity}%</p>` : ''}
-                            ${sensor.last_seen && sensor.last_seen !== 'never' ? `<p class="sensor-data-item">Last Seen: ${lastSeenLocal}</p>` : ''}
-                            ${sensor.alarms && sensor.alarms.state ? `<p class="sensor-data-item" style="color: red;">Alarm: ${typeof sensor.alarms.state === 'object' ? JSON.stringify(sensor.alarms.state) : sensor.alarms.state}</p>` : ''}
+                            ${hasBattery && sensor.battery !== "unknown" && sensor.battery != null ? `
+                                <p class="sensor-data-item ${batteryHighlight}">
+                                    <i class="fas ${batteryInfo.iconClass} battery-icon"></i>
+                                    Battery: ${batteryInfo.percentage}
+                                </p>` : ''}
+                            ${sensor.signal !== "unknown" && sensor.signal != null ? `
+                                <p class="sensor-data-item ${signalHighlight}">
+                                    Signal: ${sensor.signal} dBm (${signalQuality})
+                                </p>` : ''}
+                            ${hasTempHumidity && sensor.temperature !== "unknown" && sensor.temperature != null ? `
+                                <p class="sensor-data-item">Temperature: ${sensor.temperature}°F</p>` : ''}
+                            ${hasTempHumidity && sensor.humidity !== "unknown" && sensor.humidity != null ? `
+                                <p class="sensor-data-item">Humidity: ${sensor.humidity}%</p>` : ''}
+                            ${sensor.last_seen && sensor.last_seen !== 'never' ? `
+                                <p class="sensor-data-item">Last Seen: ${lastSeenLocal}</p>` : ''}
+                            ${sensor.alarms && sensor.alarms.state && Object.values(sensor.alarms.state).some(v => v === true) ? `
+                                <p class="sensor-data-item" style="color: red;">Alarm: ${JSON.stringify(sensor.alarms.state)}</p>` : ''}
                             <span class="save-confirmation" id="save-confirmation-${sensor.deviceId}" style="display: none;">Saved!</span>
                         </div>
                     `;
