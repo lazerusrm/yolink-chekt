@@ -1,20 +1,27 @@
+import os
 from flask import Flask, request, render_template, flash, redirect, url_for, session, jsonify
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 import bcrypt
 import pyotp
 import qrcode
 import io
-import os
 import base64
 import logging
 from config import load_config, save_config, get_user_data, save_user_data
 from db import redis_client
 from device_manager import refresh_yolink_devices, get_all_devices, get_device_data, save_device_data
 from mappings import get_mappings, save_mapping
-from yolink_mqtt import run_mqtt_client
-from monitor_mqtt import run_monitor_mqtt
+from yolink_mqtt import run_mqtt_client, connected as yolink_connected
+from monitor_mqtt import run_monitor_mqtt, connected as monitor_connected
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler("/app/logs/application.log"),
+        logging.StreamHandler()
+    ]
+)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
@@ -253,14 +260,18 @@ def get_logs():
 @app.route("/check_mqtt_status")
 @login_required
 def check_mqtt_status():
-    # Placeholder; assumes yolink_mqtt.py sets a status
-    return jsonify({"status": "success", "message": "YoLink MQTT connection is active."})
+    return jsonify({
+        "status": "success" if yolink_connected else "error",
+        "message": "YoLink MQTT connection is active." if yolink_connected else "YoLink MQTT connection is inactive."
+    })
 
 @app.route("/check_monitor_mqtt_status")
 @login_required
 def check_monitor_mqtt_status():
-    # Placeholder; assumes monitor_mqtt.py sets a status
-    return jsonify({"status": "success", "message": "Monitor MQTT connection is active."})
+    return jsonify({
+        "status": "success" if monitor_connected else "error",
+        "message": "Monitor MQTT connection is active." if monitor_connected else "Monitor MQTT connection is inactive."
+    })
 
 @app.route("/check_receiver_status")
 @login_required
