@@ -4,6 +4,7 @@ import bcrypt
 import pyotp
 import qrcode
 import io
+import os
 import base64
 import logging
 from config import load_config, save_config, get_user_data, save_user_data
