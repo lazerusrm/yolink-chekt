@@ -11,6 +11,7 @@ import base64
 import requests
 import socket
 import time
+import os
 from config import load_config, save_config, config_data
 from yolink_mqtt import run_mqtt_client, generate_yolink_token, is_token_expired, device_data
 from device_manager import load_devices_to_redis, get_all_devices, get_device_data
@@ -26,7 +27,18 @@ yolink_mqtt_status = {"connected": False}
 monitor_mqtt_status = {"connected": False}
 
 app = Flask(__name__)
-app.secret_key = secrets.token_hex(32)  # Ensure SECRET_KEY is unique and persistent
+
+# Load or generate a persistent SECRET_KEY
+secret_key_file = "/app/secret.key"
+if os.path.exists(secret_key_file):
+    with open(secret_key_file, "rb") as f:
+        app.secret_key = f.read()
+else:
+    app.secret_key = secrets.token_hex(32).encode('utf-8')
+    with open(secret_key_file, "wb") as f:
+        f.write(app.secret_key)
+    logger.info("Generated and saved new SECRET_KEY to secret.key")
+
 app.config['SESSION_COOKIE_SECURE'] = False  # Set to True in production with HTTPS
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
