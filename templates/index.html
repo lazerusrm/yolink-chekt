@@ -217,8 +217,9 @@
 
         // Map battery level to percentage and icon
         function getBatteryInfo(batteryLevel) {
+            if (batteryLevel === "unknown" || batteryLevel == null) return { percentage: "N/A", iconClass: "fa-battery-empty" };
             let percentage, iconClass;
-            switch (batteryLevel) {
+            switch (parseInt(batteryLevel)) {
                 case 0: percentage = "0%"; iconClass = "fa-battery-empty"; break;
                 case 1: percentage = "25%"; iconClass = "fa-battery-quarter"; break;
                 case 2: percentage = "50%"; iconClass = "fa-battery-half"; break;
@@ -266,15 +267,8 @@
                 if (diffMinutes > 300) additionalClass = 'alarm'; // 5 hours
                 else if (diffMinutes > 255) additionalClass = 'warning'; // 4h15m
             }
-            const existingClass = sensor.alarms && sensor.alarms.state ? 'alarm' : '';
+            const existingClass = sensor.alarms && (sensor.alarms.state && typeof sensor.alarms.state !== 'object' ? sensor.alarms.state : Object.values(sensor.alarms.state || {}).some(v => v)) ? 'alarm' : '';
             return `${existingClass} ${additionalClass}`.trim();
-        }
-
-        // Highlight fields in alarm/warning state
-        function getHighlightClass(value, min, max) {
-            if (value === undefined || value === null || value === 'unknown') return '';
-            if (value > max || value < min) return 'alarm';
-            return '';
         }
 
         // Fetch and update sensor data
@@ -289,6 +283,8 @@
                 const sensorList = $('#sensor-list');
                 sensorList.empty();
 
+                console.log("Sensor Data Received:", sensorData.devices); // Debug log
+
                 sensorData.devices.sort(compareSensors);
 
                 sensorData.devices.forEach(sensor => {
@@ -298,7 +294,7 @@
                     const batteryInfo = getBatteryInfo(sensor.battery);
                     const signalQuality = getSignalQuality(sensor.signal);
                     const signalHighlight = sensor.signal !== "unknown" && sensor.signal != null && sensor.signal <= -115 ? 'warning' : '';
-                    const batteryHighlight = sensor.battery === 0 ? 'alarm' : sensor.battery === 1 ? 'warning' : '';
+                    const batteryHighlight = sensor.battery === 0 || sensor.battery === "0" ? 'alarm' : sensor.battery === 1 || sensor.battery === "1" ? 'warning' : '';
                     const displayState = typeof sensor.state === 'object' ? JSON.stringify(sensor.state) :
                                         (sensor.type === "Switch" && sensor.state === "open") ? "on" :
                                         (sensor.type === "Switch" && sensor.state === "closed") ? "off" : sensor.state;
@@ -307,18 +303,19 @@
                         <div class="sensor ${borderClass}">
                             <p class="sensor-name">${sensor.name || 'Unknown Device'}</p>
                             <span class="chekt-zone" onclick="makeZoneEditable(this, '${sensor.deviceId}')">${chektZone}</span>
-                            ${sensor.type === 'Door' ? `<span class="door-prop-toggle" onclick="makeDoorPropEditable(this, '${sensor.deviceId}')">${sensor.door_prop_alarm ? 'Enabled' : 'Disabled'}</span>` : ''}
+                            ${sensor.type === 'DoorSensor' ? `<span class="door-prop-toggle" onclick="makeDoorPropEditable(this, '${sensor.deviceId}')">${sensor.door_prop_alarm ? 'Enabled' : 'Disabled'}</span>` : ''}
                             ${sensor.state && sensor.state !== 'unknown' ? `<p class="sensor-data-item">State: ${displayState}</p>` : ''}
-                            ${sensor.battery !== 'unknown' && sensor.battery != null ? `
                             <p class="sensor-data-item ${batteryHighlight}">
                                 <i class="fas ${batteryInfo.iconClass} battery-icon"></i>
                                 Battery: ${batteryInfo.percentage}
-                            </p>` : ''}
-                            ${sensor.signal !== 'unknown' && sensor.signal != null ? `<p class="sensor-data-item ${signalHighlight}">Signal: ${sensor.signal} dBm (${signalQuality})</p>` : ''}
+                            </p>
+                            <p class="sensor-data-item ${signalHighlight}">
+                                Signal: ${sensor.signal !== "unknown" && sensor.signal != null ? `${sensor.signal} dBm (${signalQuality})` : 'N/A'}
+                            </p>
                             ${sensor.temperature !== 'unknown' && sensor.temperature != null ? `<p class="sensor-data-item">Temperature: ${sensor.temperature}°F</p>` : ''}
                             ${sensor.humidity !== 'unknown' && sensor.humidity != null ? `<p class="sensor-data-item">Humidity: ${sensor.humidity}%</p>` : ''}
                             ${sensor.last_seen && sensor.last_seen !== 'never' ? `<p class="sensor-data-item">Last Seen: ${lastSeenLocal}</p>` : ''}
-                            ${sensor.alarms && sensor.alarms.state ? `<p class="sensor-data-item" style="color: red;">Alarm: ${sensor.alarms.state}</p>` : ''}
+                            ${sensor.alarms && sensor.alarms.state ? `<p class="sensor-data-item" style="color: red;">Alarm: ${typeof sensor.alarms.state === 'object' ? JSON.stringify(sensor.alarms.state) : sensor.alarms.state}</p>` : ''}
                             <span class="save-confirmation" id="save-confirmation-${sensor.deviceId}" style="display: none;">Saved!</span>
                         </div>
                     `;

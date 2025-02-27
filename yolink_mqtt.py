@@ -15,7 +15,6 @@ logger = logging.getLogger(__name__)
 client = None
 connected = False
 
-
 def on_connect(client, userdata, flags, rc):
     global connected
     if rc == 0:
@@ -31,31 +30,56 @@ def on_connect(client, userdata, flags, rc):
         if rc == 5:
             logger.error("Authentication failed. Check YoLink MQTT credentials.")
 
-
 def on_message(client, userdata, msg):
     payload = json.loads(msg.payload.decode())
     device_id = payload.get("deviceId")
     if not device_id:
+        logger.warning("No deviceId in MQTT payload")
         return
     device = get_device_data(device_id)
     if not device:
-        logger.warning(f"Device {device_id} not found")
-        return
+        logger.warning(f"Device {device_id} not found in store, initializing")
+        device = {
+            "deviceId": device_id,
+            "name": f"Device {device_id[-4:]}",
+            "type": "unknown",
+            "state": "unknown",
+            "signal": "unknown",
+            "battery": "unknown",
+            "last_seen": "never",
+            "alarms": {},
+            "temperature": "unknown",
+            "humidity": "unknown"
+        }
 
-    state = payload["data"].get("state", device.get("state", "unknown"))
-    device["state"] = state
+    # Log the full payload for debugging
+    logger.debug(f"MQTT payload for {device_id}: {json.dumps(payload, indent=2)}")
+
+    # Update device data from payload
+    data = payload.get("data", {})
+    device["state"] = data.get("state", device.get("state", "unknown"))
+    device["battery"] = data.get("battery", device.get("battery", "unknown"))
+    device["signal"] = data.get("loraInfo", {}).get("signal", data.get("signal", device.get("signal", "unknown")))
+    device["temperature"] = data.get("temperature", device.get("temperature", "unknown"))
+    device["humidity"] = data.get("humidity", device.get("humidity", "unknown"))
     device["last_seen"] = time.strftime("%Y-%m-%d %H:%M:%S")
-    if "alarm" in payload["data"]:
-        device["alarms"]["state"] = payload["data"]["alarm"]
+    if "alarm" in data:
+        device["alarms"]["state"] = data["alarm"]
+
+    # Handle nested state objects or other fields based on devices.yaml
+    if isinstance(device["state"], dict):
+        device["state"] = data.get("state", device["state"])
+    if "type" in payload:
+        device["type"] = payload["type"]
 
     config = load_config()
     mapping = get_mapping(device_id)
-    if mapping and state == "open" and config["receiver_type"] == "CHEKT":
+    if mapping and device["state"] == "open" and config["receiver_type"] == "CHEKT":
         chekt_config = config["chekt"]
         alarm_data = {
             "device_id": device_id,
             "zone": mapping.get("receiver_device_id", ""),
-            "state": state
+            "state": device["state"]
         }
         logger.info(f"Sending CHEKT alarm: {alarm_data}")
         try:
@@ -69,8 +93,7 @@ def on_message(client, userdata, msg):
             logger.error(f"Failed to send CHEKT alarm: {e}")
 
     save_device_data(device_id, device)
-    publish_update(device_id, {"state": state, "alarms": device.get("alarms", {})})
-
+    publish_update(device_id, {"state": device["state"], "alarms": device.get("alarms", {})})
 
 def on_disconnect(client, userdata, rc):
     global connected
@@ -79,7 +102,6 @@ def on_disconnect(client, userdata, rc):
         logger.warning(f"YoLink MQTT disconnected with code {rc}. Reconnecting...")
         time.sleep(5)
         run_mqtt_client()
-
 
 def run_mqtt_client():
     global client, connected
@@ -102,7 +124,6 @@ def run_mqtt_client():
         connected = False
         time.sleep(5)
         run_mqtt_client()
-
 
 if __name__ == "__main__":
     run_mqtt_client()

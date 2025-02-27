@@ -65,17 +65,15 @@ def refresh_yolink_devices():
         for device in data["data"]["devices"]:
             device_id = device["deviceId"]
             existing = get_device_data(device_id) or {}
-            # Extract battery and signal, with fallbacks to existing data
-            battery = device.get("battery", existing.get("battery", "unknown"))
-            signal = device.get("loraInfo", {}).get("signal", existing.get("signal", "unknown"))
-
+            # Log the device response to verify field names
+            logger.debug(f"Device response for {device_id}: {device}")
             device_data = {
                 "deviceId": device_id,
                 "name": device.get("name", f"Device {device_id[-4:]}"),
                 "type": device.get("type", "unknown"),
                 "state": existing.get("state", "unknown"),
-                "signal": signal,
-                "battery": battery,
+                "signal": device.get("loraInfo", {}).get("signal", device.get("signal", existing.get("signal", "unknown"))),
+                "battery": device.get("battery", existing.get("battery", "unknown")),
                 "last_seen": existing.get("last_seen", "never"),
                 "alarms": existing.get("alarms", {}),
                 "temperature": device.get("temperature", existing.get("temperature", "unknown")),
@@ -83,6 +81,16 @@ def refresh_yolink_devices():
             }
             save_device_data(device_id, device_data)
 
+        mappings = get_mappings()
+        for device in data["data"]["devices"]:
+            device_id = device["deviceId"]
+            if not any(m["yolink_device_id"] == device_id for m in mappings["mappings"]):
+                mappings["mappings"].append({
+                    "yolink_device_id": device_id,
+                    "receiver_device_id": "",
+                    "door_prop_alarm": False
+                })
+        save_mappings(mappings)
     except requests.RequestException as e:
         logger.error(f"Failed to refresh devices: {e}")
 
