@@ -1,146 +1,73 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <!-- Metadata and Title -->
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>YoLink to CHEKT & SIA Configuration</title>
-    <!-- Bootstrap CSS -->
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css">
-    <!-- Font Awesome CSS -->
-    <!-- Using the latest version of Font Awesome 6 -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css" integrity="sha512-Kc323vGBEqzTmouAECnVceyQqyqdsSiqLQISBL29aUW4U/M7pSPA/gEUZQqv1cwx4OnYxTxve5UMg5GT6L4JJg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
     <style>
+        /* Same styles as original */
         body {
             background-color: #1e1e1e;
             color: #ffffff;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
-        .container {
-            margin-top: 20px;
-        }
-        .status {
-            display: flex;
-            align-items: center;
-            margin-top: 10px;
-            background-color: #2a2a2a;
-            padding: 15px;
-            border-radius: 10px;
-        }
-        .status img {
-            width: 20px;
-            height: 20px;
-            margin-right: 10px;
-        }
-        .hidden {
-            display: none !important;
-        }
-        .form-section {
-            background-color: #2a2a2a;
-            padding: 20px;
-            border-radius: 10px;
-            margin-bottom: 30px;
-        }
-        .form-section h2 {
-            margin-bottom: 20px;
-        }
-        .form-section label {
-            font-weight: bold;
-        }
-        .form-section input,
-        .form-section select {
-            background-color: #3a3a3a;
-            color: #ffffff;
-            border: none;
-        }
-        .btn-primary {
-            background-color: #007BFF;
-            border: none;
-        }
-        .btn-primary:hover {
-            background-color: #0056b3;
-        }
-        .btn-success {
-            background-color: #28a745;
-            border: none;
-        }
-        .btn-success:hover {
-            background-color: #218838;
-        }
-        .log {
-            background-color: #2a2a2a;
-            padding: 15px;
-            margin-top: 20px;
-            border-radius: 10px;
-            height: 500px;
-            overflow-y: auto;
-            color: #28a745 !important;
-            font-family: 'Courier New', Courier, monospace;
-        }
-        #log-content {
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            color: inherit;
-        }
-        .nav-link {
-            color: #ffffff;
-        }
-        .nav-link:hover {
-            color: #cccccc;
-        }
+        .container { margin-top: 20px; }
+        .status { display: flex; align-items: center; margin-top: 10px; background-color: #2a2a2a; padding: 15px; border-radius: 10px; }
+        .status img { width: 20px; height: 20px; margin-right: 10px; }
+        .hidden { display: none !important; }
+        .form-section { background-color: #2a2a2a; padding: 20px; border-radius: 10px; margin-bottom: 30px; }
+        .form-section h2 { margin-bottom: 20px; }
+        .form-section label { font-weight: bold; }
+        .form-section input, .form-section select { background-color: #3a3a3a; color: #ffffff; border: none; }
+        .btn-primary { background-color: #007BFF; border: none; }
+        .btn-primary:hover { background-color: #0056b3; }
+        .btn-success { background-color: #28a745; border: none; }
+        .btn-success:hover { background-color: #218838; }
+        .log { background-color: #2a2a2a; padding: 15px; margin-top: 20px; border-radius: 10px; height: 500px; overflow-y: auto; color: #28a745; font-family: 'Courier New', Courier, monospace; }
+        #log-content { white-space: pre-wrap; word-wrap: break-word; color: inherit; }
+        .nav-link { color: #ffffff; }
+        .nav-link:hover { color: #cccccc; }
     </style>
 </head>
 <body>
-    <!-- Navigation Bar -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
         <a class="navbar-brand" href="#">YoLink to CHEKT & SIA</a>
-        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav" 
-            aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
             <span class="navbar-toggler-icon"></span>
         </button>
         <div class="collapse navbar-collapse" id="navbarNav">
             <ul class="navbar-nav">
-                <li class="nav-item">
-                    <a class="nav-link" href="/">Dashboard</a>
-                </li>
-                <li class="nav-item active">
-                    <a class="nav-link" href="/config.html">Configuration <span class="sr-only">(current)</span></a>
-                </li>
-                <!-- Logout Link (if applicable) -->
-                <!-- <li class="nav-item">
-                    <a class="nav-link" href="{{ url_for('logout') }}">Logout</a>
-                </li> -->
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('index') }}">Dashboard</a></li>
+                <li class="nav-item active"><a class="nav-link" href="{{ url_for('config') }}">Configuration <span class="sr-only">(current)</span></a></li>
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('logout') }}">Logout</a></li>
             </ul>
         </div>
     </nav>
 
-    <!-- Main Container -->
     <div class="container">
         <h1 class="mt-4">Configuration</h1>
 
         <!-- Status Section -->
         <div class="mb-4">
             <h3>Status</h3>
-            <!-- YoLink MQTT Status -->
             <div id="yolink-mqtt-status" class="status mb-2">
                 <img src="" alt="YoLink MQTT Status" id="yolink-mqtt-icon" class="hidden">
                 <span id="yolink-mqtt-message">Checking YoLink MQTT connection...</span>
             </div>
-            <!-- Monitor MQTT Status -->
             <div id="monitor-mqtt-status" class="status mb-2">
                 <img src="" alt="Monitor MQTT Status" id="monitor-mqtt-icon" class="hidden">
                 <span id="monitor-mqtt-message">Checking Monitor MQTT connection...</span>
             </div>
-            <!-- Receiver Server Status -->
             <div id="receiver-status" class="status mb-2">
-                <img src="" alt="Receiver Server Status" id="receiver-icon" class="hidden">
-                <span id="receiver-message">Checking Receiver server status...</span>
+                <img src="" alt="Receiver Status" id="receiver-icon" class="hidden">
+                <span id="receiver-message">Checking Receiver status...</span>
             </div>
         </div>
 
         <!-- Configuration Form -->
-        <form id="config-form" class="form-section">
-            <!-- YoLink Configuration -->
+        <form id="config-form" class="form-section" method="POST" action="{{ url_for('config') }}">
             <h2>YoLink Configuration</h2>
             <div class="form-group">
                 <label for="yolink_url">YoLink MQTT URL</label>
@@ -152,14 +79,21 @@
             </div>
             <div class="form-group">
                 <label for="yolink_username">YoLink MQTT Username</label>
-                <input type="text" id="yolink_username" name="yolink_username" class="form-control" value="{{ config.mqtt.username }}" required>
+                <input type="text" id="yolink_username" name="yolink_username" class="form-control" value="{{ config.mqtt.username }}">
             </div>
             <div class="form-group">
                 <label for="yolink_password">YoLink MQTT Password</label>
-                <input type="password" id="yolink_password" name="yolink_password" class="form-control" value="{{ config.mqtt.password }}" required>
+                <input type="password" id="yolink_password" name="yolink_password" class="form-control" value="{{ config.mqtt.password }}">
+            </div>
+            <div class="form-group">
+                <label for="yolink_csid">YoLink CSID</label>
+                <input type="text" id="yolink_csid" name="yolink_csid" class="form-control" value="{{ config.yolink.csid }}" required>
+            </div>
+            <div class="form-group">
+                <label for="yolink_csseckey">YoLink CSSECKEY</label>
+                <input type="text" id="yolink_csseckey" name="yolink_csseckey" class="form-control" value="{{ config.yolink.csseckey }}" required>
             </div>
 
-            <!-- Monitor MQTT Configuration -->
             <h2>Monitor MQTT Configuration</h2>
             <div class="form-group">
                 <label for="monitor_mqtt_url">Monitor MQTT URL</label>
@@ -171,331 +105,122 @@
             </div>
             <div class="form-group">
                 <label for="monitor_mqtt_username">Monitor MQTT Username</label>
-                <input type="text" id="monitor_mqtt_username" name="monitor_mqtt_username" class="form-control" value="{{ config.mqtt_monitor.username }}" required>
+                <input type="text" id="monitor_mqtt_username" name="monitor_mqtt_username" class="form-control" value="{{ config.mqtt_monitor.username }}">
             </div>
             <div class="form-group">
                 <label for="monitor_mqtt_password">Monitor MQTT Password</label>
-                <input type="password" id="monitor_mqtt_password" name="monitor_mqtt_password" class="form-control" value="{{ config.mqtt_monitor.password }}" required>
+                <input type="password" id="monitor_mqtt_password" name="monitor_mqtt_password" class="form-control" value="{{ config.mqtt_monitor.password }}">
             </div>
 
-            <!-- Alert Receiver Configuration -->
-            <h2>Alert Receiver Configuration</h2>
+            <h2>Receiver Configuration</h2>
             <div class="form-group">
-                <label for="receiver_type">Select Alert Receiver</label>
+                <label for="receiver_type">Receiver Type</label>
                 <select id="receiver_type" name="receiver_type" class="form-control" required>
                     <option value="CHEKT" {% if config.receiver_type == 'CHEKT' %}selected{% endif %}>CHEKT</option>
                     <option value="SIA" {% if config.receiver_type == 'SIA' %}selected{% endif %}>SIA</option>
                 </select>
             </div>
-
             <!-- CHEKT Configuration -->
-            <div id="chekt-config" class="chekt-config">
-                <h2>CHEKT Configuration</h2>
-                <div class="form-group">
-                    <label for="chekt_ip">CHEKT IP Address</label>
-                    <input type="text" id="chekt_ip" name="chekt_ip" class="form-control" value="{{ config.chekt.ip }}">
-                </div>
-                <div class="form-group">
-                    <label for="chekt_port">CHEKT Port</label>
-                    <input type="number" id="chekt_port" name="chekt_port" class="form-control" value="{{ config.chekt.port }}">
-                </div>
-                <div class="form-group">
-                    <label for="chekt_api_token">CHEKT API Token</label>
-                    <input type="text" id="chekt_api_token" name="chekt_api_token" class="form-control" value="{{ config.chekt.api_token }}">
-                </div>
+            <div id="chekt-config" class="form-group" {% if config.receiver_type != 'CHEKT' %}style="display: none;"{% endif %}>
+                <label for="chekt_api_token">CHEKT API Token</label>
+                <input type="text" id="chekt_api_token" name="chekt_api_token" class="form-control" value="{{ config.chekt.api_token }}">
             </div>
-
             <!-- SIA Configuration -->
-            <div id="sia-config" class="sia-config" style="display: none;">
-                <h2>SIA Configuration</h2>
-                <div class="form-group">
-                    <label for="sia_ip">SIA IP Address</label>
-                    <input type="text" id="sia_ip" name="sia_ip" class="form-control" value="{{ config.sia.ip }}">
-                </div>
-                <div class="form-group">
-                    <label for="sia_port">SIA Port</label>
-                    <input type="number" id="sia_port" name="sia_port" class="form-control" value="{{ config.sia.port }}">
-                </div>
-                <div class="form-group">
-                    <label for="sia_account_id">SIA Account ID</label>
-                    <input type="text" id="sia_account_id" name="sia_account_id" class="form-control" value="{{ config.sia.account_id }}">
-                </div>
-                <div class="form-group">
-                    <label for="sia_transmitter_id">SIA Transmitter ID</label>
-                    <input type="text" id="sia_transmitter_id" name="sia_transmitter_id" class="form-control" value="{{ config.sia.transmitter_id }}">
-                </div>
-                <div class="form-group">
-                    <label for="sia_contact_id">SIA Contact ID</label>
-                    <input type="text" id="sia_contact_id" name="sia_contact_id" class="form-control" value="{{ config.sia.contact_id }}">
-                </div>
-                <div class="form-group">
-                    <label for="sia_encryption_key">SIA Encryption Key</label>
-                    <input type="text" id="sia_encryption_key" name="sia_encryption_key" class="form-control" value="{{ config.sia.encryption_key }}">
-                </div>
+            <div id="sia-config" class="form-group" {% if config.receiver_type != 'SIA' %}style="display: none;"{% endif %}>
+                <label for="sia_ip">SIA IP</label>
+                <input type="text" id="sia_ip" name="sia_ip" class="form-control" value="{{ config.sia.ip }}">
+                <label for="sia_port">SIA Port</label>
+                <input type="number" id="sia_port" name="sia_port" class="form-control" value="{{ config.sia.port }}">
+                <label for="sia_account_id">SIA Account ID</label>
+                <input type="text" id="sia_account_id" name="sia_account_id" class="form-control" value="{{ config.sia.account_id }}">
+                <label for="sia_transmitter_id">SIA Transmitter ID</label>
+                <input type="text" id="sia_transmitter_id" name="sia_transmitter_id" class="form-control" value="{{ config.sia.transmitter_id }}">
+                <label for="sia_encryption_key">SIA Encryption Key</label>
+                <input type="text" id="sia_encryption_key" name="sia_encryption_key" class="form-control" value="{{ config.sia.encryption_key }}">
             </div>
 
-            <!-- Monitor API Key Configuration -->
             <h2>Monitor Configuration</h2>
             <div class="form-group">
                 <label for="monitor_api_key">Monitor API Key</label>
-                <input type="text" id="monitor_api_key" name="monitor_api_key" class="form-control" value="{{ config.monitor.api_key }}" required>
+                <input type="text" id="monitor_api_key" name="monitor_api_key" class="form-control" value="{{ config.monitor.api_key }}">
             </div>
 
-            <!-- Timezone Selection -->
+            <h2>Timezone</h2>
             <div class="form-group">
-                <label for="timezone">Select Timezone</label>
+                <label for="timezone">Timezone</label>
                 <select id="timezone" name="timezone" class="form-control" required>
                     <option value="UTC" {% if config.timezone == 'UTC' %}selected{% endif %}>UTC</option>
                     <option value="America/New_York" {% if config.timezone == 'America/New_York' %}selected{% endif %}>America/New_York</option>
-                    <option value="America/Chicago" {% if config.timezone == 'America/Chicago' %}selected{% endif %}>America/Chicago</option>
-                    <option value="America/Denver" {% if config.timezone == 'America/Denver' %}selected{% endif %}>America/Denver</option>
                     <option value="America/Los_Angeles" {% if config.timezone == 'America/Los_Angeles' %}selected{% endif %}>America/Los_Angeles</option>
-                    <option value="Europe/London" {% if config.timezone == 'Europe/London' %}selected{% endif %}>Europe/London</option>
-                    <option value="Asia/Tokyo" {% if config.timezone == 'Asia/Tokyo' %}selected{% endif %}>Asia/Tokyo</option>
-                    <!-- Add more timezones as needed -->
                 </select>
             </div>
 
             <button type="submit" class="btn btn-primary">Save Configuration</button>
-            <div id="config-status" class="status mt-2">
-                <img src="" alt="Configuration Status" id="config-icon" class="hidden">
-                <span id="config-message"></span>
-            </div>
         </form>
 
-        <!-- Refresh YoLink Devices Section -->
         <div class="mb-4">
-            <button type="button" id="refresh-devices-btn" class="btn btn-success">Refresh YoLink Devices</button>
-            <div id="yolink-status" class="status mt-2">
-                <img src="" alt="YoLink Devices Refresh Status" id="yolink-icon" class="hidden">
-                <span id="yolink-message"></span>
+            <button id="refresh-devices-btn" class="btn btn-success">Refresh YoLink Devices</button>
+            <div id="refresh-status" class="status mt-2">
+                <img src="" alt="Refresh Status" id="refresh-icon" class="hidden">
+                <span id="refresh-message"></span>
             </div>
         </div>
 
-        <!-- Device Mapping Form -->
-        <!-- Device Mapping Section (if applicable) -->
-        <!-- ... existing table content ... -->
-
-        <!-- Log Area -->
         <h2>Application Logs</h2>
-        <input type="text" id="log-search" class="form-control" placeholder="Search logs...">
         <div id="log-area" class="log">
             <pre id="log-content"></pre>
         </div>
     </div>
 
-    <!-- JavaScript Dependencies -->
     <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
-    <!-- Bootstrap JS -->
     <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/js/bootstrap.bundle.min.js"></script>
-    <!-- Custom Script -->
     <script>
-        // Function to add messages to the log area
-        function addToLog(message) {
-            $('#log-content').append(new Date().toLocaleString() + ': ' + message + '\n');
-            $('#log-area').scrollTop($('#log-area')[0].scrollHeight);
-        }
-
-        // Function to update status with icon and message
         function updateStatus(elementId, iconId, message, success) {
-            const icon = success 
-                ? 'https://img.icons8.com/color/48/000000/checkmark.png' 
-                : 'https://img.icons8.com/color/48/000000/cancel.png';
+            const icon = success ? 'https://img.icons8.com/color/48/000000/checkmark.png' : 'https://img.icons8.com/color/48/000000/cancel.png';
             $('#' + iconId).attr('src', icon).removeClass('hidden');
             $('#' + elementId).text(message);
         }
 
-        // Function to check system statuses via AJAX
         function checkStatus(url, elementId, iconId, successMessage, errorMessage) {
-            $.ajax({
-                type: "GET",
-                url: url,
-                success: function (response) {
-                    if (response.status === "success") {
-                        updateStatus(elementId, iconId, successMessage, true);
-                    } else {
-                        updateStatus(elementId, iconId, errorMessage, false);
-                    }
-                },
-                error: function (xhr, status, error) {
-                    updateStatus(elementId, iconId, errorMessage, false);
-                }
+            $.get(url, function(response) {
+                updateStatus(elementId, iconId, response.message, response.status === "success");
+            }).fail(function() {
+                updateStatus(elementId, iconId, errorMessage, false);
             });
         }
 
-        // Function to fetch and display logs
         function fetchLogs() {
-            $.ajax({
-                type: "GET",
-                url: "/get_logs",
-                success: function (response) {
-                    if (response.status === "success") {
-                        var logs = response.logs;
-                        // Store logs in a global variable for search functionality
-                        window.allLogs = logs;
-
-                        displayLogs(logs);
-                    } else {
-                        addToLog("Failed to load logs: " + response.message);
-                    }
-                },
-                error: function (xhr, status, error) {
-                    addToLog('Error loading logs: ' + xhr.responseText);
+            $.get('/get_logs', function(response) {
+                if (response.status === "success") {
+                    $('#log-content').text(response.logs);
+                    $('#log-area').scrollTop($('#log-area')[0].scrollHeight);
                 }
             });
         }
 
-        // Function to display logs
-        function displayLogs(logs) {
-            // Escape HTML special characters to prevent XSS
-            var escapedLogs = $('<div/>').text(logs).html();
-            $('#log-content').html(escapedLogs);
-            // Scroll to the bottom
-            $('#log-area').scrollTop($('#log-area')[0].scrollHeight);
-        }
-
-        // Search functionality
-        $('#log-search').on('input', function () {
-            var searchTerm = $(this).val().toLowerCase();
-            var filteredLogs = window.allLogs.split('\n').filter(function (line) {
-                return line.toLowerCase().includes(searchTerm);
-            }).join('\n');
-            displayLogs(filteredLogs);
-        });
-
-        // Function to toggle CHEKT and SIA configuration visibility based on receiver type selection
-        function toggleReceiverConfig() {
-            const receiverType = $('#receiver_type').val();
-            if (receiverType === 'CHEKT') {
-                $('#chekt-config').show();
-                $('#sia-config').hide();
-            } else if (receiverType === 'SIA') {
-                $('#chekt-config').hide();
-                $('#sia-config').show();
-            }
-        }
-
-        // Function to save configuration form
-        $('#config-form').on('submit', function (e) {
-            e.preventDefault();
-
-            var configData = {
-                mqtt: {
-                    url: $('#yolink_url').val(),
-                    port: $('#yolink_port').val(),
-                    username: $('#yolink_username').val(),
-                    password: $('#yolink_password').val()
-                },
-                mqtt_monitor: {
-                    url: $('#monitor_mqtt_url').val(),
-                    port: $('#monitor_mqtt_port').val(),
-                    username: $('#monitor_mqtt_username').val(),
-                    password: $('#monitor_mqtt_password').val()
-                },
-                receiver_type: $('#receiver_type').val(),
-                chekt: {
-                    ip: $('#chekt_ip').val(),
-                    port: $('#chekt_port').val(),
-                    api_token: $('#chekt_api_token').val()
-                },
-                sia: {
-                    ip: $('#sia_ip').val(),
-                    port: $('#sia_port').val(),
-                    account_id: $('#sia_account_id').val(),
-                    transmitter_id: $('#sia_transmitter_id').val(),
-                    contact_id: $('#sia_contact_id').val(),
-                    encryption_key: $('#sia_encryption_key').val()
-                },
-                monitor: {
-                    api_key: $('#monitor_api_key').val()
-                },
-                timezone: $('#timezone').val()
-            };
-
-            $('#config-icon').addClass('hidden');
-            $('#config-message').text('Saving configuration...');
-            $.ajax({
-                type: "POST",
-                url: "/save_config",
-                contentType: "application/json",
-                data: JSON.stringify(configData),
-                success: function (response) {
-                    updateStatus('config-message', 'config-icon', 'Configuration saved successfully.', true);
-                    addToLog(response.message);
-                    // Recheck statuses after saving
-                    checkStatus('/check_mqtt_status', 'yolink-mqtt-message', 'yolink-mqtt-icon', 'YoLink MQTT connection is active.', 'YoLink MQTT connection is inactive.');
-                    checkStatus('/check_monitor_mqtt_status', 'monitor-mqtt-message', 'monitor-mqtt-icon', 'Monitor MQTT connection is active.', 'Monitor MQTT connection is inactive.');
-                    checkStatus('/check_receiver_status', 'receiver-message', 'receiver-icon', 'Receiver server is alive.', 'Failed to connect to Receiver server.');
-                },
-                error: function (xhr, status, error) {
-                    updateStatus('config-message', 'config-icon', 'Failed to save configuration.', false);
-                    addToLog('Error: ' + xhr.responseText);
-                }
-            });
-        });
-
-        // Function to toggle receiver configuration sections on page load and receiver type change
-        function toggleReceiverConfigVisibility() {
-            toggleReceiverConfig();
-        }
-
-        $(document).ready(function () {
-            // Initialize receiver config visibility
-            toggleReceiverConfigVisibility();
-
-            // Check statuses
-            checkStatus(
-                '/check_mqtt_status', 
-                'yolink-mqtt-message', 
-                'yolink-mqtt-icon', 
-                'YoLink MQTT connection is active.', 
-                'YoLink MQTT connection is inactive.'
-            );
-            checkStatus(
-                '/check_monitor_mqtt_status', 
-                'monitor-mqtt-message', 
-                'monitor-mqtt-icon', 
-                'Monitor MQTT connection is active.', 
-                'Monitor MQTT connection is inactive.'
-            );
-            checkStatus(
-                '/check_receiver_status', 
-                'receiver-message', 
-                'receiver-icon', 
-                'Receiver server is alive.', 
-                'Failed to connect to Receiver server.'
-            );
-
-            // Fetch and update logs initially and set interval for live updates
+        $(document).ready(function() {
+            checkStatus('/check_mqtt_status', 'yolink-mqtt-message', 'yolink-mqtt-icon', 'YoLink MQTT connection is active.', 'YoLink MQTT connection is inactive.');
+            checkStatus('/check_monitor_mqtt_status', 'monitor-mqtt-message', 'monitor-mqtt-icon', 'Monitor MQTT connection is active.', 'Monitor MQTT connection is inactive.');
+            checkStatus('/check_receiver_status', 'receiver-message', 'receiver-icon', 'Receiver is alive.', 'Receiver connection failed.');
             fetchLogs();
-            setInterval(fetchLogs, 5000); // Update logs every 5 seconds
+            setInterval(fetchLogs, 5000);
 
-            // Change event for receiver type selection
             $('#receiver_type').change(function() {
-                toggleReceiverConfigVisibility();
-            });
-        });
-
-        // Refresh YoLink Devices button action
-        $('#refresh-devices-btn').click(function() {
-            $('#yolink-icon').addClass('hidden');
-            $('#yolink-message').text('Refreshing YoLink devices...');
-            $.ajax({
-                type: "GET",
-                url: "/refresh_yolink_devices",  // Backend route to update devices
-                success: function (response) {
-                    if (response.status === "success") {
-                        updateStatus('yolink-message', 'yolink-icon', 'YoLink devices refreshed successfully.', true);
-                        addToLog(response.message);
-                    } else {
-                        updateStatus('yolink-message', 'yolink-icon', 'Failed to refresh YoLink devices.', false);
-                        addToLog('Error: ' + response.message);
-                    }
-                },
-                error: function (xhr, status, error) {
-                    updateStatus('yolink-message', 'yolink-icon', 'Failed to refresh YoLink devices.', false);
-                    addToLog('Error: ' + xhr.responseText);
+                if ($(this).val() === 'CHEKT') {
+                    $('#chekt-config').show();
+                    $('#sia-config').hide();
+                } else {
+                    $('#chekt-config').hide();
+                    $('#sia-config').show();
                 }
+            });
+
+            $('#refresh-devices-btn').click(function() {
+                $('#refresh-icon').addClass('hidden');
+                $('#refresh-message').text('Refreshing YoLink devices...');
+                $.get('/refresh_yolink_devices', function(response) {
+                    updateStatus('refresh-message', 'refresh-icon', response.message, response.status === "success");
+                });
             });
         });
     </script>

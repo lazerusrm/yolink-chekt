@@ -1,592 +1,147 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <!-- Meta and Title -->
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>YoLink to CHEKT Status</title>
-    <!-- Bootstrap CSS -->
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css">
-    <!-- Font Awesome CSS -->
-    <!-- Using the latest version of Font Awesome 6 -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css" integrity="sha512-Kc323vGBEqzTmouAECnVceyQqyqdsSiqLQISBL29aUW4U/M7pSPA/gEUZQqv1cwx4OnYxTxve5UMg5GT6L4JJg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
     <style>
-        /* General Styles */
-        body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
-            padding: 20px;
-            background-color: #2e2e2e;
-            color: #ffffff;
-        }
-
-        .status, .sensor-data {
-            background-color: #4a4a4a;
-            padding: 15px;
-            border-radius: 10px;
-            margin-bottom: 30px;
-        }
-
-        .status img {
-            width: 20px;
-            height: 20px;
-            margin-right: 10px;
-        }
-
-        h1, h2 {
-            color: #ffffff;
-        }
-
-        .sensor-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 15px;
-        }
-
-        .sensor {
-            background-color: #3a3a3a;
-            padding: 15px;
-            border-radius: 10px;
-            transition: border 0.3s ease;
-            position: relative;
-        }
-
-        .sensor-name {
-            font-size: 1.25rem;
-            font-weight: bold;
-            color: #00ff00;
-        }
-
-        .sensor-data-item {
-            font-size: 1rem;
-            margin: 5px 0;
-        }
-
-        /* Battery Icon Styles */
-        .battery-icon {
-            font-size: 1.2em;
-            margin-right: 10px;
-            vertical-align: middle;
-        }
-
-        .battery-icon.fa-battery-empty {
-            color: red;
-        }
-
-        .battery-icon.fa-battery-quarter {
-            color: orange;
-        }
-
-        .battery-icon.fa-battery-half {
-            color: gold;
-        }
-
-        .battery-icon.fa-battery-three-quarters {
-            color: yellowgreen;
-        }
-
-        .battery-icon.fa-battery-full {
-            color: green;
-        }
-
-        /* Link Styles */
-        .link {
-            display: block;
-            margin-top: 20px;
-            text-decoration: none;
-            color: #007BFF;
-        }
-
-        /* Spinner Styles */
-        .spinner {
-            border: 4px solid rgba(255, 255, 255, 0.3);
-            border-top: 4px solid #ffffff;
-            border-radius: 50%;
-            width: 24px;
-            height: 24px;
-            display: inline-block;
-            margin-left: 10px;
-            vertical-align: middle;
-            animation-duration: 5s;  /* Slow spin by default */
-            animation-timing-function: linear;
-            animation-iteration-count: infinite;
-            animation-name: slow-spin;
-        }
-
-        /* Slow spin animation */
-        @keyframes slow-spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        /* Fast spin animation */
-        .fast-spin {
-            animation-name: fast-spin;
-            animation-duration: 1s;  /* Fast spin */
-        }
-
-        @keyframes fast-spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        /* Alarm and Warning Styles */
-        .sensor.alarm {
-            border: 2px solid red;
-        }
-
-        .sensor.warning {
-            border: 2px solid yellow;
-        }
-
-        .alarm {
-            border: 2px solid red;
-        }
-
-        .warning {
-            border: 2px solid yellow;
-        }
-
-        .hidden {
-            display: none !important;
-        }
-
-        /* CHEKT Zone Editing Styles */
-        .chekt-zone {
-            color: red;
-            font-size: 1.25rem;
-            font-weight: bold;
-            cursor: pointer;
-            display: block;
-            margin-top: 5px;
-        }
-
-        .chekt-zone-input {
-            width: 60px;
-            text-align: center;
-            font-size: 1.25rem;
-            font-weight: bold;
-            color: red;
-            background-color: transparent;
-            border: none;
-            border-bottom: 1px solid red;
-            margin-top: 5px;
-        }
-
-        .chekt-zone-input:focus {
-            outline: none;
-        }
-
-        .save-confirmation {
-            position: absolute;
-            bottom: 10px;
-            right: 10px;
-            color: #00ff00;
-            font-size: 0.9rem;
-            font-weight: bold;
-        }
+        body { font-family: Arial, sans-serif; margin: 20px; padding: 20px; background-color: #2e2e2e; color: #ffffff; }
+        .status, .sensor-data { background-color: #4a4a4a; padding: 15px; border-radius: 10px; margin-bottom: 30px; }
+        .status img { width: 20px; height: 20px; margin-right: 10px; }
+        h1, h2 { color: #ffffff; }
+        .sensor-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; }
+        .sensor { background-color: #3a3a3a; padding: 15px; border-radius: 10px; }
+        .sensor-name { font-size: 1.25rem; font-weight: bold; color: #00ff00; }
+        .sensor-data-item { font-size: 1rem; margin: 5px 0; }
+        .battery-icon { font-size: 1.2em; margin-right: 10px; vertical-align: middle; }
+        .battery-icon.fa-battery-empty { color: red; }
+        .battery-icon.fa-battery-quarter { color: orange; }
+        .battery-icon.fa-battery-half { color: gold; }
+        .battery-icon.fa-battery-three-quarters { color: yellowgreen; }
+        .battery-icon.fa-battery-full { color: green; }
+        .spinner { border: 4px solid rgba(255, 255, 255, 0.3); border-top: 4px solid #ffffff; border-radius: 50%; width: 24px; height: 24px; display: inline-block; margin-left: 10px; vertical-align: middle; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .hidden { display: none !important; }
+        .chekt-zone { color: red; font-size: 1.25rem; font-weight: bold; cursor: pointer; }
+        .chekt-zone-input { width: 60px; text-align: center; font-size: 1.25rem; font-weight: bold; color: red; background-color: transparent; border: none; border-bottom: 1px solid red; }
+        .save-confirmation { color: #00ff00; font-size: 0.9rem; font-weight: bold; }
     </style>
 </head>
-
 <body>
-    <!-- Navigation Bar -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
         <a class="navbar-brand" href="#">YoLink to CHEKT</a>
-        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav" 
-            aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
             <span class="navbar-toggler-icon"></span>
         </button>
         <div class="collapse navbar-collapse" id="navbarNav">
             <ul class="navbar-nav">
-                <li class="nav-item {% if request.path == '/' %}active{% endif %}">
-                    <a class="nav-link" href="/">Dashboard</a>
-                </li>
-                <li class="nav-item {% if request.path == '/config.html' %}active{% endif %}">
-                    <a class="nav-link" href="/config.html">Configuration</a>
-                </li>
-                <!-- Logout Link -->
-                <li class="nav-item">
-                    <a class="nav-link" href="{{ url_for('logout') }}">Logout</a>
-                </li>
+                <li class="nav-item active"><a class="nav-link" href="{{ url_for('index') }}">Dashboard</a></li>
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('config') }}">Configuration</a></li>
+                <li class="nav-item"><a class="nav-link" href="{{ url_for('logout') }}">Logout</a></li>
             </ul>
         </div>
     </nav>
 
-    <!-- Check if user is authenticated -->
     {% if current_user.is_authenticated %}
     <div class="container">
         <h1>Welcome, {{ current_user.id }}!</h1>
-
-        <!-- Status check for MQTT and CHEKT -->
         <div class="status">
-            <h2>Status <span id="loading-spinner" class="spinner"></span></h2> <!-- Spinner always visible -->
-            
-            <!-- YoLink MQTT Status -->
+            <h2>Status <span class="spinner"></span></h2>
             <div id="yolink-mqtt-status" class="status-item mb-2">
                 <img src="" alt="YoLink MQTT Status" id="yolink-mqtt-icon" class="hidden">
                 <span id="yolink-mqtt-message">Checking YoLink MQTT connection...</span>
             </div>
-
-            <!-- Monitor MQTT Status -->
             <div id="monitor-mqtt-status" class="status-item mb-2">
                 <img src="" alt="Monitor MQTT Status" id="monitor-mqtt-icon" class="hidden">
                 <span id="monitor-mqtt-message">Checking Monitor MQTT connection...</span>
             </div>
-
-            <!-- CHEKT Server Status -->
-            <div id="chekt-status" class="status-item mb-2">
-                <img src="" alt="CHEKT Server Status" id="chekt-icon" class="hidden">
-                <span id="chekt-message">Checking CHEKT server status...</span>
+            <div id="receiver-status" class="status-item mb-2">
+                <img src="" alt="Receiver Status" id="receiver-icon" class="hidden">
+                <span id="receiver-message">Checking Receiver status...</span>
             </div>
-
-            <!-- Update Yolink Devices Button -->
-            <button id="update-devices" class="btn btn-secondary mt-3">Update Yolink Devices</button>
-
-            <!-- Loading spinner for refresh -->
-            <div id="refresh-spinner" class="spinner hidden" style="margin-left: 10px;"></div>
-            <span id="refresh-message" style="color: yellow; margin-left: 10px;"></span>
+            <button id="update-devices" class="btn btn-secondary mt-3">Update YoLink Devices</button>
         </div>
 
-        <!-- Sensor Data Section -->
         <div class="sensor-data">
             <h2>Sensor Data</h2>
             <div class="sensor-grid" id="sensor-list">
-                <!-- Sensor data will be appended here dynamically -->
+                {% for device in devices %}
+                <div class="sensor">
+                    <p class="sensor-name">{{ device.name or 'Unknown Device' }}</p>
+                    <span class="chekt-zone" onclick="makeZoneEditable(this, '{{ device.deviceId }}')">{{ device.chekt_zone if device.chekt_zone != 'N/A' else 'No Zone' }}</span>
+                    {% if device.state and device.state != 'unknown' %}<p class="sensor-data-item">State: {{ device.state }}</p>{% endif %}
+                    {% if device.battery is not none %}
+                    <p class="sensor-data-item">
+                        <i class="fas {{ 'fa-battery-full' if device.battery == 4 else 'fa-battery-three-quarters' if device.battery == 3 else 'fa-battery-half' if device.battery == 2 else 'fa-battery-quarter' if device.battery == 1 else 'fa-battery-empty' }} battery-icon"></i>
+                        Battery: {{ device.battery }}
+                    </p>
+                    {% endif %}
+                    {% if device.last_seen %}<p class="sensor-data-item">Last Seen: {{ device.last_seen }}</p>{% endif %}
+                    <span class="save-confirmation" id="save-confirmation-{{ device.deviceId }}" style="display: none;">Saved!</span>
+                </div>
+                {% endfor %}
             </div>
         </div>
     </div>
     {% else %}
-    <!-- If user is not authenticated, redirect to login -->
-    <script>
-        window.location.href = "{{ url_for('login') }}";
-    </script>
+    <script>window.location.href = "{{ url_for('login') }}";</script>
     {% endif %}
 
-    <!-- Include jQuery and your JavaScript code -->
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <!-- Bootstrap JS (Optional for functionality like navbar toggle) -->
     <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/js/bootstrap.min.js"></script>
     <script>
-        // Function to toggle spinner speed between slow and fast
-        function toggleSpinnerSpeed(fast) {
-            if (fast) {
-                $('#loading-spinner').addClass('fast-spin');  // Fast spin
-            } else {
-                $('#loading-spinner').removeClass('fast-spin');  // Slow spin
-            }
-        }
-
-        // Function to update status with icon and message
         function updateStatus(elementId, iconId, message, success) {
-            const icon = success 
-                ? 'https://img.icons8.com/color/48/000000/checkmark.png' 
-                : 'https://img.icons8.com/color/48/000000/cancel.png';
+            const icon = success ? 'https://img.icons8.com/color/48/000000/checkmark.png' : 'https://img.icons8.com/color/48/000000/cancel.png';
             $('#' + iconId).attr('src', icon).removeClass('hidden');
             $('#' + elementId).text(message);
         }
 
-        // Function to check status via AJAX
         function checkStatus(url, elementId, iconId, successMessage, errorMessage) {
-            $.ajax({
-                type: "GET",
-                url: url,
-                success: function (response) {
-                    if (response.status === "success") {
-                        updateStatus(elementId, iconId, successMessage, true);
-                    } else {
-                        updateStatus(elementId, iconId, errorMessage, false);
-                    }
-                },
-                error: function () {
-                    updateStatus(elementId, iconId, errorMessage, false);
-                }
+            $.get(url, function(response) {
+                updateStatus(elementId, iconId, response.message, response.status === "success");
+            }).fail(function() {
+                updateStatus(elementId, iconId, errorMessage, false);
             });
         }
 
-        // Function to determine signal quality
-        function getSignalQuality(signal) {
-            if (signal >= -70) {
-                return "Excellent";
-            } else if (signal >= -90) {
-                return "High";
-            } else if (signal >= -110) {
-                return "Good";
-            } else if (signal >= -130) {
-                return "Poor";
-            } else {
-                return "Very Poor";
-            }
-        }
-
-        // Function to map battery level to percentage and get battery icon class
-        function getBatteryInfo(batteryLevel) {
-            let percentage;
-            let iconClass;
-
-            switch (batteryLevel) {
-                case 0:
-                    percentage = "0%";
-                    iconClass = "fa-battery-empty";
-                    break;
-                case 1:
-                    percentage = "25%";
-                    iconClass = "fa-battery-quarter";
-                    break;
-                case 2:
-                    percentage = "50%";
-                    iconClass = "fa-battery-half";
-                    break;
-                case 3:
-                    percentage = "75%";
-                    iconClass = "fa-battery-three-quarters";
-                    break;
-                case 4:
-                    percentage = "100%";
-                    iconClass = "fa-battery-full";
-                    break;
-                default:
-                    percentage = "N/A";
-                    iconClass = "fa-battery-empty";
-                    break;
-            }
-
-            return { percentage, iconClass };
-        }
-
-        // Function to compare sensors first by last seen and then by name
-        function compareSensors(a, b) {
-            const timeA = new Date(a.last_seen).getTime();
-            const timeB = new Date(b.last_seen).getTime();
-
-            // Prioritize valid times first, put invalid dates last
-            if (isNaN(timeA) && !isNaN(timeB)) return 1;   // a has no valid date, b does
-            if (!isNaN(timeA) && isNaN(timeB)) return -1;  // a has a valid date, b doesn't
-
-            // First compare by last_seen (most recent first)
-            if (timeA !== timeB) {
-                return timeB - timeA;
-            }
-
-            // If last_seen times are equal, compare by name alphabetically
-            return a.name.localeCompare(b.name);
-        }
-
-        // Function to convert UTC to local time and format
-        function formatLocalTime(isoDateString) {
-            if (!isoDateString || isoDateString === 'never') return "Never";  // Handle missing or "never" dates
-            const localTime = new Date(isoDateString);
-            if (!isNaN(localTime)) {
-                return localTime.toLocaleString();  // Convert to local time and format
-            }
-            return "Invalid date";  // Return 'Invalid date' if not valid
-        }
-
-        // Function to get border class based on sensor status
-        function getBorderClass(sensor, uptimeSeconds) {
-            let additionalClass = '';
-
-            if (uptimeSeconds > 14400) { // 4 hours in seconds
-                const lastSeenTime = new Date(sensor.last_seen).getTime();
-                const currentTime = new Date().getTime();
-                const diffMinutes = (currentTime - lastSeenTime) / (1000 * 60); // Difference in minutes
-
-                if (diffMinutes > 300) { // 5 hours = 300 minutes
-                    additionalClass = 'alarm';
-                } else if (diffMinutes > 255) { // 4h15m = 255 minutes
-                    additionalClass = 'warning';
-                }
-            }
-
-            const existingClass = sensor.alarm ? 'alarm' : (sensor.warning ? 'warning' : '');
-            return `${existingClass} ${additionalClass}`.trim();
-        }
-
-        // Function to highlight fields in alarm/warning state
-        function getHighlightClass(value, min, max) {
-            if (value === undefined || value === null || value === 'unknown') return '';
-            if (value > max || value < min) {
-                return 'alarm';
-            }
-            return '';
-        }
-
-        // Function to fetch and update sensor data
         function updateSensorData() {
-            toggleSpinnerSpeed(true); // Fast spin when reloading
-            // Fetch sensor data and system uptime simultaneously
-            $.when(
-                $.ajax({
-                    type: "GET",
-                    url: "/get_sensor_data",
-                }),
-                $.ajax({
-                    type: "GET",
-                    url: "/system_uptime",
-                })
-            ).done(function (sensorResponse, uptimeResponse) {
-                const sensorData = sensorResponse[0];
-                const uptimeData = uptimeResponse[0];
-                const uptimeSeconds = uptimeData.uptime_seconds;
-
-                const sensorList = $('#sensor-list');
-                sensorList.empty(); // Clear the current list
-
-                sensorData.devices.sort(compareSensors); // Sort sensors
-
-                sensorData.devices.forEach(sensor => {
-                    const signalQuality = getSignalQuality(sensor.signal);
-                    const batteryInfo = getBatteryInfo(sensor.battery);
-                    const lastSeenLocal = formatLocalTime(sensor.last_seen);  // Convert last_seen to local time
-
-                    // Get the appropriate border class based on alarm condition and uptime
-                    const borderClass = getBorderClass(sensor, uptimeSeconds);
-
-                    // Highlight classes for temperature, humidity, signal, and battery
-                    const tempHighlight = getHighlightClass(sensor.temperature, sensor.tempLimit?.min, sensor.tempLimit?.max);
-                    const humidityHighlight = getHighlightClass(sensor.humidity, sensor.humidityLimit?.min, sensor.humidityLimit?.max);
-                    const signalHighlight = sensor.signal <= -115 ? 'warning' : '';
-                    const batteryHighlight = sensor.battery === 0 ? 'alarm' : sensor.battery === 1 ? 'warning' : '';
-
-                    // Get CHEKT zone (ensure sensor.chekt_zone is available)
-                    const chektZone = (sensor.chekt_zone && sensor.chekt_zone.trim() !== '' && sensor.chekt_zone.trim().toLowerCase() !== 'n/a') ? `Zone ${sensor.chekt_zone.trim()}` : 'No Zone';
-
-                    const sensorHTML = `
-                        <div class="sensor ${borderClass}">
-                            <p class="sensor-name">${sensor.name || 'Unknown Device'}</p>
-                            <span class="chekt-zone" onclick="makeZoneEditable(this, '${sensor.deviceId}')">${chektZone}</span>
-                            ${sensor.state && sensor.state !== 'unknown' ? `<p class="sensor-data-item">State: ${sensor.state}</p>` : ''}
-                            ${batteryInfo.percentage !== 'N/A' && sensor.battery !== undefined ? `
-                            <p class="sensor-data-item ${batteryHighlight}">
-                                <i class="fas ${batteryInfo.iconClass} battery-icon"></i>
-                                Battery: ${batteryInfo.percentage}
-                            </p>` : ''}
-                            ${sensor.temperature && sensor.temperature !== 'unknown' ? `<p class="sensor-data-item ${tempHighlight}">Temperature: ${sensor.temperature}°F</p>` : ''}
-                            ${sensor.humidity && sensor.humidity !== 'unknown' ? `<p class="sensor-data-item ${humidityHighlight}">Humidity: ${sensor.humidity}%</p>` : ''}
-                            ${sensor.signal !== undefined ? `<p class="sensor-data-item ${signalHighlight}">Signal: ${sensor.signal} dBm (${signalQuality})</p>` : ''}
-                            ${sensor.last_seen ? `<p class="sensor-data-item">Last Seen: ${lastSeenLocal}</p>` : ''}
-                            <span class="save-confirmation" id="save-confirmation-${sensor.deviceId}" style="display: none;">Saved!</span>
-                        </div>
-                    `;
-                    sensorList.append(sensorHTML);
-                });
-
-                toggleSpinnerSpeed(false); // Slow spin after data is updated
-            }).fail(function () {
-                console.log('Error fetching sensor data or system uptime.');
-                toggleSpinnerSpeed(false);
-                $('#sensor-list').html('<p>Error loading sensor data or system uptime.</p>');
+            $.get('/get_sensor_data', function(data) {
+                // Handled server-side in Jinja2 for initial render
             });
         }
 
-        // Function to make CHEKT zone editable
         function makeZoneEditable(zoneSpan, deviceId) {
-            const currentZoneText = zoneSpan.textContent.trim();
-            const currentZone = currentZoneText.replace('Zone ', '').replace('No Zone', '').trim();
-            const input = document.createElement('input');
-            input.type = 'text';
-            input.value = currentZone;
-            input.classList.add('chekt-zone-input');
-
-            // Replace the zone span with the input field
-            zoneSpan.parentNode.insertBefore(input, zoneSpan);
-            zoneSpan.style.display = 'none';
+            const currentZone = zoneSpan.textContent.replace('No Zone', '').trim();
+            const input = $('<input type="text" class="chekt-zone-input">').val(currentZone);
+            $(zoneSpan).hide().after(input);
             input.focus();
 
-            function saveAndUpdate() {
-                const newZone = input.value.trim();
-                saveZone(deviceId, newZone);  // Save the new zone, even if it's empty
-                zoneSpan.textContent = newZone ? `Zone ${newZone}` : 'No Zone';
-                input.remove();
-                zoneSpan.style.display = 'block';
+            function saveZone() {
+                const newZone = input.val().trim();
+                $.post('/save_mapping', { yolink_device_id: deviceId, chekt_zone: newZone }, function() {
+                    $(zoneSpan).text(newZone || 'No Zone').show();
+                    input.remove();
+                    $('#save-confirmation-' + deviceId).show().delay(2000).fadeOut();
+                });
             }
 
-            input.addEventListener('keydown', function (event) {
-                if (event.key === 'Enter') {
-                    saveAndUpdate();
-                }
-            });
-
-            input.addEventListener('blur', function () {
-                saveAndUpdate();
+            input.on('blur', saveZone).on('keypress', function(e) {
+                if (e.which == 13) saveZone();
             });
         }
 
-        // Function to save the new CHEKT zone to the server
-        function saveZone(deviceId, newZone) {
-            $.ajax({
-                type: "POST",
-                url: "/save_zone",
-                contentType: "application/json",
-                data: JSON.stringify({ deviceId: deviceId, zone: newZone }), // Send empty string if newZone is empty
-                success: function(response) {
-                    console.log('Zone saved successfully.');
-                    // Show save confirmation message
-                    const confirmation = document.getElementById(`save-confirmation-${deviceId}`);
-                    if (confirmation) {
-                        confirmation.style.display = 'inline';
-                        setTimeout(() => {
-                            confirmation.style.display = 'none';
-                        }, 2000); // Show confirmation for 2 seconds
-                    }
-                },
-                error: function(xhr, status, error) {
-                    console.log('Error saving zone: ' + xhr.responseText);
-                    alert('Error saving zone: ' + xhr.responseText);
-                }
-            });
-        }
+        $(document).ready(function() {
+            checkStatus('/check_mqtt_status', 'yolink-mqtt-message', 'yolink-mqtt-icon', 'YoLink MQTT connection is active.', 'YoLink MQTT connection is inactive.');
+            checkStatus('/check_monitor_mqtt_status', 'monitor-mqtt-message', 'monitor-mqtt-icon', 'Monitor MQTT connection is active.', 'Monitor MQTT connection is inactive.');
+            checkStatus('/check_receiver_status', 'receiver-message', 'receiver-icon', 'Receiver is alive.', 'Receiver connection failed.');
+            setInterval(updateSensorData, 10000);
 
-        $(document).ready(function () {
-            // 1. Check YoLink MQTT Status
-            checkStatus(
-                '/check_mqtt_status', 
-                'yolink-mqtt-message', 
-                'yolink-mqtt-icon', 
-                'YoLink MQTT connection is active.', 
-                'YoLink MQTT connection is inactive.'
-            );
-
-            // 2. Check Monitor MQTT Status
-            checkStatus(
-                '/check_monitor_mqtt_status', 
-                'monitor-mqtt-message', 
-                'monitor-mqtt-icon', 
-                'Monitor MQTT connection is active.', 
-                'Monitor MQTT connection is inactive.'
-            );
-
-            // 3. Check CHEKT Server Status
-            checkStatus(
-                '/check_chekt_status', 
-                'chekt-message', 
-                'chekt-icon', 
-                'CHEKT server is alive.', 
-                'Failed to connect to CHEKT server.'
-            );
-
-            // Fetch and update sensor data from devices.yaml and system uptime
-            updateSensorData();
-
-            // Auto-update sensor data every 10 seconds
-            setInterval(updateSensorData, 10000);  // 10000 ms = 10 seconds
-
-            // Update Yolink Devices button action
             $('#update-devices').click(function() {
-                $('#refresh-spinner').removeClass('hidden'); // Show spinner
-                $('#refresh-message').text('Updating Yolink devices...');
-
-                $.ajax({
-                    type: "GET",
-                    url: "/refresh_yolink_devices",  // Backend route to update devices
-                    success: function () {
-                        $('#refresh-spinner').addClass('hidden');
-                        $('#refresh-message').text('Yolink devices updated successfully!');
-                        updateSensorData();  // Refresh the sensor data after update
-                    },
-                    error: function () {
-                        $('#refresh-spinner').addClass('hidden');
-                        $('#refresh-message').text('Failed to update Yolink devices.');
-                    }
+                $.get('/refresh_yolink_devices', function(response) {
+                    updateStatus('refresh-message', 'refresh-icon', response.message, response.status === "success");
+                    location.reload(); // Refresh page to update sensor data
                 });
             });
         });

@@ -6,25 +6,54 @@ This project integrates **Yolink** smart sensors (such as door contacts and moti
 
 ## Features
 
-- Real-time communication between Yolink sensors and CHEKT alarm system.
-- Web-based GUI to manage sensor-to-zone mappings.
-- Containerized solution for easy deployment and management.
-- Automatic restart of services through Docker and systemd.
+- **Containerized:** solution for easy deployment and management.
+- **Automatic restart:** restart of services through Docker and systemd.
+- **Device Management:** Monitor and update YoLink device states, battery levels, and last-seen times.
+- **Alert Integration:** Supports CHEKT and SIA alert receivers for event notifications.
+- **Web Interface:** Dashboard for device status, configuration page for settings, and user authentication with TOTP.
+- **Real-Time Updates:** Uses MQTT for YoLink and monitor server communication.
+- **Persistent Storage:** Stores device and mapping data in Redis, with YAML backups.
+- **Automatic Updates:** Self-update script runs daily to keep the application current.
 
 ## Prerequisites
 
-- **Docker** and **Docker Compose**: This program runs inside Docker containers.
-- A Yolink local bridge or hub to connect Yolink sensors.
-- CHEKT account and API access.
+- **Docker:** Required for containerized deployment.
+- **Docker Compose:** Used to manage multi-container setup (application + Redis).
+- **Linux Host:** Scripts are tailored for Debian-based systems (e.g., Ubuntu).
 
 ## Installation
 
-You can install and run the program with a **single command**. This command will install Docker and Docker Compose (if necessary), clone the project from GitHub, build the containers, and start the system.
+1. **Clone or Download the Repository:** 
+   git clone https://github.com/lazerusrm/yolink-chekt.git
+2. navigate to dir /yolink-chekt
+3. sudo bash install.sh
+
+Project Structure
+app.py: Main Flask application with routes for dashboard, config, and auth.
+config.py: Loads and saves config.yaml.
+yolink_mqtt.py: Handles YoLink MQTT communication.
+monitor_mqtt.py: Manages monitor server MQTT.
+device_manager.py: Manages device data in Redis.
+mappings.py: Handles device-to-zone mappings.
+alerts.py: Triggers alerts to CHEKT/SIA (currently simplified).
+templates/: HTML templates (index.html, config.html, login.html, setup_totp.html).
+docker-compose.yml: Defines services (app + Redis).
+install.sh: Initial setup script.
+self-update.sh: Update script.
+Requirements
+See requirements.txt for Python dependencies. Key packages:
+
+Flask, Flask-Login, Flask-Bcrypt
+paho-mqtt, redis, PyYAML
+pyotp, qrcode, cryptography   
 
 ## Automatic Updates
 
-The program can automatically check for updates from the GitHub repository and apply them. By default, a cron job is created during installation to check for updates daily at 2 AM.
-
+[The program can automatically check for updates from the GitHub repository and apply them. By default, a cron job is created during installation to check for updates daily at 2 AM.
+](1. **Clone or Download the Repository:**
+   ```bash
+   git clone https://github.com/lazerusrm/yolink-chekt.git
+   cd yolink-chekt)
 ### How It Works:
 
 - The program checks for new updates in the GitHub repository.

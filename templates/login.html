@@ -1,147 +1,54 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <!-- Meta and Title -->
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ 'Create User' if create_mode else 'Login' }} - YoLink to CHEKT</title>
-    <!-- Bootstrap CSS -->
+    <title>Login - YoLink to CHEKT</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css" integrity="sha512-Kc323vGBEqzTmouAECnVceyQqyqdsSiqLQISBL29aUW4U/M7pSPA/gEUZQqv1cwx4OnYxTxve5UMg5GT6L4JJg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
     <style>
-        /* General Styles */
-        body {
-            font-family: Arial, sans-serif;
-            background-color: #2e2e2e;
-            color: #ffffff;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-        }
-
-        .login-container {
-            background-color: #4a4a4a;
-            padding: 30px;
-            border-radius: 10px;
-            width: 100%;
-            max-width: 400px;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-        }
-
-        .login-container h1 {
-            color: #00ff00;
-            margin-bottom: 30px;
-            font-size: 1.8rem;
-            text-align: center;
-        }
-
-        .form-control {
-            background-color: #3a3a3a;
-            color: #ffffff;
-            border: none;
-            border-radius: 5px;
-            padding: 10px;
-            margin-bottom: 15px;
-        }
-
-        .form-control:focus {
-            background-color: #3a3a3a;
-            color: #ffffff;
-            border-color: #00ff00;
-            outline: none;
-            box-shadow: none;
-        }
-
-        .btn-login {
-            background-color: #00ff00;
-            color: #2e2e2e;
-            width: 100%;
-            border-radius: 5px;
-            padding: 10px;
-            font-size: 1.1rem;
-            font-weight: bold;
-        }
-
-        .btn-login:hover {
-            background-color: #28a745;
-        }
-
-        .error-message {
-            color: red;
-            font-size: 0.9rem;
-        }
+        body { font-family: Arial, sans-serif; background-color: #2e2e2e; color: #ffffff; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .login-container { background-color: #4a4a4a; padding: 30px; border-radius: 10px; width: 100%; max-width: 400px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2); }
+        .login-container h1 { color: #00ff00; margin-bottom: 30px; font-size: 1.8rem; text-align: center; }
+        .form-control { background-color: #3a3a3a; color: #ffffff; border: none; border-radius: 5px; padding: 10px; margin-bottom: 15px; }
+        .form-control:focus { background-color: #3a3a3a; color: #ffffff; border-color: #00ff00; outline: none; box-shadow: none; }
+        .btn-login { background-color: #00ff00; color: #2e2e2e; width: 100%; border-radius: 5px; padding: 10px; font-size: 1.1rem; font-weight: bold; }
+        .btn-login:hover { background-color: #28a745; }
+        .error-message { color: red; font-size: 0.9rem; text-align: center; }
     </style>
 </head>
 <body>
-
-<div class="login-container">
-    <h1>{{ 'Create User' if create_mode else 'Login' }}</h1>
-    <form method="POST" action="{{ url_for('login') }}" id="loginForm">
-        <!-- Username and Password fields -->
-        <div class="form-group">
-            <label for="username">Username</label>
-            <input type="text" id="username" name="username" class="form-control" placeholder="Enter your username" required>
-        </div>
-        <div class="form-group">
-            <label for="password">Password</label>
-            <input type="password" id="password" name="password" class="form-control" placeholder="Enter your password" required>
-        </div>
-        
-        <button type="submit" class="btn btn-login">{{ 'Create User' if create_mode else 'Login' }}</button>
-
-        <!-- Error messages -->
-        {% if messages %}
-        <div class="error-message">
-            {% for message in messages %}
-                <p>{{ message }}</p>
-            {% endfor %}
-        </div>
-        {% endif %}
-    </form>
-
-    <!-- Info text -->
-    <small class="form-text">
-        {{ 'Secure user creation' if create_mode else 'Secure login with 2-factor authentication' }}
-    </small>
-</div>
-
-<!-- TOTP Modal -->
-<div class="modal fade" id="totpModal" tabindex="-1" aria-labelledby="totpModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content" style="background-color: #4a4a4a; color: #ffffff;">
-            <div class="modal-header">
-                <h5 class="modal-title" id="totpModalLabel">Two-Factor Authentication</h5>
-                <button type="button" class="close" data-dismiss="modal" aria-label="Close" style="color: #ffffff;">
-                    <span aria-hidden="true">&times;</span>
-                </button>
+    <div class="login-container">
+        <h1>Login</h1>
+        <form method="POST" action="{{ url_for('login') }}">
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username" class="form-control" placeholder="Enter your username" required>
             </div>
-            <div class="modal-body">
-                <form id="totpForm" method="POST" action="{{ url_for('login') }}">
-                    <input type="hidden" name="username" value="{{ username }}">
-                    <input type="hidden" name="password" value="{{ password }}">
-                    <div class="form-group">
-                        <label for="totp_code">Enter TOTP Code</label>
-                        <input type="text" id="totp_code" name="totp_code" class="form-control" placeholder="Enter your 2FA code" required>
-                    </div>
-                    <button type="submit" class="btn btn-login">Verify</button>
-                </form>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" class="form-control" placeholder="Enter your password" required>
             </div>
-        </div>
+            {% if totp_required %}
+            <div class="form-group">
+                <label for="totp_code">TOTP Code</label>
+                <input type="text" id="totp_code" name="totp_code" class="form-control" placeholder="Enter your 2FA code" required>
+            </div>
+            {% endif %}
+            <button type="submit" class="btn btn-login">Login</button>
+        </form>
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}
+                <div class="error-message">
+                    {% for message in messages %}
+                        <p>{{ message }}</p>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+        <small class="form-text text-center"><a href="{{ url_for('create_user') }}" style="color: #00ff00;">Create User</a></small>
     </div>
-</div>
-
-<!-- Bootstrap JS and jQuery -->
-<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/js/bootstrap.bundle.min.js"></script>
-<script>
-    // Show TOTP modal if totp_required is true
-    {% if totp_required %}
-        $(document).ready(function() {
-            $('#totpModal').modal('show');
-        });
-    {% endif %}
-</script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
