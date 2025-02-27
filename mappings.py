@@ -36,5 +36,13 @@ def export_mappings_to_yaml(file_path: str):
     save_to_yaml(file_path, mappings)
     logger.info(f"Exported mappings to {file_path}")
 
+def load_mappings_to_redis(file_path='mappings.yaml'):
+    """Load mappings into Redis from a YAML file, with fallback to empty mappings."""
+    try:
+        import_mappings_from_yaml(file_path)
+    except Exception as e:
+        logger.warning(f"No mappings.yaml found or error loading: {e}")
+        initialize_mappings()  # Fallback to empty mappings
+
 if __name__ == "__main__":
     initialize_mappings()
