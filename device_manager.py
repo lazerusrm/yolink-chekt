@@ -3,7 +3,7 @@ import logging
 from db import redis_client
 from utils import load_yaml
 from monitor_mqtt import trigger_monitor_event
-from mappings import get_mappings  # Add this line
+from mappings import get_mappings
 
 logger = logging.getLogger()
 
@@ -35,7 +35,6 @@ def update_device_data(device_id, payload, device_type=None):
         logger.warning(f"Device {device_id} not found.")
         return
     device['state'] = payload['data'].get('state', device.get('state', 'unknown'))
-    # ... update other fields as in original ...
     redis_client.set(f"device:{device_id}", json.dumps(device))
     monitor_data = {
         "home_id": redis_client.get('home_id').decode(),

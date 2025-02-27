@@ -2,8 +2,7 @@ import paho.mqtt.client as mqtt
 import json
 from datetime import datetime
 import logging
-from config import config_data
-from app import monitor_mqtt_status  # Add this import
+from config import config_data, monitor_mqtt_status  # Updated import
 
 logger = logging.getLogger(__name__)
 monitor_mqtt_client = None
@@ -35,7 +34,7 @@ def on_monitor_mqtt_connect(client, userdata, flags, rc):
         logger.error(f"Monitor MQTT connection failed with code {rc}")
 
 def on_monitor_mqtt_disconnect(client, userdata, rc):
-    monitor_mqtt_status['connected'] = False  # Now accessible
+    monitor_mqtt_status['connected'] = False
     logger.warning("Monitor MQTT disconnected")
 
 def on_monitor_mqtt_message(client, userdata, msg):

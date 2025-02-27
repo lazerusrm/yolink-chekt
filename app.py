@@ -12,7 +12,9 @@ import requests
 import socket
 import time
 import os
-from config import load_config, save_config, config_data
+import json
+
+from config import load_config, save_config, config_data, yolink_mqtt_status, monitor_mqtt_status  # Updated import
 from yolink_mqtt import run_mqtt_client, generate_yolink_token, is_token_expired, device_data
 from device_manager import load_devices_to_redis, get_all_devices, get_device_data
 from mappings import load_mappings_to_redis, get_mappings, get_mapping
@@ -22,9 +24,6 @@ from db import redis_client
 # Logging setup
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
-
-yolink_mqtt_status = {"connected": False}
-monitor_mqtt_status = {"connected": False}
 
 app = Flask(__name__)
 
@@ -46,33 +45,28 @@ bcrypt = Bcrypt(app)
 login_manager = LoginManager(app)
 login_manager.login_view = "login"
 
-
 class User(UserMixin):
     def __init__(self, username):
         self.id = username
-
 
 @login_manager.user_loader
 def load_user(username):
     return User(username) if username in config_data.get("users", {}) else None
 
-
 def initialize_default_user():
-    """Create a default admin user if no users exist, preserving existing config structure."""
+    """Create a default admin user if no users exist."""
     if not config_data.get("users"):
         default_username = "admin"
         default_password = "admin12345"
         hashed_password = bcrypt.generate_password_hash(default_password).decode('utf-8')
-        # Update users key without replacing entire config_data
         config_data["users"] = {
             default_username: {
                 "password": hashed_password,
                 "force_password_change": True
             }
         }
-        save_config()  # Save the full config_data
+        save_config()
         logger.info("Created default admin user: 'admin' with password 'admin12345'")
-
 
 def refresh_yolink_token() -> bool:
     """Refresh YoLink token using UAID and Secret Key."""
@@ -83,7 +77,6 @@ def refresh_yolink_token() -> bool:
         logger.warning("UAID or Secret Key missing; token refresh skipped.")
         return False
     return generate_yolink_token(uaid, secret_key) is not None
-
 
 @app.route("/")
 @login_required
@@ -97,7 +90,6 @@ def index():
     for device in devices:
         device.update(device_data.get(device["deviceId"], {}))
     return render_template("index.html", devices=devices, mappings=device_mappings, config=config_data)
-
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -124,13 +116,11 @@ def login():
     no_users = not config_data.get("users")
     return render_template("login.html", totp_required=False, no_users=no_users)
 
-
 @app.route("/logout")
 @login_required
 def logout():
     logout_user()
     return redirect(url_for("login"))
-
 
 @app.route("/setup_totp", methods=["GET", "POST"])
 @login_required
@@ -155,7 +145,6 @@ def setup_totp():
     qr_img = base64.b64encode(buffered.getvalue()).decode("utf-8")
     return render_template("setup_totp.html", qr_img=qr_img)
 
-
 @app.route("/create_user", methods=["POST"])
 @login_required
 def create_user():
@@ -174,7 +163,6 @@ def create_user():
         flash("User created successfully", "success")
     return redirect(url_for("config"))
 
-
 @app.route("/change_password", methods=["GET", "POST"])
 @login_required
 def change_password():
@@ -183,7 +171,6 @@ def change_password():
         new_password = request.form["new_password"]
         confirm_password = request.form["confirm_password"]
         user_data = config_data["users"].get(current_user.id, {})
-
         if not bcrypt.check_password_hash(user_data["password"], current_password):
             flash("Current password is incorrect", "error")
         elif new_password != confirm_password:
@@ -199,7 +186,6 @@ def change_password():
             return redirect(url_for("index"))
         return render_template("change_password.html")
     return render_template("change_password.html")
-
 
 @app.route("/config", methods=["GET", "POST"])
 @login_required
@@ -232,7 +218,7 @@ def config():
                 "mqtt": {
                     "url": request.form["yolink_url"],
                     "port": yolink_port,
-                    "topic": request.form["yolink_topic"],
+                    "topic": request.form["yolink_topic"]
                 },
                 "mqtt_monitor": {
                     "url": request.form["monitor_mqtt_url"],
@@ -268,7 +254,6 @@ def config():
     logger.info(f"Config data before rendering: {config_data}")
     return render_template("config.html", config=config_data)
 
-
 @app.route("/get_logs", methods=["GET"])
 @login_required
 def get_logs():
@@ -280,22 +265,17 @@ def get_logs():
     except FileNotFoundError:
         return jsonify({"status": "error", "message": "Log file not found"})
 
-
 @app.route("/check_mqtt_status")
 @login_required
 def check_mqtt_status():
     return jsonify({"status": "success" if yolink_mqtt_status["connected"] else "error",
-                    "message": "YoLink MQTT connection is active." if yolink_mqtt_status[
-                        "connected"] else "YoLink MQTT connection is inactive."})
-
+                    "message": "YoLink MQTT connection is active." if yolink_mqtt_status["connected"] else "YoLink MQTT connection is inactive."})
 
 @app.route("/check_monitor_mqtt_status")
 @login_required
 def check_monitor_mqtt_status():
     return jsonify({"status": "success" if monitor_mqtt_status["connected"] else "error",
-                    "message": "Monitor MQTT connection is active." if monitor_mqtt_status[
-                        "connected"] else "Monitor MQTT connection is inactive."})
-
+                    "message": "Monitor MQTT connection is active." if monitor_mqtt_status["connected"] else "Monitor MQTT connection is inactive."})
 
 @app.route("/check_receiver_status")
 @login_required
@@ -311,7 +291,6 @@ def check_receiver_status():
         except Exception as e:
             return jsonify({"status": "error", "message": f"Failed to connect to SIA server: {str(e)}"})
 
-
 @app.route("/check_all_statuses")
 @login_required
 def check_all_statuses():
@@ -324,9 +303,8 @@ def check_all_statuses():
             "status": "success" if monitor_mqtt_status["connected"] else "error",
             "message": "Monitor MQTT connection is active." if monitor_mqtt_status["connected"] else "Monitor MQTT connection is inactive."
         },
-        "receiver": check_receiver_status().get_json()  # Reuse existing logic
+        "receiver": check_receiver_status().get_json()
     })
-
 
 @app.route("/save_mapping", methods=["POST"])
 @login_required
@@ -341,7 +319,6 @@ def save_mapping():
     redis_client.set("mappings", json.dumps({"mappings": mappings}))
     return jsonify({"status": "success"})
 
-
 @app.route("/set_door_prop_alarm", methods=["POST"])
 @login_required
 def set_door_prop_alarm():
@@ -354,7 +331,6 @@ def set_door_prop_alarm():
     logger.error(f"Device {device_id} not found for door prop alarm setting")
     return jsonify({"status": "error", "message": "Device not found"}), 404
 
-
 @app.route("/refresh_yolink_devices")
 @login_required
 def refresh_yolink_devices():
@@ -363,14 +339,11 @@ def refresh_yolink_devices():
         return jsonify({"status": "success", "message": "YoLink devices refreshed"})
     return jsonify({"status": "error", "message": "Token refresh failed"})
 
-
 if __name__ == "__main__":
-    # Load config with defaults first
-    config_data_full = load_config()  # Get the full default structure
+    config_data_full = load_config()
     logger.info(f"Config data after initial load: {config_data_full}")
-    config_data.update(config_data_full)  # Ensure global config_data has everything
-
-    initialize_default_user()  # Now modify users without losing other keys
+    config_data.update(config_data_full)
+    initialize_default_user()
     max_retries = 5
     retry_delay = 2
     for attempt in range(max_retries):

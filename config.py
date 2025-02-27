@@ -6,6 +6,8 @@ from cryptography.fernet import Fernet
 logger = logging.getLogger(__name__)
 config_file = "config.yaml"
 config_data = {}
+yolink_mqtt_status = {"connected": False}  # Moved from app.py
+monitor_mqtt_status = {"connected": False}  # Moved from app.py
 
 # Load or generate encryption key
 encryption_key_file = "encryption.key"
@@ -18,7 +20,6 @@ else:
         f.write(encryption_key)
 fernet = Fernet(encryption_key)
 
-
 def encrypt_data(data: str) -> str:
     try:
         return fernet.encrypt(data.encode()).decode()
@@ -26,14 +27,12 @@ def encrypt_data(data: str) -> str:
         logger.error(f"Encryption failed: {e}")
         raise
 
-
 def decrypt_data(encrypted_data: str) -> str:
     try:
         return fernet.decrypt(encrypted_data.encode()).decode()
     except Exception as e:
         logger.error(f"Decryption failed: {e}")
         raise
-
 
 def merge_dicts(default: dict, current: dict) -> dict:
     """Recursively merge default dict into current dict."""
@@ -43,7 +42,6 @@ def merge_dicts(default: dict, current: dict) -> dict:
         elif isinstance(value, dict) and isinstance(current.get(key), dict):
             current[key] = merge_dicts(value, current[key])
     return current
-
 
 def get_default_config() -> dict:
     """Return the default configuration structure."""
@@ -57,9 +55,7 @@ def get_default_config() -> dict:
         "mqtt": {
             "url": "",
             "port": 8003,
-            "topic": "yl-home/${Home ID}/+/report",
-            "username": "",
-            "password": ""
+            "topic": "yl-home/${Home ID}/+/report"
         },
         "mqtt_monitor": {
             "url": "",
@@ -87,7 +83,6 @@ def get_default_config() -> dict:
         "users": {}
     }
 
-
 def load_config() -> dict:
     global config_data
     if os.path.exists(config_file):
@@ -96,10 +91,7 @@ def load_config() -> dict:
             config_data = loaded_data if loaded_data is not None else {}
     else:
         config_data = {}
-
-    # Merge defaults into loaded config
     config_data = merge_dicts(get_default_config(), config_data)
-
     if "secret_key" in config_data["yolink"] and config_data["yolink"]["secret_key"]:
         try:
             config_data["yolink"]["secret_key"] = decrypt_data(config_data["yolink"]["secret_key"])
@@ -109,11 +101,10 @@ def load_config() -> dict:
     logger.info(f"Config data after merge in load_config: {config_data}")
     return config_data
 
-
 def save_config(data: dict = None) -> None:
     global config_data
     save_data = data if data is not None else config_data.copy()
-    save_data = merge_dicts(get_default_config(), save_data)  # Ensure all keys
+    save_data = merge_dicts(get_default_config(), save_data)
     if "yolink" in save_data and "secret_key" in save_data["yolink"] and save_data["yolink"]["secret_key"]:
         save_data["yolink"]["secret_key"] = encrypt_data(save_data["yolink"]["secret_key"])
     try:
