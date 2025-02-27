@@ -35,46 +35,57 @@ def decrypt_data(encrypted_data: str) -> str:
         raise
 
 
-def ensure_config_defaults(config: dict) -> dict:
-    """Ensure config_data has all required keys with defaults."""
-    config.setdefault("yolink", {
-        "uaid": "",
-        "secret_key": "",
-        "token": "",
-        "token_expiry": 0
-    })
-    config.setdefault("mqtt", {
-        "url": "",
-        "port": 8003,
-        "topic": "yl-home/${Home ID}/+/report",
-        "username": "",
-        "password": ""
-    })
-    config.setdefault("mqtt_monitor", {
-        "url": "",
-        "port": 1883,
-        "username": "",
-        "password": "",
-        "client_id": "monitor_client_id"
-    })
-    config.setdefault("receiver_type", "CHEKT")
-    config.setdefault("chekt", {
-        "api_token": "",
-        "ip": "",
-        "port": 30003
-    })
-    config.setdefault("sia", {
-        "ip": "",
-        "port": "",
-        "account_id": "",
-        "transmitter_id": "",
-        "encryption_key": ""
-    })
-    config.setdefault("monitor", {"api_key": ""})
-    config.setdefault("timezone", "UTC")
-    config.setdefault("door_open_timeout", 30)
-    config.setdefault("users", {})
-    return config
+def merge_dicts(default: dict, current: dict) -> dict:
+    """Recursively merge default dict into current dict."""
+    for key, value in default.items():
+        if key not in current:
+            current[key] = value
+        elif isinstance(value, dict) and isinstance(current.get(key), dict):
+            current[key] = merge_dicts(value, current[key])
+    return current
+
+
+def get_default_config() -> dict:
+    """Return the default configuration structure."""
+    return {
+        "yolink": {
+            "uaid": "",
+            "secret_key": "",
+            "token": "",
+            "token_expiry": 0
+        },
+        "mqtt": {
+            "url": "",
+            "port": 8003,
+            "topic": "yl-home/${Home ID}/+/report",
+            "username": "",
+            "password": ""
+        },
+        "mqtt_monitor": {
+            "url": "",
+            "port": 1883,
+            "username": "",
+            "password": "",
+            "client_id": "monitor_client_id"
+        },
+        "receiver_type": "CHEKT",
+        "chekt": {
+            "api_token": "",
+            "ip": "",
+            "port": 30003
+        },
+        "sia": {
+            "ip": "",
+            "port": "",
+            "account_id": "",
+            "transmitter_id": "",
+            "encryption_key": ""
+        },
+        "monitor": {"api_key": ""},
+        "timezone": "UTC",
+        "door_open_timeout": 30,
+        "users": {}
+    }
 
 
 def load_config() -> dict:
@@ -86,7 +97,8 @@ def load_config() -> dict:
     else:
         config_data = {}
 
-    config_data = ensure_config_defaults(config_data)
+    # Merge defaults into loaded config
+    config_data = merge_dicts(get_default_config(), config_data)
 
     if "secret_key" in config_data["yolink"] and config_data["yolink"]["secret_key"]:
         try:
@@ -100,13 +112,14 @@ def load_config() -> dict:
 def save_config(data: dict = None) -> None:
     global config_data
     save_data = data if data is not None else config_data
-    save_data = ensure_config_defaults(save_data.copy())  # Ensure defaults before saving
+    # Ensure full structure before saving
+    save_data = merge_dicts(get_default_config(), save_data.copy())
     if "yolink" in save_data and "secret_key" in save_data["yolink"] and save_data["yolink"]["secret_key"]:
         save_data["yolink"]["secret_key"] = encrypt_data(save_data["yolink"]["secret_key"])
     try:
         with open(config_file, "w") as file:
             yaml.safe_dump(save_data, file)
-        config_data = save_data  # Update global config_data
+        config_data = save_data
     except Exception as e:
         logger.error(f"Failed to save config: {e}")
         raise
