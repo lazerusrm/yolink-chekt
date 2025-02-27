@@ -58,19 +58,20 @@ def load_user(username):
 
 
 def initialize_default_user():
-    """Create a default admin user if no users exist."""
+    """Create a default admin user if no users exist, preserving existing config structure."""
     if not config_data.get("users"):
         default_username = "admin"
-        default_password = "skunkworks1"
+        default_password = "admin12345"
         hashed_password = bcrypt.generate_password_hash(default_password).decode('utf-8')
+        # Update users key without replacing entire config_data
         config_data["users"] = {
             default_username: {
                 "password": hashed_password,
                 "force_password_change": True
             }
         }
-        save_config()
-        logger.info("Created default admin user: 'admin' with password 'skunkworks1'")
+        save_config()  # Save the full config_data
+        logger.info("Created default admin user: 'admin' with password 'admin12345'")
 
 
 def refresh_yolink_token() -> bool:
@@ -345,9 +346,12 @@ def refresh_yolink_devices():
 
 
 if __name__ == "__main__":
-    load_config()
-    logger.info(f"Config data after initial load: {config_data}")
-    initialize_default_user()  # Create default admin if no users exist
+    # Load config with defaults first
+    config_data_full = load_config()  # Get the full default structure
+    logger.info(f"Config data after initial load: {config_data_full}")
+    config_data.update(config_data_full)  # Ensure global config_data has everything
+
+    initialize_default_user()  # Now modify users without losing other keys
     max_retries = 5
     retry_delay = 2
     for attempt in range(max_retries):

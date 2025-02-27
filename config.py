@@ -112,9 +112,8 @@ def load_config() -> dict:
 
 def save_config(data: dict = None) -> None:
     global config_data
-    save_data = data if data is not None else config_data
-    # Ensure full structure before saving
-    save_data = merge_dicts(get_default_config(), save_data.copy())
+    save_data = data if data is not None else config_data.copy()
+    save_data = merge_dicts(get_default_config(), save_data)  # Ensure all keys
     if "yolink" in save_data and "secret_key" in save_data["yolink"] and save_data["yolink"]["secret_key"]:
         save_data["yolink"]["secret_key"] = encrypt_data(save_data["yolink"]["secret_key"])
     try:
