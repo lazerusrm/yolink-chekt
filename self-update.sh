@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Exit immediately if a command exits with a non-zero status
+# Exit on any error
 set -e
 
 # Define variables
@@ -12,90 +12,129 @@ MAPPINGS_FILE="$APP_DIR/mappings.yaml"
 MAPPINGS_BACKUP="$APP_DIR/mappings.yaml.bak"
 DEVICES_FILE="$APP_DIR/devices.yaml"
 DEVICES_BACKUP="$APP_DIR/devices.yaml.bak"
-LOG_FILE="/var/log/yolink-update.log"
+LOG_DIR="/var/log"
+LOG_FILE="$LOG_DIR/yolink-update.log"
+MAX_RETRIES=3
+RETRY_DELAY=5
 
-# Redirect all output to log file
-exec > >(tee -i "$LOG_FILE")
+# Ensure log directory exists
+mkdir -p "$LOG_DIR" || { echo "Failed to create log directory $LOG_DIR"; exit 1; }
+chmod 755 "$LOG_DIR"
+
+# Redirect output to log file, fallback to /tmp if /var/log fails
+if ! exec > >(tee -i "$LOG_FILE") 2>/dev/null; then
+    LOG_FILE="/tmp/yolink-update.log"
+    echo "Warning: Could not write to $LOG_FILE, falling back to $LOG_FILE"
+    exec > >(tee -i "$LOG_FILE")
+fi
 exec 2>&1
 
-# Ensure the script is run as root
+# Timestamp for log entries
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
+}
+
+# Ensure script runs as root
 if [ "$EUID" -ne 0 ]; then
-  echo "This script must be run as root."
-  exit 1
+    log "Error: This script must be run as root."
+    exit 1
 fi
 
-# Functions for backup and restore
+# Backup function
 backup_file() {
-  local FILE="$1"
-  local BACKUP="$2"
-  if [ -f "$FILE" ]; then
-    cp "$FILE" "$BACKUP" || { echo "Failed to backup $(basename "$FILE")"; exit 1; }
-    echo "$(basename "$FILE") backed up."
-  else
-    echo "Warning: $(basename "$FILE") does not exist. Skipping backup."
-  fi
+    local FILE="$1"
+    local BACKUP="$2"
+    if [ -f "$FILE" ]; then
+        cp "$FILE" "$BACKUP" || { log "Error: Failed to backup $(basename "$FILE")"; exit 1; }
+        log "Backed up $(basename "$FILE")"
+    else
+        log "Warning: $(basename "$FILE") does not exist, skipping backup"
+    fi
 }
 
+# Restore function
 restore_file() {
-  local BACKUP="$1"
-  local FILE="$2"
-  if [ -f "$BACKUP" ]; then
-    mv "$BACKUP" "$FILE" || { echo "Failed to restore $(basename "$FILE")"; exit 1; }
-    echo "$(basename "$FILE") restored."
-  else
-    echo "Warning: Backup not found. $(basename "$FILE") was not restored."
-  fi
+    local BACKUP="$1"
+    local FILE="$2"
+    if [ -f "$BACKUP" ]; then
+        mv "$BACKUP" "$FILE" || { log "Error: Failed to restore $(basename "$FILE")"; exit 1; }
+        log "Restored $(basename "$FILE")"
+    else
+        log "Warning: Backup for $(basename "$FILE") not found, skipping restore"
+    fi
 }
 
-# Navigate to the app directory
-cd "$APP_DIR" || { echo "Failed to navigate to app directory."; exit 1; }
+# Navigate to app directory
+cd "$APP_DIR" || { log "Error: Failed to navigate to $APP_DIR"; exit 1; }
+log "Working in $APP_DIR"
 
-# Backup current config files
+# Backup configuration files
 backup_file "$CONFIG_FILE" "$CONFIG_BACKUP"
 backup_file "$MAPPINGS_FILE" "$MAPPINGS_BACKUP"
 backup_file "$DEVICES_FILE" "$DEVICES_BACKUP"
 
-# Download and unzip the latest code
-echo "Downloading latest code..."
-curl -L "$REPO_URL" -o "$APP_DIR/repo.zip" || { echo "Repository download failed."; exit 1; }
-echo "Unzipping latest code..."
-unzip -o "$APP_DIR/repo.zip" -d "$APP_DIR" || { echo "Unzip failed."; exit 1; }
+# Download with retry logic
+download_with_retry() {
+    local url="$1"
+    local output="$2"
+    local attempt=1
+    while [ $attempt -le $MAX_RETRIES ]; do
+        log "Downloading latest code (Attempt $attempt/$MAX_RETRIES)..."
+        if curl -L "$url" -o "$output" 2>/tmp/curl_error; then
+            log "Download successful"
+            return 0
+        else
+            local curl_err=$(cat /tmp/curl_error)
+            log "Download failed: $curl_err"
+            if [ $attempt -eq $MAX_RETRIES ]; then
+                log "Error: Repository download failed after $MAX_RETRIES attempts"
+                exit 1
+            fi
+            sleep "$RETRY_DELAY"
+            ((attempt++))
+        fi
+    done
+}
+
+# Download and unzip
+download_with_retry "$REPO_URL" "$APP_DIR/repo.zip"
+log "Unzipping latest code..."
+unzip -o "$APP_DIR/repo.zip" -d "$APP_DIR" || { log "Error: Unzip failed"; exit 1; }
 
 # Update files while preserving configs
-echo "Updating application files..."
-rsync -a --exclude='config.yaml' --exclude='mappings.yaml' --exclude='devices.yaml' "$APP_DIR/yolink-chekt-main/" "$APP_DIR/" || { echo "Move extracted files failed."; exit 1; }
+log "Updating application files..."
+rsync -a --exclude='config.yaml' --exclude='mappings.yaml' --exclude='devices.yaml' "$APP_DIR/yolink-chekt-main/" "$APP_DIR/" || { log "Error: Move extracted files failed"; exit 1; }
 
 # Restore configuration files
 restore_file "$CONFIG_BACKUP" "$CONFIG_FILE"
 restore_file "$MAPPINGS_BACKUP" "$MAPPINGS_FILE"
 restore_file "$DEVICES_BACKUP" "$DEVICES_FILE"
 
-# Clean up temporary files
-echo "Cleaning up temporary files..."
-rm -rf "$APP_DIR/yolink-chekt-main"
-rm "$APP_DIR/repo.zip"
+# Clean up
+log "Cleaning up temporary files..."
+rm -rf "$APP_DIR/yolink-chekt-main" "$APP_DIR/repo.zip" /tmp/curl_error || log "Warning: Some cleanup failed"
 
 # Set permissions
-echo "Setting permissions..."
-chmod -R u+rwX,go+rX "$APP_DIR" || { echo "Failed to set permissions."; exit 1; }
-chmod +x "$APP_DIR/self-update.sh" || { echo "Failed to set executable permission."; exit 1; }
+log "Setting permissions..."
+chmod -R u+rwX,go+rX "$APP_DIR" || { log "Error: Failed to set permissions"; exit 1; }
+chmod +x "$APP_DIR/self-update.sh" || { log "Error: Failed to set executable permission"; exit 1; }
 
 # Rebuild Docker containers
-echo "Rebuilding Docker containers..."
-docker compose down || { echo "Docker Compose down failed."; exit 1; }
-docker compose up --build -d || { echo "Docker Compose up failed."; exit 1; }
+log "Rebuilding Docker containers..."
+docker compose down || { log "Error: Docker Compose down failed"; exit 1; }
+docker compose up --build -d || { log "Error: Docker Compose up failed"; exit 1; }
 
-# Verify config.html in container
-container_name=$(docker ps --filter "name=yolink_chekt" --format '{{.Names}}')
+# Verify container and config.html
+container_name=$(docker ps --filter "name=yolink_chekt" --format '{{.Names}}' | head -n 1)
 if [ -z "$container_name" ]; then
-  echo "Error: Service container not found."
-  exit 1
+    log "Error: Service container not found"
+    exit 1
 fi
 if docker exec "$container_name" test -f "/app/templates/config.html"; then
-  echo "config.html successfully copied into the container."
+    log "Verified: config.html present in container"
 else
-  echo "Error: config.html not found in the container."
-  exit 1
+    log "Error: config.html not found in container"
+    exit 1
 fi
 
-echo "Update applied successfully!"
+log "Update applied successfully!"

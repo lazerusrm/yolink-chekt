@@ -7,11 +7,7 @@
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css" integrity="sha512-Kc323vGBEqzTmouAECnVceyQqyqdsSiqLQISBL29aUW4U/M7pSPA/gEUZQqv1cwx4OnYxTxve5UMg5GT6L4JJg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
     <style>
-        body {
-            background-color: #1e1e1e;
-            color: #ffffff;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        }
+        body { background-color: #1e1e1e; color: #ffffff; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         .container { margin-top: 20px; }
         .status { display: flex; align-items: center; margin-top: 10px; background-color: #2a2a2a; padding: 15px; border-radius: 10px; }
         .status img { width: 20px; height: 20px; margin-right: 10px; }
@@ -90,14 +86,6 @@
                 <label for="yolink_topic">YoLink MQTT Topic</label>
                 <input type="text" id="yolink_topic" name="yolink_topic" class="form-control" value="{{ config.mqtt.topic }}" required>
             </div>
-            <div class="form-group">
-                <label for="yolink_username">YoLink MQTT Username</label>
-                <input type="text" id="yolink_username" name="yolink_username" class="form-control" value="{{ config.mqtt.username }}">
-            </div>
-            <div class="form-group">
-                <label for="yolink_password">YoLink MQTT Password</label>
-                <input type="password" id="yolink_password" name="yolink_password" class="form-control" value="{{ config.mqtt.password }}">
-            </div>
 
             <h2>Monitor MQTT Configuration</h2>
             <div class="form-group">
@@ -128,6 +116,10 @@
             <div id="chekt-config" class="form-group" {% if config.receiver_type != 'CHEKT' %}style="display: none;"{% endif %}>
                 <label for="chekt_api_token">CHEKT API Token</label>
                 <input type="text" id="chekt_api_token" name="chekt_api_token" class="form-control" value="{{ config.chekt.api_token }}">
+                <label for="chekt_ip">CHEKT Receiver IP</label>
+                <input type="text" id="chekt_ip" name="chekt_ip" class="form-control" value="{{ config.chekt.ip }}" required>
+                <label for="chekt_port">CHEKT Receiver Port</label>
+                <input type="number" id="chekt_port" name="chekt_port" class="form-control" value="{{ config.chekt.port }}" min="1" max="65535" required>
             </div>
             <div id="sia-config" class="form-group" {% if config.receiver_type != 'SIA' %}style="display: none;"{% endif %}>
                 <label for="sia_ip">SIA IP</label>
@@ -165,6 +157,7 @@
             </div>
 
             <button type="submit" class="btn btn-primary">Save Configuration</button>
+            <span id="save-status" class="ml-2"></span>
         </form>
 
         <div class="mb-4">
@@ -188,7 +181,6 @@
     <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
     <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/js/bootstrap.bundle.min.js"></script>
     <script>
-        // Utility to update status with loading spinner
         function updateStatus(elementId, iconId, message, success, spinnerId) {
             const icon = success ? 'https://img.icons8.com/color/48/000000/checkmark.png' : 'https://img.icons8.com/color/48/000000/cancel.png';
             $('#' + spinnerId).addClass('hidden');
@@ -196,7 +188,6 @@
             $('#' + elementId).text(message);
         }
 
-        // Batch status check into one request (requires backend change)
         function checkAllStatuses() {
             $('#yolink-spinner, #monitor-spinner, #receiver-spinner').removeClass('hidden');
             $.get('/check_all_statuses', function(response) {
@@ -210,7 +201,6 @@
             });
         }
 
-        // Fetch logs on demand with loading indicator
         function fetchLogs() {
             $('#log-loading').removeClass('hidden');
             $.get('/get_logs', function(response) {
@@ -226,10 +216,8 @@
         }
 
         $(document).ready(function() {
-            // Initial status check
             checkAllStatuses();
 
-            // Receiver type toggle
             $('#receiver_type').change(function() {
                 if ($(this).val() === 'CHEKT') {
                     $('#chekt-config').show();
@@ -240,7 +228,6 @@
                 }
             });
 
-            // Refresh devices
             $('#refresh-devices-btn').click(function() {
                 $('#refresh-icon').addClass('hidden');
                 $('#refresh-message').text('Refreshing YoLink devices...');
@@ -249,12 +236,27 @@
                 });
             });
 
-            // Manual log refresh
             $('#fetch-logs-btn').click(function() {
                 fetchLogs();
             });
 
-            // Initial log fetch
+            $('#config-form').submit(function(e) {
+                e.preventDefault();
+                $('#save-status').html('<span class="spinner"></span> Saving...');
+                $.ajax({
+                    type: 'POST',
+                    url: '{{ url_for("config") }}',
+                    data: $(this).serialize(),
+                    success: function(response) {
+                        $('#save-status').html('<span style="color: #28a745;">Saved!</span>');
+                        setTimeout(() => $('#save-status').html(''), 2000);
+                    },
+                    error: function(xhr) {
+                        $('#save-status').html('<span style="color: #dc3545;">Error: ' + xhr.responseJSON.message + '</span>');
+                    }
+                });
+            });
+
             fetchLogs();
         });
     </script>

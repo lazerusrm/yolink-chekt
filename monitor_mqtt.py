@@ -3,6 +3,7 @@ import json
 from datetime import datetime
 import logging
 from config import config_data
+from app import monitor_mqtt_status  # Add this import
 
 logger = logging.getLogger(__name__)
 monitor_mqtt_client = None
@@ -26,7 +27,6 @@ def initialize_monitor_mqtt_client():
         logger.error(f"Monitor MQTT error: {e}")
 
 def on_monitor_mqtt_connect(client, userdata, flags, rc):
-    global monitor_mqtt_status
     if rc == 0:
         client.subscribe('monitor/commands')
         logger.info("Connected to monitor MQTT")
@@ -35,8 +35,7 @@ def on_monitor_mqtt_connect(client, userdata, flags, rc):
         logger.error(f"Monitor MQTT connection failed with code {rc}")
 
 def on_monitor_mqtt_disconnect(client, userdata, rc):
-    global monitor_mqtt_status
-    monitor_mqtt_status['connected'] = False
+    monitor_mqtt_status['connected'] = False  # Now accessible
     logger.warning("Monitor MQTT disconnected")
 
 def on_monitor_mqtt_message(client, userdata, msg):

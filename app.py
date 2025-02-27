@@ -213,8 +213,9 @@ def config():
             monitor_port = int(request.form["monitor_mqtt_port"])
             sia_port = request.form.get("sia_port", "")
             sia_port = int(sia_port) if sia_port else ""
+            chekt_port = int(request.form["chekt_port"])
             door_timeout = int(request.form["door_open_timeout"])
-            if yolink_port < 1 or yolink_port > 65535 or monitor_port < 1 or monitor_port > 65535:
+            if yolink_port < 1 or yolink_port > 65535 or monitor_port < 1 or monitor_port > 65535 or chekt_port < 1 or chekt_port > 65535:
                 raise ValueError("Ports must be between 1 and 65535")
             if sia_port and (sia_port < 1 or sia_port > 65535):
                 raise ValueError("SIA port must be between 1 and 65535")
@@ -232,8 +233,6 @@ def config():
                     "url": request.form["yolink_url"],
                     "port": yolink_port,
                     "topic": request.form["yolink_topic"],
-                    "username": request.form["yolink_username"],
-                    "password": request.form["yolink_password"]
                 },
                 "mqtt_monitor": {
                     "url": request.form["monitor_mqtt_url"],
@@ -243,7 +242,11 @@ def config():
                     "client_id": "monitor_client_id"
                 },
                 "receiver_type": request.form["receiver_type"],
-                "chekt": {"api_token": request.form["chekt_api_token"]},
+                "chekt": {
+                    "api_token": request.form["chekt_api_token"],
+                    "ip": request.form["chekt_ip"],
+                    "port": chekt_port
+                },
                 "sia": {
                     "ip": request.form["sia_ip"],
                     "port": sia_port,
@@ -262,7 +265,6 @@ def config():
             logger.error(f"Error saving config: {e}")
             flash("Failed to save configuration", "error")
         return redirect(url_for("config"))
-        pass
     logger.info(f"Config data before rendering: {config_data}")
     return render_template("config.html", config=config_data)
 
