@@ -1,7 +1,7 @@
 Flask>=2.1.0
 Werkzeug>=2.1.0
 paho-mqtt==1.6.1
-PyYAML==5.4.1
+PyYAML>=6.0  # Updated from 5.4.1
 requests==2.26.0
 Flask-Bcrypt>=1.0.0
 Flask-Login>=0.6.0
