@@ -106,6 +106,7 @@ def load_config() -> dict:
         except Exception as e:
             logger.warning(f"Decryption failed for secret_key; resetting to empty: {e}")
             config_data["yolink"]["secret_key"] = ""
+    logger.info(f"Config data after merge in load_config: {config_data}")
     return config_data
 
 

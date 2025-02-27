@@ -193,6 +193,7 @@ def change_password():
             user_data["password"] = bcrypt.generate_password_hash(new_password).decode('utf-8')
             user_data["force_password_change"] = False
             save_config()
+            logger.info(f"Config data after save in change_password: {config_data}")
             flash("Password changed successfully", "success")
             return redirect(url_for("index"))
         return render_template("change_password.html")
@@ -260,6 +261,8 @@ def config():
             logger.error(f"Error saving config: {e}")
             flash("Failed to save configuration", "error")
         return redirect(url_for("config"))
+        pass
+    logger.info(f"Config data before rendering: {config_data}")
     return render_template("config.html", config=config_data)
 
 
@@ -343,6 +346,7 @@ def refresh_yolink_devices():
 
 if __name__ == "__main__":
     load_config()
+    logger.info(f"Config data after initial load: {config_data}")
     initialize_default_user()  # Create default admin if no users exist
     max_retries = 5
     retry_delay = 2
