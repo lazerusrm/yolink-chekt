@@ -26,6 +26,9 @@ monitor_mqtt_status = {"connected": False}
 
 app = Flask(__name__)
 app.secret_key = secrets.token_hex(32)  # Secure key generation
+app.config['SESSION_COOKIE_SECURE'] = True  # HTTPS only in production
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 bcrypt = Bcrypt(app)
 login_manager = LoginManager(app)
 login_manager.login_view = "login"
@@ -53,10 +56,8 @@ def index():
     devices = get_all_devices()
     mappings = get_mappings().get("mappings", {})
     device_mappings = {m["yolink_device_id"]: m for m in mappings}
-    # Merge real-time device data from yolink_mqtt into devices
     for device in devices:
-        mqtt_data = device_data.get(device["deviceId"], {})
-        device.update(mqtt_data)  # Add state, type, door_prop_alarm, etc.
+        device.update(device_data.get(device["deviceId"], {}))  # Merge MQTT data
     return render_template("index.html", devices=devices, mappings=device_mappings, config=config_data)
 
 @app.route("/login", methods=["GET", "POST"])
@@ -113,53 +114,76 @@ def setup_totp():
 def create_user():
     username = request.form["username"]
     password = request.form["password"]
-    if username not in config_data.get("users", {}):
+    if not username or not password:
+        flash("Username and password are required", "error")
+        return redirect(url_for("config"))
+    if username in config_data.get("users", {}):
+        flash("Username already exists", "error")
+    else:
         config_data.setdefault("users", {})[username] = {
             "password": bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
         }
         save_config()
         flash("User created successfully", "success")
-    else:
-        flash("Username already exists", "error")
     return redirect(url_for("config"))
 
 @app.route("/config", methods=["GET", "POST"])
 @login_required
 def config():
     if request.method == "POST":
-        save_config({
-            "yolink": {
-                "uaid": request.form["yolink_uaid"],
-                "secret_key": request.form["yolink_secret_key"],
-                "token": config_data["yolink"].get("token", ""),
-                "token_expiry": config_data["yolink"].get("token_expiry", 0)
-            },
-            "mqtt": {
-                "url": request.form["yolink_url"],
-                "port": int(request.form["yolink_port"]),
-                "topic": request.form["yolink_topic"],
-                "username": request.form["yolink_username"],
-                "password": request.form["yolink_password"]
-            },
-            "mqtt_monitor": {
-                "url": request.form["monitor_mqtt_url"],
-                "port": int(request.form["monitor_mqtt_port"]),
-                "username": request.form["monitor_mqtt_username"],
-                "password": request.form["monitor_mqtt_password"]
-            },
-            "receiver_type": request.form["receiver_type"],
-            "chekt": {"api_token": request.form["chekt_api_token"]},
-            "sia": {
-                "ip": request.form["sia_ip"],
-                "port": request.form["sia_port"],
-                "account_id": request.form["sia_account_id"],
-                "transmitter_id": request.form["sia_transmitter_id"],
-                "encryption_key": request.form["sia_encryption_key"]
-            },
-            "monitor": {"api_key": request.form["monitor_api_key"]},
-            "timezone": request.form["timezone"]
-        })
-        flash("Configuration saved", "success")
+        try:
+            # Validate inputs
+            yolink_port = int(request.form["yolink_port"])
+            monitor_port = int(request.form["monitor_mqtt_port"])
+            sia_port = request.form.get("sia_port", "")
+            sia_port = int(sia_port) if sia_port else ""
+            door_timeout = int(request.form["door_open_timeout"])
+            if yolink_port < 1 or yolink_port > 65535 or monitor_port < 1 or monitor_port > 65535:
+                raise ValueError("Ports must be between 1 and 65535")
+            if sia_port and (sia_port < 1 or sia_port > 65535):
+                raise ValueError("SIA port must be between 1 and 65535")
+            if door_timeout < 1:
+                raise ValueError("Door open timeout must be positive")
+
+            save_config({
+                "yolink": {
+                    "uaid": request.form["yolink_uaid"],
+                    "secret_key": request.form["yolink_secret_key"],
+                    "token": config_data["yolink"].get("token", ""),
+                    "token_expiry": config_data["yolink"].get("token_expiry", 0)
+                },
+                "mqtt": {
+                    "url": request.form["yolink_url"],
+                    "port": yolink_port,
+                    "topic": request.form["yolink_topic"],
+                    "username": request.form["yolink_username"],
+                    "password": request.form["yolink_password"]
+                },
+                "mqtt_monitor": {
+                    "url": request.form["monitor_mqtt_url"],
+                    "port": monitor_port,
+                    "username": request.form["monitor_mqtt_username"],
+                    "password": request.form["monitor_mqtt_password"]
+                },
+                "receiver_type": request.form["receiver_type"],
+                "chekt": {"api_token": request.form["chekt_api_token"]},
+                "sia": {
+                    "ip": request.form["sia_ip"],
+                    "port": sia_port,
+                    "account_id": request.form["sia_account_id"],
+                    "transmitter_id": request.form["sia_transmitter_id"],
+                    "encryption_key": request.form["sia_encryption_key"]
+                },
+                "monitor": {"api_key": request.form["monitor_api_key"]},
+                "timezone": request.form["timezone"],
+                "door_open_timeout": door_timeout
+            })
+            flash("Configuration saved", "success")
+        except ValueError as e:
+            flash(f"Invalid input: {str(e)}", "error")
+        except Exception as e:
+            logger.error(f"Error saving config: {e}")
+            flash("Failed to save configuration", "error")
         return redirect(url_for("config"))
     return render_template("config.html", config=config_data)
 
@@ -217,7 +241,7 @@ def save_mapping():
 @login_required
 def set_door_prop_alarm():
     device_id = request.form["device_id"]
-    enabled = request.form["enabled"] == "true"  # Convert string "true"/"false" to boolean
+    enabled = request.form["enabled"] == "true"
     if device_id in device_data:
         device_data[device_id]["door_prop_alarm"] = enabled
         logger.info(f"Door prop alarm for {device_id} set to {enabled}")

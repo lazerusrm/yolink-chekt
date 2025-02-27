@@ -82,7 +82,7 @@
             </div>
             <div class="form-group">
                 <label for="yolink_port">YoLink MQTT Port</label>
-                <input type="number" id="yolink_port" name="yolink_port" class="form-control" value="{{ config.mqtt.port }}" required>
+                <input type="number" id="yolink_port" name="yolink_port" class="form-control" value="{{ config.mqtt.port }}" min="1" max="65535" required>
             </div>
             <div class="form-group">
                 <label for="yolink_topic">YoLink MQTT Topic</label>
@@ -104,7 +104,7 @@
             </div>
             <div class="form-group">
                 <label for="monitor_mqtt_port">Monitor MQTT Port</label>
-                <input type="number" id="monitor_mqtt_port" name="monitor_mqtt_port" class="form-control" value="{{ config.mqtt_monitor.port }}" required>
+                <input type="number" id="monitor_mqtt_port" name="monitor_mqtt_port" class="form-control" value="{{ config.mqtt_monitor.port }}" min="1" max="65535" required>
             </div>
             <div class="form-group">
                 <label for="monitor_mqtt_username">Monitor MQTT Username</label>
@@ -131,7 +131,7 @@
                 <label for="sia_ip">SIA IP</label>
                 <input type="text" id="sia_ip" name="sia_ip" class="form-control" value="{{ config.sia.ip }}">
                 <label for="sia_port">SIA Port</label>
-                <input type="number" id="sia_port" name="sia_port" class="form-control" value="{{ config.sia.port }}">
+                <input type="number" id="sia_port" name="sia_port" class="form-control" value="{{ config.sia.port }}" min="1" max="65535">
                 <label for="sia_account_id">SIA Account ID</label>
                 <input type="text" id="sia_account_id" name="sia_account_id" class="form-control" value="{{ config.sia.account_id }}">
                 <label for="sia_transmitter_id">SIA Transmitter ID</label>
@@ -144,6 +144,12 @@
             <div class="form-group">
                 <label for="monitor_api_key">Monitor API Key</label>
                 <input type="text" id="monitor_api_key" name="monitor_api_key" class="form-control" value="{{ config.monitor.api_key }}">
+            </div>
+
+            <h2>General Settings</h2>
+            <div class="form-group">
+                <label for="door_open_timeout">Door Open Timeout (seconds)</label>
+                <input type="number" id="door_open_timeout" name="door_open_timeout" class="form-control" value="{{ config.door_open_timeout|default(30) }}" min="1" required>
             </div>
 
             <h2>Timezone</h2>
