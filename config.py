@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 config_file = "config.yaml"
 config_data = {}
 
-# Load or generate encryption key persistently
+# Load or generate encryption key
 encryption_key_file = "encryption.key"
 if os.path.exists(encryption_key_file):
     with open(encryption_key_file, "rb") as f:
@@ -43,7 +43,7 @@ def load_config() -> dict:
     else:
         config_data = {}
 
-    # Set default configurations
+    # Set comprehensive defaults
     config_data.setdefault("yolink", {
         "uaid": "",
         "secret_key": "",
@@ -51,20 +51,25 @@ def load_config() -> dict:
         "token_expiry": 0
     })
     config_data.setdefault("mqtt", {
-        "url": "mqtt://api.yosmart.com",
+        "url": "",
         "port": 8003,
         "topic": "yl-home/${Home ID}/+/report",
         "username": "",
         "password": ""
     })
     config_data.setdefault("mqtt_monitor", {
-        "url": "mqtt://monitor.industrialcamera.com",
+        "url": "",
         "port": 1883,
         "username": "",
-        "password": ""
+        "password": "",
+        "client_id": "monitor_client_id"
     })
     config_data.setdefault("receiver_type", "CHEKT")
-    config_data.setdefault("chekt", {"api_token": ""})
+    config_data.setdefault("chekt", {
+        "api_token": "",
+        "ip": "",
+        "port": 30003
+    })
     config_data.setdefault("sia", {
         "ip": "",
         "port": "",
@@ -74,14 +79,16 @@ def load_config() -> dict:
     })
     config_data.setdefault("monitor", {"api_key": ""})
     config_data.setdefault("timezone", "UTC")
+    config_data.setdefault("door_open_timeout", 30)
     config_data.setdefault("users", {})
 
-    # Decrypt sensitive fields
-    if config_data["yolink"].get("secret_key"):
+    # Decrypt secret_key if present, reset if it fails
+    if "secret_key" in config_data["yolink"] and config_data["yolink"]["secret_key"]:
         try:
             config_data["yolink"]["secret_key"] = decrypt_data(config_data["yolink"]["secret_key"])
         except Exception as e:
-            logger.warning(f"Could not decrypt secret_key: {e}")
+            logger.warning(f"Decryption failed for secret_key; resetting to empty: {e}")
+            config_data["yolink"]["secret_key"] = ""
     return config_data
 
 def save_config(data: dict = None) -> None:
@@ -89,7 +96,7 @@ def save_config(data: dict = None) -> None:
     global config_data
     save_data = data if data is not None else config_data
     encrypted_data = save_data.copy()
-    if "yolink" in encrypted_data and "secret_key" in encrypted_data["yolink"]:
+    if "yolink" in encrypted_data and "secret_key" in encrypted_data["yolink"] and encrypted_data["yolink"]["secret_key"]:
         encrypted_data["yolink"]["secret_key"] = encrypt_data(encrypted_data["yolink"]["secret_key"])
     try:
         with open(config_file, "w") as file:

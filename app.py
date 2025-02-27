@@ -49,12 +49,12 @@ def initialize_default_user():
     """Create a default admin user if no users exist."""
     if not config_data.get("users"):
         default_username = "admin"
-        default_password = "skunkworks1"  # Updated default password
+        default_password = "skunkworks1"
         hashed_password = bcrypt.hashpw(default_password.encode(), bcrypt.gensalt()).decode()
         config_data["users"] = {
             default_username: {
                 "password": hashed_password,
-                "force_password_change": True  # Flag to enforce change on first login
+                "force_password_change": True
             }
         }
         save_config()
@@ -63,10 +63,11 @@ def initialize_default_user():
 
 def refresh_yolink_token() -> bool:
     """Refresh YoLink token using UAID and Secret Key."""
-    uaid = config_data["yolink"]["uaid"]
-    secret_key = config_data["yolink"]["secret_key"]
+    yolink_config = config_data.get("yolink", {})
+    uaid = yolink_config.get("uaid", "")
+    secret_key = yolink_config.get("secret_key", "")
     if not uaid or not secret_key:
-        logger.error("UAID or Secret Key missing from config.")
+        logger.warning("UAID or Secret Key missing; token refresh skipped.")
         return False
     return generate_yolink_token(uaid, secret_key) is not None
 
@@ -222,7 +223,8 @@ def config():
                     "url": request.form["monitor_mqtt_url"],
                     "port": monitor_port,
                     "username": request.form["monitor_mqtt_username"],
-                    "password": request.form["monitor_mqtt_password"]
+                    "password": request.form["monitor_mqtt_password"],
+                    "client_id": "monitor_client_id"
                 },
                 "receiver_type": request.form["receiver_type"],
                 "chekt": {"api_token": request.form["chekt_api_token"]},
@@ -327,7 +329,7 @@ def refresh_yolink_devices():
 
 if __name__ == "__main__":
     load_config()
-    initialize_default_user()  # Create default admin if no users exist
+    initialize_default_user()  # Always create default user on startup if none exist
     max_retries = 5
     retry_delay = 2
     for attempt in range(max_retries):
@@ -343,7 +345,14 @@ if __name__ == "__main__":
             time.sleep(retry_delay)
     load_devices_to_redis()
     load_mappings_to_redis()
-    mqtt_thread = threading.Thread(target=run_mqtt_client, daemon=True)
-    mqtt_thread.start()
-    initialize_monitor_mqtt_client()
+    # Start MQTT only if config is complete
+    if config_data["yolink"]["uaid"] and config_data["yolink"]["secret_key"] and config_data["mqtt"]["url"]:
+        mqtt_thread = threading.Thread(target=run_mqtt_client, daemon=True)
+        mqtt_thread.start()
+    else:
+        logger.warning("YoLink MQTT not started; configure UAID, Secret Key, and MQTT URL via UI first.")
+    if config_data["mqtt_monitor"]["url"]:
+        initialize_monitor_mqtt_client()
+    else:
+        logger.warning("Monitor MQTT not started; configure MQTT Monitor URL via UI first.")
     app.run(host="0.0.0.0", port=5000)
