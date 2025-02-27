@@ -112,7 +112,7 @@ def on_connect(client: mqtt.Client, userdata, flags, rc: int) -> None:
         client.subscribe(topic)
         logger.info(f"Connected to MQTT broker and subscribed to {topic}")
     else:
-        logger.error(f"Connection failed with code {rc}")
+        logger.error(f"Connection failed with code {rc}")f
 
 def on_message(client: mqtt.Client, userdata, msg: mqtt.MQTTMessage) -> None:
     """Process incoming MQTT messages."""
@@ -132,37 +132,45 @@ def on_message(client: mqtt.Client, userdata, msg: mqtt.MQTTMessage) -> None:
     except Exception as e:
         logger.error(f"Message processing failed: {e}")
 
-def run_mqtt_client() -> None:
-    """Run the MQTT client with token handling."""
-    load_config()
-    if not verify_yolink_token():
-        logger.error("Initial token generation failed. Exiting.")
+def run_mqtt_client():
+    global mqtt_client_instance, mqtt_thread_running
+    if mqtt_thread_running:
+        logger.info("MQTT client already running")
         return
 
-    mqtt_config = config_data["mqtt"]
+    load_config()  # Ensure latest config
+    token = config_data['yolink'].get('token')
+    if not token or is_token_expired():
+        token = generate_yolink_token(config_data['yolink']['uaid'], config_data['yolink']['secret_key'])
+        if not token:
+            logger.error("Failed to obtain a valid YoLink token")
+            return
+
+    devices_data = load_yaml('devices.yaml') or {}
+    home_id = devices_data.get('homes', {}).get('id', config_data.get('home_id', 'UNKNOWN_HOME_ID'))
+    if home_id == 'UNKNOWN_HOME_ID':
+        logger.warning("No valid home_id found in devices.yaml or config.yaml; using UNKNOWN_HOME_ID")
+
+    mqtt_broker_url = config_data['mqtt']['url'].replace("mqtt://", "")
+    mqtt_broker_port = config_data['mqtt']['port']
+    mqtt_topic = config_data['mqtt']['topic'].replace("${Home ID}", home_id)
     client_id = str(uuid.uuid4())
-    client = mqtt.Client(client_id=client_id)
-    client.on_connect = on_connect
-    client.on_message = on_message
 
-    # Use token as username if no specific credentials provided
-    username = mqtt_config.get("username") or config_data["yolink"]["token"]
-    password = mqtt_config.get("password")
-    if username:
-        client.username_pw_set(username, password)
+    mqtt_client = mqtt.Client(client_id=client_id, userdata={"topic": mqtt_topic})
+    mqtt_client.on_connect = on_connect
+    mqtt_client.on_disconnect = on_disconnect
+    mqtt_client.on_message = on_message
+    mqtt_client.username_pw_set(username=token, password=None)
 
-    threading.Thread(target=token_refresh_thread, daemon=True).start()
-    threading.Thread(target=check_door_open_timeout, daemon=True).start()
-
-    retry_delay = 5
-    while True:
-        try:
-            client.connect(mqtt_config["url"].replace("mqtt://", ""), mqtt_config["port"])
-            client.loop_forever()
-        except Exception as e:
-            logger.error(f"MQTT connection failed: {e}. Retrying in {retry_delay}s")
-            time.sleep(retry_delay)
-            retry_delay = min(retry_delay * 2, 60)
+    try:
+        logger.info(f"Connecting to MQTT broker at {mqtt_broker_url}:{mqtt_broker_port} with topic {mqtt_topic}")
+        mqtt_client.connect(mqtt_broker_url, mqtt_broker_port)
+        mqtt_client_instance = mqtt_client
+        mqtt_thread_running = True
+        mqtt_client.loop_forever()
+    except Exception as e:
+        logger.error(f"MQTT client error: {e}")
+        mqtt_thread_running = False
 
 if __name__ == "__main__":
     run_mqtt_client()

@@ -342,10 +342,106 @@ def set_door_prop_alarm():
 @app.route("/refresh_yolink_devices")
 @login_required
 def refresh_yolink_devices():
-    if refresh_yolink_token():
-        load_devices_to_redis()
-        return jsonify({"status": "success", "message": "YoLink devices refreshed"})
-    return jsonify({"status": "error", "message": "Token refresh failed"})
+    load_config()  # Ensure latest config is loaded
+    token = config_data['yolink'].get('token')
+    if not token:
+        token = generate_yolink_token(config_data['yolink']['uaid'], config_data['yolink']['secret_key'])
+        if not token:
+            logger.error("No token available after generation attempt")
+            return jsonify({"status": "error", "message": "No token available. Please check YoLink credentials."})
+
+    yolink_api = YoLinkAPI(token)
+    home_info = yolink_api.get_home_info()
+    logger.info(f"Home info response: {home_info}")
+    if not home_info or home_info.get("code") != "000000":
+        return jsonify({"status": "error", "message": f"Failed to retrieve home info: {home_info.get('desc', 'Unknown error')}"})
+
+    home_id = home_info["data"]["id"]
+    logger.info(f"Retrieved home_id: {home_id}")
+    config_data['home_id'] = home_id  # Store at top-level in config
+    save_config(config_data)
+
+    devices = yolink_api.get_device_list()
+    logger.info(f"Device list response: {devices}")
+    if not devices or devices.get("code") != "000000":
+        return jsonify({"status": "error", "message": f"Failed to retrieve devices: {devices.get('desc', 'Unknown error')}"})
+
+    existing_devices_data = load_yaml(devices_file) or {}
+    existing_devices = {d['deviceId']: d for d in existing_devices_data.get('devices', [])}
+    mappings_data = load_yaml(mappings_file) or {'mappings': []}
+    mappings_dict = {m['yolink_device_id']: m for m in mappings_data.get('mappings', [])}
+
+    new_devices = []
+    for device in devices["data"]["devices"]:
+        device_id = device["deviceId"]
+        device_name = device.get('name', f"Device {device_id[-4:]}")
+        signal_strength = device.get('loraInfo', {}).get('signal', 'unknown')
+
+        device_data = {
+            'deviceId': device_id,
+            'name': device_name,
+            'state': 'unknown',
+            'battery': 'unknown',
+            'temperature': 'unknown',
+            'humidity': 'unknown',
+            'tempLimit': {'max': None, 'min': None},
+            'humidityLimit': {'max': None, 'min': None},
+            'alarm': {
+                'lowBattery': False,
+                'lowTemp': False,
+                'highTemp': False,
+                'lowHumidity': False,
+                'highHumidity': False
+            },
+            'signal': signal_strength,
+            'last_seen': 'never'
+        }
+
+        if device_id in existing_devices:
+            existing_device = existing_devices[device_id]
+            device_data.update({
+                'state': existing_device.get('state', 'unknown'),
+                'battery': existing_device.get('battery', 'unknown'),
+                'temperature': existing_device.get('temperature', 'unknown'),
+                'humidity': existing_device.get('humidity', 'unknown'),
+                'tempLimit': existing_device.get('tempLimit', {'max': None, 'min': None}),
+                'humidityLimit': existing_device.get('humidityLimit', {'max': None, 'min': None}),
+                'alarm': existing_device.get('alarm', device_data['alarm']),
+                'signal': signal_strength,
+                'last_seen': existing_device.get('last_seen', 'never')
+            })
+
+        if device_id in mappings_dict:
+            mapping = mappings_dict[device_id]
+            mapping['sia_zone_description'] = device_name
+            mapping['sia_signal_strength'] = signal_strength
+        else:
+            mappings_data['mappings'].append({
+                'yolink_device_id': device_id,
+                'sia_zone': '',
+                'sia_zone_description': device_name,
+                'sia_signal_strength': signal_strength,
+                'chekt_zone': 'N/A'
+            })
+
+        device_data['chekt_zone'] = mappings_dict.get(device_id, {}).get('chekt_zone', 'N/A')
+        new_devices.append(device_data)
+
+    devices_data = {"homes": {"id": home_id}, "devices": new_devices}
+    save_to_yaml(devices_file, devices_data)
+    logger.info(f"Saved devices.yaml with home_id: {home_id}")
+
+    save_to_yaml(mappings_file, mappings_data)
+
+    global mqtt_client_instance
+    if mqtt_client_instance:
+        mqtt_client_instance.disconnect()
+        mqtt_client_instance.loop_stop()
+        logger.info("Disconnected existing MQTT client")
+    mqtt_thread = threading.Thread(target=run_mqtt_client, daemon=True)
+    mqtt_thread.start()
+
+    return jsonify({"status": "success", "message": "YoLink devices refreshed and MQTT client restarted"})
 
 if __name__ == "__main__":
     config_data_full = load_config()
