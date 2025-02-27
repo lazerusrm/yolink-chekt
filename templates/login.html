@@ -15,6 +15,7 @@
         .btn-login { background-color: #00ff00; color: #2e2e2e; width: 100%; border-radius: 5px; padding: 10px; font-size: 1.1rem; font-weight: bold; }
         .btn-login:hover { background-color: #28a745; }
         .error-message { color: red; font-size: 0.9rem; text-align: center; }
+        .default-login { color: #00ff00; font-size: 0.9rem; text-align: center; margin-top: 10px; }
     </style>
 </head>
 <body>
@@ -46,7 +47,12 @@
                 </div>
             {% endif %}
         {% endwith %}
-        <small class="form-text text-center"><a href="{{ url_for('create_user') }}" style="color: #00ff00;">Create User</a></small>
+        {% if no_users %}
+            <div class="default-login">
+                <p>Use default credentials: <strong>admin</strong> / <strong>admin123</strong></p>
+                <p>You must change this password on first login.</p>
+            </div>
+        {% endif %}
     </div>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/js/bootstrap.bundle.min.js"></script>
