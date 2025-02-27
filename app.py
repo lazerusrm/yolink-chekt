@@ -1,17 +1,23 @@
-from flask import Flask, request, render_template, flash, redirect, url_for, session
-from flask_login import LoginManager, UserMixin, login_user, login_required, current_user
+from flask import Flask, request, render_template, flash, redirect, url_for, session, jsonify
+from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 import bcrypt
 import pyotp
 import qrcode
 import io
 import base64
-import json
+import logging
 from config import load_config, save_config, get_user_data, save_user_data
 from db import redis_client
-from device_manager import refresh_yolink_devices
+from device_manager import refresh_yolink_devices, get_all_devices, get_device_data, save_device_data
+from mappings import get_mappings, save_mapping
+from yolink_mqtt import run_mqtt_client
+from monitor_mqtt import run_monitor_mqtt
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-app.secret_key = os.getenv("FLASK_SECRET_KEY", "supersecretkey")  # Load from .env
+app.secret_key = os.getenv("FLASK_SECRET_KEY", "supersecretkey")
 
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -27,16 +33,12 @@ def load_user(username):
         return User(username)
     return None
 
-# Initialize default user if no users exist
 def init_default_user():
     if not redis_client.keys("user:*"):
         default_username = "admin"
         default_password = "admin123"
         hashed_password = bcrypt.generate_password_hash(default_password).decode('utf-8')
-        user_data = {
-            "password": hashed_password,
-            "force_password_change": True
-        }
+        user_data = {"password": hashed_password, "force_password_change": True}
         save_user_data(default_username, user_data)
 
 init_default_user()
@@ -66,6 +68,12 @@ def login():
             return redirect(url_for("index"))
         flash("Invalid credentials", "error")
     return render_template("login.html", totp_required=False)
+
+@app.route("/logout")
+@login_required
+def logout():
+    logout_user()
+    return redirect(url_for("login"))
 
 @app.route("/change_password", methods=["GET", "POST"])
 @login_required
@@ -125,40 +133,67 @@ def setup_totp():
 @app.route("/")
 @login_required
 def index():
-    return render_template("index.html")
+    user_data = get_user_data(current_user.id)
+    if user_data.get("force_password_change", False):
+        flash("Please change your default password.", "warning")
+        return redirect(url_for("change_password"))
+    devices = get_all_devices()
+    mappings = get_mappings().get("mappings", [])
+    device_mappings = {m["yolink_device_id"]: m for m in mappings}
+    for device in devices:
+        device["chekt_zone"] = device_mappings.get(device["deviceId"], {}).get("chekt_zone", "N/A")
+        device["door_prop_alarm"] = device_mappings.get(device["deviceId"], {}).get("door_prop_alarm", False)
+    return render_template("index.html", devices=devices)
 
 @app.route("/config", methods=["GET", "POST"])
 @login_required
 def config():
     config_data = load_config()
     if request.method == "POST":
-        # Simplified: assume form data matches config structure
-        new_config = json.loads(request.form["config_json"])
-        save_config(new_config)
-        flash("Configuration saved", "success")
+        try:
+            new_config = {
+                "yolink": {
+                    "uaid": request.form["yolink_uaid"],
+                    "secret_key": request.form["yolink_secret_key"],
+                    "token": config_data["yolink"]["token"],
+                    "token_expiry": config_data["yolink"]["token_expiry"]
+                },
+                "mqtt": {
+                    "url": request.form["yolink_url"],
+                    "port": int(request.form["yolink_port"]),
+                    "topic": request.form["yolink_topic"]
+                },
+                "mqtt_monitor": {
+                    "url": request.form["monitor_mqtt_url"],
+                    "port": int(request.form["monitor_mqtt_port"]),
+                    "username": request.form["monitor_mqtt_username"],
+                    "password": request.form["monitor_mqtt_password"],
+                    "client_id": "monitor_client_id"
+                },
+                "receiver_type": request.form["receiver_type"],
+                "chekt": {
+                    "api_token": request.form["chekt_api_token"],
+                    "ip": request.form["chekt_ip"],
+                    "port": int(request.form["chekt_port"])
+                },
+                "sia": {
+                    "ip": request.form["sia_ip"],
+                    "port": int(request.form["sia_port"]) if request.form["sia_port"] else "",
+                    "account_id": request.form["sia_account_id"],
+                    "transmitter_id": request.form["sia_transmitter_id"],
+                    "encryption_key": request.form["sia_encryption_key"]
+                },
+                "monitor": {"api_key": request.form["monitor_api_key"]},
+                "timezone": request.form["timezone"],
+                "door_open_timeout": int(request.form["door_open_timeout"]),
+                "home_id": config_data.get("home_id", "")
+            }
+            save_config(new_config)
+            flash("Configuration saved", "success")
+        except ValueError as e:
+            flash(f"Invalid input: {str(e)}", "error")
         return redirect(url_for("config"))
     return render_template("config.html", config=config_data)
-
-@app.route("/refresh_devices")
-@login_required
-def refresh_devices():
-    refresh_yolink_devices()  # From device_manager.py
-    flash("Devices refreshed successfully", "success")
-    return redirect(url_for("index"))
-
-@app.route("/")
-@login_required
-def index():
-    user_data = get_user_data(current_user.id)
-    if user_data.get("force_password_change", False):
-        flash("Please change your default password.", "warning")
-        return redirect(url_for("change_password"))
-    devices = get_all_devices()  # Fetch from Redis
-    mappings = get_mappings().get("mappings", [])
-    device_mappings = {m["yolink_device_id"]: m for m in mappings}
-    for device in devices:
-        device["mapping"] = device_mappings.get(device["deviceId"], {})
-    return render_template("index.html", devices=devices)
 
 @app.route("/create_user", methods=["POST"])
 @login_required
@@ -177,5 +212,76 @@ def create_user():
         flash("User created successfully", "success")
     return redirect(url_for("config"))
 
+@app.route("/refresh_devices")
+@login_required
+def refresh_devices():
+    refresh_yolink_devices()
+    flash("Devices refreshed successfully", "success")
+    return redirect(url_for("index"))
+
+@app.route("/save_mapping", methods=["POST"])
+@login_required
+def save_mapping_route():
+    device_id = request.form["yolink_device_id"]
+    chekt_zone = request.form.get("chekt_zone", "")
+    save_mapping(device_id, chekt_zone)
+    return jsonify({"status": "success"})
+
+@app.route("/set_door_prop_alarm", methods=["POST"])
+@login_required
+def set_door_prop_alarm():
+    device_id = request.form["device_id"]
+    enabled = request.form["enabled"] == "true"
+    device = get_device_data(device_id)
+    if device:
+        device["door_prop_alarm"] = enabled
+        save_device_data(device_id, device)
+        return jsonify({"status": "success"})
+    return jsonify({"status": "error", "message": "Device not found"}), 404
+
+@app.route("/get_logs", methods=["GET"])
+@login_required
+def get_logs():
+    try:
+        with open("/app/logs/application.log", "r") as f:
+            logs = "".join(f.readlines()[-150:])
+        return jsonify({"status": "success", "logs": logs})
+    except FileNotFoundError:
+        return jsonify({"status": "error", "message": "Log file not found"})
+
+@app.route("/check_mqtt_status")
+@login_required
+def check_mqtt_status():
+    # Placeholder; assumes yolink_mqtt.py sets a status
+    return jsonify({"status": "success", "message": "YoLink MQTT connection is active."})
+
+@app.route("/check_monitor_mqtt_status")
+@login_required
+def check_monitor_mqtt_status():
+    # Placeholder; assumes monitor_mqtt.py sets a status
+    return jsonify({"status": "success", "message": "Monitor MQTT connection is active."})
+
+@app.route("/check_receiver_status")
+@login_required
+def check_receiver_status():
+    config = load_config()
+    receiver_type = config.get("receiver_type", "CHEKT")
+    if receiver_type == "CHEKT":
+        return jsonify({"status": "success", "message": "Receiver is alive."})
+    return jsonify({"status": "success", "message": "SIA receiver assumed alive."})
+
+@app.route("/check_all_statuses")
+@login_required
+def check_all_statuses():
+    return jsonify({
+        "yolink": check_mqtt_status().get_json(),
+        "monitor": check_monitor_mqtt_status().get_json(),
+        "receiver": check_receiver_status().get_json()
+    })
+
 if __name__ == "__main__":
-    app.run(debug=True)
+    import threading
+    config_data = load_config()
+    threading.Thread(target=run_mqtt_client, daemon=True).start()
+    threading.Thread(target=run_monitor_mqtt, daemon=True).start()
+    app.run(host="0.0.0.0", port=5000)

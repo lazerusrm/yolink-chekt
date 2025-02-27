@@ -10,3 +10,4 @@ qrcode[pil]>=7.3
 pytz
 cryptography
 redis>=4.0.0
+python-dotenv
