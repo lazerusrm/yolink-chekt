@@ -74,9 +74,12 @@ def refresh_yolink_token() -> bool:
     uaid = yolink_config.get("uaid", "")
     secret_key = yolink_config.get("secret_key", "")
     if not uaid or not secret_key:
-        logger.warning("UAID or Secret Key missing; token refresh skipped.")
+        logger.warning(f"UAID or Secret Key missing; token refresh skipped. UAID: {uaid}, Secret Key: {secret_key}")
         return False
-    return generate_yolink_token(uaid, secret_key) is not None
+    result = generate_yolink_token(uaid, secret_key)
+    if result is None:
+        logger.error(f"Failed to generate YoLink token with UAID: {uaid}, Secret Key: {secret_key}")
+    return result is not None
 
 @app.route("/")
 @login_required
@@ -208,7 +211,7 @@ def config():
             if door_timeout < 1:
                 raise ValueError("Door open timeout must be positive")
 
-            save_config({
+            new_config = {
                 "yolink": {
                     "uaid": request.form["yolink_uaid"],
                     "secret_key": request.form["yolink_secret_key"],
@@ -230,7 +233,7 @@ def config():
                 "receiver_type": request.form["receiver_type"],
                 "chekt": {
                     "api_token": request.form["chekt_api_token"],
-                    "ip": request.form["chekt_ip"],
+                    "ip": request.form["chekt_ip"],  # Ensure this is captured
                     "port": chekt_port
                 },
                 "sia": {
@@ -243,7 +246,9 @@ def config():
                 "monitor": {"api_key": request.form["monitor_api_key"]},
                 "timezone": request.form["timezone"],
                 "door_open_timeout": door_timeout
-            })
+            }
+            save_config(new_config)
+            logger.info(f"Config saved: {new_config}")
             flash("Configuration saved", "success")
         except ValueError as e:
             flash(f"Invalid input: {str(e)}", "error")
