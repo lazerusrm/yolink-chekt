@@ -2,6 +2,7 @@ import paho.mqtt.client as mqtt
 import json
 import time
 import logging
+import secrets
 from config import load_config
 from db import redis_client
 from device_manager import get_device_data, save_device_data, get_access_token
@@ -10,13 +11,19 @@ from alerts import trigger_alert
 from monitor_mqtt import publish_update
 import requests
 
-# Configure logging to a file
+# Logging Setup
+from logging.handlers import RotatingFileHandler
+handler = RotatingFileHandler("/app/logs/application.log", maxBytes=10*1024*1024, backupCount=5)
+logging.basicConfig(handlers=[handler, logging.StreamHandler()], ...)
+
 logging.basicConfig(
     filename="yolink_mqtt.log",
     level=logging.DEBUG,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+
+app.secret_key = os.getenv("FLASK_SECRET_KEY", secrets.token_hex(16))
 
 client = None
 connected = False

@@ -247,8 +247,12 @@ def create_user():
 @app.route("/refresh_devices")
 @login_required
 def refresh_devices():
-    refresh_yolink_devices()
-    flash("Devices refreshed successfully", "success")
+    try:
+        refresh_yolink_devices()
+        flash("Devices refreshed successfully", "success")
+    except Exception as e:
+        logger.error(f"Device refresh failed: {e}")
+        flash("Failed to refresh devices", "error")
     return redirect(url_for("index"))
 
 @app.route("/system_uptime")
