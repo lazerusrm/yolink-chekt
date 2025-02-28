@@ -2,6 +2,7 @@ import logging
 import requests
 import base64
 from mappings import get_mapping
+from db import redis_client
 
 logger = logging.getLogger(__name__)
 
