@@ -1,3 +1,45 @@
+"""
+Yolink to CHEKT Integration - Version 1.1
+========================================
+
+Overview:
+This application integrates Yolink smart sensors (e.g., door contacts, motion sensors) with the CHEKT alarm system.
+It listens to sensor events via MQTT and triggers corresponding CHEKT zones using the local API.
+A web interface is provided for device mapping, configuration, and secure user authentication (TOTP).
+
+Key Features:
+- Containerized Deployment: Easily managed with Docker and Docker Compose.
+- Real-Time Device Management: Monitors sensor states, battery levels, and last-seen times with data stored in Redis.
+- Alert Integration: Supports both CHEKT and SIA alert receivers.
+- Prop Alarm Functionality: When enabled, door sensors trigger an alert only upon receiving an "openRemind" message rather than immediately on a closed-to-open transition.
+- Web Interface: Dashboard for device status, configuration pages, and user authentication.
+- Automatic Updates: Self-update mechanism to pull changes from GitHub and restart services.
+
+Prerequisites:
+- Docker and Docker Compose.
+- Linux (Debian-based systems recommended).
+
+Installation:
+1. Clone the repository: git clone https://github.com/lazerusrm/yolink-chekt.git
+2. Change to the repository directory: cd yolink-chekt
+3. Run the install script: sudo bash install.sh
+
+Project Structure:
+- app.py: Main Flask application.
+- config.py: Configuration management.
+- yolink_mqtt.py: YoLink MQTT client.
+- monitor_mqtt.py: Monitor server MQTT communications.
+- device_manager.py: Device state management in Redis.
+- mappings.py: Mapping of Yolink devices to CHEKT zones.
+- alerts.py: Alert triggering logic.
+- templates/: Web interface HTML templates.
+- docker-compose.yml: Docker configuration.
+- install.sh: Installation script.
+- self-update.sh: Automatic update script.
+
+For further details, please refer to the README.md.
+"""
+
 import os
 from flask import Flask, request, render_template, flash, redirect, url_for, session, jsonify
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
