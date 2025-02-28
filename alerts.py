@@ -73,6 +73,11 @@ def trigger_chekt_event(device_id, event_description, chekt_zone):
         "event_description": event_description
     }
 
+    # Add debug logs here:
+    logger.debug(f"Triggering CHEKT event with URL: {url}")
+    logger.debug(f"Payload: {payload}")
+    logger.debug(f"Headers: {headers}")
+
     try:
         response = requests.post(url, json=payload, headers=headers, timeout=10)
         if response.status_code in [200, 201, 202]:
@@ -81,6 +86,3 @@ def trigger_chekt_event(device_id, event_description, chekt_zone):
             logger.error(f"Failed to trigger CHEKT event: {response.status_code} - {response.text}")
     except requests.exceptions.RequestException as e:
         logger.error(f"Error triggering CHEKT event for device {device_id}: {str(e)}")
-
-def send_sia_message(device_id, event_description, zone, sia_config):
-    logger.info(f"SIA message: {event_description} on zone {zone}")
