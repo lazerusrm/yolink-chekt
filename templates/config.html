@@ -51,15 +51,15 @@
             <h3>Status</h3>
             <div id="yolink-mqtt-status" class="status mb-2">
                 <img src="" alt="YoLink MQTT Status" id="yolink-mqtt-icon" class="hidden">
-                <span id="yolink-mqtt-message">Checking...</span><span class="spinner hidden" id="yolink-spinner"></span>
+                <span id="yolink-mqtt-message">Checking YoLink MQTT...</span><span class="spinner hidden" id="yolink-spinner"></span>
             </div>
             <div id="monitor-mqtt-status" class="status mb-2">
                 <img src="" alt="Monitor MQTT Status" id="monitor-mqtt-icon" class="hidden">
-                <span id="monitor-mqtt-message">Checking...</span><span class="spinner hidden" id="monitor-spinner"></span>
+                <span id="monitor-mqtt-message">Checking Monitor MQTT...</span><span class="spinner hidden" id="monitor-spinner"></span>
             </div>
             <div id="receiver-status" class="status mb-2">
                 <img src="" alt="Receiver Status" id="receiver-icon" class="hidden">
-                <span id="receiver-message">Checking...</span><span class="spinner hidden" id="receiver-spinner"></span>
+                <span id="receiver-message">Checking Receiver...</span><span class="spinner hidden" id="receiver-spinner"></span>
             </div>
         </div>
 
@@ -150,9 +150,9 @@
             <div class="form-group">
                 <label for="timezone">Timezone</label>
                 <select id="timezone" name="timezone" class="form-control" required>
-                    <option value="UTC" {% if config.timezone == 'UTC' %}selected{% endif %}>UTC</option>
-                    <option value="America/New_York" {% if config.timezone == 'America/New_York' %}selected{% endif %}>America/New_York</option>
-                    <option value="America/Los_Angeles" {% if config.timezone == 'America/Los_Angeles' %}selected{% endif %}>America/Los_Angeles</option>
+                    {% for tz in config.supported_timezones %}
+                        <option value="{{ tz }}" {% if config.timezone == tz %}selected{% endif %}>{{ tz }}</option>
+                    {% endfor %}
                 </select>
             </div>
 
@@ -207,6 +207,8 @@
                 if (response.status === "success") {
                     $('#log-content').text(response.logs);
                     $('#log-area').scrollTop($('#log-area')[0].scrollHeight);
+                } else {
+                    $('#log-content').text('Failed to load logs: ' + response.message);
                 }
                 $('#log-loading').addClass('hidden');
             }).fail(function() {
@@ -231,8 +233,10 @@
             $('#refresh-devices-btn').click(function() {
                 $('#refresh-icon').addClass('hidden');
                 $('#refresh-message').text('Refreshing YoLink devices...');
-                $.get('/refresh_devices', function(response) {  // Updated to /refresh_devices
+                $.get('/refresh_devices', function(response) {
                     updateStatus('refresh-message', 'refresh-icon', response.message, response.status === "success", 'refresh-spinner');
+                }).fail(function() {
+                    updateStatus('refresh-message', 'refresh-icon', 'Failed to refresh devices', false, 'refresh-spinner');
                 });
             });
 
@@ -257,6 +261,7 @@
                 });
             });
 
+            // Initial log fetch
             fetchLogs();
         });
     </script>

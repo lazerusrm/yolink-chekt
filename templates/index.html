@@ -8,6 +8,9 @@
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css">
     <!-- Font Awesome CSS -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css" integrity="sha512-Kc323vGBEqzTmouAECnVceyQqyqdsSiqLQISBL29aUW4U/M7pSPA/gEUZQqv1cwx4OnYxTxve5UMg5GT6L4JJg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <!-- Moment.js and Moment Timezone for timezone handling -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.1/moment.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment-timezone/0.5.34/moment-timezone-with-data.min.js"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -185,6 +188,15 @@
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/js/bootstrap.min.js"></script>
     <script>
+        let selectedTimezone = "UTC"; // Default timezone
+
+        // Fetch timezone configuration on page load
+        $(document).ready(function() {
+            $.get("/get_config", function(config) {
+                selectedTimezone = config.timezone || "UTC";
+            });
+        });
+
         // Toggle spinner speed
         function toggleSpinnerSpeed(fast) {
             if (fast) {
@@ -250,11 +262,11 @@
             return a.name.localeCompare(b.name);
         }
 
-        // Format UTC to local time
+        // Format UTC to local time using selected timezone
         function formatLocalTime(isoDateString) {
             if (!isoDateString || isoDateString === 'never') return "Never";
-            const localTime = new Date(isoDateString);
-            return isNaN(localTime) ? "Invalid date" : localTime.toLocaleString();
+            const localTime = moment.tz(isoDateString, selectedTimezone);
+            return localTime.isValid() ? localTime.format("MM/DD/YYYY, h:mm:ss A") : "Invalid date";
         }
 
         // Determine sensor border class for alarm/warning
@@ -287,7 +299,7 @@
                 const sensorList = $('#sensor-list');
                 sensorList.empty();
 
-                console.log("Sensor Data Received:", sensorData.devices); // Debug log
+                console.log("Sensor Data Received:", sensorData.devices);
 
                 sensorData.devices.sort(compareSensors);
 
@@ -299,9 +311,11 @@
                     const signalQuality = getSignalQuality(sensor.signal);
                     const signalHighlight = sensor.signal !== "unknown" && sensor.signal != null && sensor.signal <= -115 ? 'warning' : '';
                     const batteryHighlight = sensor.battery === 0 || sensor.battery === "0" ? 'alarm' : sensor.battery === 1 || sensor.battery === "1" ? 'warning' : '';
-                    const displayState = typeof sensor.state === 'object' ? JSON.stringify(sensor.state) :
-                                        (sensor.type === "Switch" && sensor.state === "open") ? "on" :
-                                        (sensor.type === "Switch" && sensor.state === "closed") ? "off" : sensor.state;
+                    const displayState = Array.isArray(sensor.state)
+                        ? `Outlet States: ${sensor.state.map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(', ')}`
+                        : (sensor.type === "Switch" && sensor.state === "open") ? "On"
+                        : (sensor.type === "Switch" && sensor.state === "closed") ? "Off"
+                        : sensor.state;
                     const hasBattery = batteryDeviceTypes.includes(sensor.type);
                     const hasTempHumidity = tempHumidityDeviceTypes.includes(sensor.type);
 
@@ -309,7 +323,14 @@
                         <div class="sensor ${borderClass}">
                             <p class="sensor-name">${sensor.name || 'Unknown Device'}</p>
                             <span class="chekt-zone" onclick="makeZoneEditable(this, '${sensor.deviceId}')">${chektZone}</span>
-                            ${sensor.type === 'DoorSensor' ? `<span class="door-prop-toggle" onclick="makeDoorPropEditable(this, '${sensor.deviceId}')">${sensor.door_prop_alarm ? 'Enabled' : 'Disabled'}</span>` : ''}
+                            ${sensor.type === 'DoorSensor' ? `
+                                <label for="door-prop-${sensor.deviceId}">Door Prop Alarm:
+                                    <input type="checkbox" id="door-prop-${sensor.deviceId}"
+                                           ${sensor.door_prop_alarm ? "checked" : ""}
+                                           onchange="toggleDoorPropAlarm('${sensor.deviceId}', this.checked)">
+                                </label>
+                                <small>(Alerts if door is propped open)</small>
+                            ` : ''}
                             ${sensor.state && sensor.state !== 'unknown' ? `<p class="sensor-data-item">State: ${displayState}</p>` : ''}
                             ${hasBattery && sensor.battery !== "unknown" && sensor.battery != null ? `
                                 <p class="sensor-data-item ${batteryHighlight}">
@@ -366,7 +387,7 @@
             input.addEventListener('blur', saveAndUpdate);
         }
 
-        // Save CHEKT zone to server
+        // Save CHEKT zone to server and refresh UI
         function saveZone(deviceId, newZone) {
             $.ajax({
                 type: "POST",
@@ -377,7 +398,10 @@
                     if (response.status === 'success') {
                         const confirmation = document.getElementById(`save-confirmation-${deviceId}`);
                         confirmation.style.display = 'inline';
-                        setTimeout(() => confirmation.style.display = 'none', 2000);
+                        setTimeout(() => {
+                            confirmation.style.display = 'none';
+                            updateSensorData(); // Refresh UI with latest data
+                        }, 2000);
                     }
                 },
                 error: function(xhr) {
@@ -387,42 +411,25 @@
             });
         }
 
-        // Make door prop alarm editable for contact sensors
-        function makeDoorPropEditable(toggleSpan, deviceId) {
-            const currentState = toggleSpan.textContent === 'Enabled';
-            const input = document.createElement('input');
-            input.type = 'checkbox';
-            input.classList.add('door-prop-input');
-            input.checked = currentState;
-            toggleSpan.parentNode.insertBefore(input, toggleSpan);
-            toggleSpan.style.display = 'none';
-            input.focus();
-
-            function saveDoorProp() {
-                const enabled = input.checked;
-                $.ajax({
-                    type: "POST",
-                    url: "/set_door_prop_alarm",
-                    contentType: "application/json",
-                    data: JSON.stringify({ device_id: deviceId, enabled: enabled }),
-                    success: function(response) {
-                        if (response.status === 'success') {
-                            toggleSpan.textContent = enabled ? 'Enabled' : 'Disabled';
-                            toggleSpan.style.display = 'block';
-                            input.remove();
-                            const confirmation = document.getElementById(`save-confirmation-${deviceId}`);
-                            confirmation.style.display = 'inline';
-                            setTimeout(() => confirmation.style.display = 'none', 2000);
-                        }
-                    },
-                    error: function(xhr) {
-                        console.log('Error saving door prop alarm: ' + xhr.responseText);
-                        alert('Error saving door prop alarm: ' + xhr.responseText);
+        // Toggle door prop alarm and save to server
+        function toggleDoorPropAlarm(deviceId, enabled) {
+            $.ajax({
+                type: "POST",
+                url: "/set_door_prop_alarm",
+                contentType: "application/json",
+                data: JSON.stringify({ device_id: deviceId, enabled: enabled }),
+                success: function(response) {
+                    if (response.status === 'success') {
+                        const confirmation = document.getElementById(`save-confirmation-${deviceId}`);
+                        confirmation.style.display = 'inline';
+                        setTimeout(() => confirmation.style.display = 'none', 2000);
                     }
-                });
-            }
-
-            input.addEventListener('change', saveDoorProp);
+                },
+                error: function(xhr) {
+                    console.log('Error saving door prop alarm: ' + xhr.responseText);
+                    alert('Error saving door prop alarm: ' + xhr.responseText);
+                }
+            });
         }
 
         // Document ready

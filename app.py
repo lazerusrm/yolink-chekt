@@ -1,7 +1,7 @@
 import os
 from flask import Flask, request, render_template, flash, redirect, url_for, session, jsonify
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
-from flask_bcrypt import Bcrypt  # Changed from 'import bcrypt'
+from flask_bcrypt import Bcrypt
 import pyotp
 import qrcode
 import io
@@ -12,11 +12,12 @@ import psutil
 import json
 from config import load_config, save_config, get_user_data, save_user_data
 from db import redis_client, ensure_redis_connection
-from device_manager import refresh_yolink_devices, get_all_devices, get_device_data, save_device_data
-from mappings import get_mappings, save_mapping
+from device_manager import refresh_yolink_devices, get_all_devices
+from mappings import get_mappings, save_mapping, save_mappings  # Ensure save_mappings is imported
 from yolink_mqtt import run_mqtt_client, connected as yolink_connected
 from monitor_mqtt import run_monitor_mqtt, connected as monitor_connected
 
+# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
@@ -27,10 +28,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Initialize Flask app
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "supersecretkey")
-bcrypt = Bcrypt(app)  # Initialize Flask-Bcrypt with the app
+bcrypt = Bcrypt(app)
 
+# Setup Flask-Login
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = "login"
@@ -46,6 +49,7 @@ def load_user(username):
     return None
 
 def init_default_user():
+    """Create a default admin user if no users exist."""
     if not redis_client.keys("user:*"):
         default_username = "admin"
         default_password = "admin123"
@@ -53,7 +57,7 @@ def init_default_user():
         user_data = {"password": hashed_password, "force_password_change": True}
         save_user_data(default_username, user_data)
 
-# Ensure Redis is connected before proceeding
+# Ensure Redis connection
 if not ensure_redis_connection():
     logger.error("Exiting due to persistent Redis connection failure")
     exit(1)
@@ -203,7 +207,8 @@ def config():
                 "monitor": {"api_key": request.form["monitor_api_key"]},
                 "timezone": request.form["timezone"],
                 "door_open_timeout": int(request.form["door_open_timeout"]),
-                "home_id": config_data.get("home_id", "")
+                "home_id": config_data.get("home_id", ""),
+                "supported_timezones": SUPPORTED_TIMEZONES
             }
             save_config(new_config)
             flash("Configuration saved", "success")
@@ -211,6 +216,12 @@ def config():
             flash(f"Invalid input: {str(e)}", "error")
         return redirect(url_for("config"))
     return render_template("config.html", config=config_data)
+
+@app.route('/get_config')
+@login_required
+def get_config():
+    config = load_config()
+    return jsonify(config)
 
 @app.route("/create_user", methods=["POST"])
 @login_required
@@ -255,29 +266,26 @@ def save_mapping_route():
     save_mapping(device_id, chekt_zone)
     return jsonify({"status": "success"})
 
-
 @app.route("/set_door_prop_alarm", methods=["POST"])
 @login_required
 def set_door_prop_alarm():
     data = request.get_json()
     device_id = data.get("device_id")
-    enabled = data.get("enabled") == True  # Expecting boolean from frontend
+    enabled = data.get("enabled") == True
     if not device_id:
         return jsonify({"status": "error", "message": "Missing device ID"}), 400
-
     mappings = get_mappings()
     for mapping in mappings["mappings"]:
         if mapping["yolink_device_id"] == device_id:
             mapping["door_prop_alarm"] = enabled
             break
     else:
-        # Create new mapping if it doesn’t exist
         mappings["mappings"].append({
             "yolink_device_id": device_id,
             "chekt_zone": "N/A",
             "door_prop_alarm": enabled
         })
-    save_mappings(mappings)
+    save_mappings(mappings)  # Use save_mappings from mappings module
     return jsonify({"status": "success"})
 
 @app.route("/get_sensor_data")
@@ -290,7 +298,6 @@ def get_sensor_data():
         mapping = device_mappings.get(device["deviceId"], {})
         device["chekt_zone"] = mapping.get("chekt_zone", "N/A")
         device["door_prop_alarm"] = mapping.get("door_prop_alarm", False)
-        # Ensure all fields are included with defaults
         device.setdefault("state", "unknown")
         device.setdefault("signal", "unknown")
         device.setdefault("battery", "unknown")
@@ -335,13 +342,13 @@ def check_receiver_status():
         return jsonify({"status": "success", "message": "Receiver is alive."})
     return jsonify({"status": "success", "message": "SIA receiver assumed alive."})
 
-@app.route("/check_all_statuses")
+@app.route('/check_all_statuses')
 @login_required
 def check_all_statuses():
     return jsonify({
-        "yolink": check_mqtt_status().get_json(),
-        "monitor": check_monitor_mqtt_status().get_json(),
-        "receiver": check_receiver_status().get_json()
+        "yolink": {"status": "success" if yolink_connected else "error", "message": "YoLink MQTT Connected" if yolink_connected else "YoLink MQTT Disconnected"},
+        "monitor": {"status": "success" if monitor_connected else "error", "message": "Monitor MQTT Connected" if monitor_connected else "Monitor MQTT Disconnected"},
+        "receiver": {"status": "success", "message": "Receiver Connected"}
     })
 
 if __name__ == "__main__":

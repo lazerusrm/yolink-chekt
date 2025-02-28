@@ -5,6 +5,31 @@ from db import redis_client
 
 load_dotenv()
 
+# List of supported North American timezones
+SUPPORTED_TIMEZONES = [
+    "UTC",
+    "America/New_York",
+    "America/Chicago",
+    "America/Denver",
+    "America/Los_Angeles",
+    "America/Anchorage",
+    "America/Honolulu",
+    "America/Phoenix",
+    "America/Detroit",
+    "America/Indiana/Indianapolis",
+    "America/Boise",
+    "America/Juneau",
+    "America/Nome",
+    "America/Adak",
+    "Pacific/Honolulu",
+    "America/Mexico_City",
+    "America/Tijuana",
+    "America/Toronto",
+    "America/Halifax",
+    "America/St_Johns",
+    "America/Puerto_Rico",
+]
+
 DEFAULT_CONFIG = {
     "yolink": {
         "uaid": os.getenv("YOLINK_UAID", ""),
@@ -40,23 +65,33 @@ DEFAULT_CONFIG = {
     "monitor": {"api_key": os.getenv("MONITOR_API_KEY", "")},
     "timezone": "UTC",
     "door_open_timeout": 30,
-    "home_id": ""
+    "home_id": "",
+    "supported_timezones": SUPPORTED_TIMEZONES  # Added for frontend use
 }
 
 def load_config():
+    """Load configuration from Redis, or set and return default if none exists."""
     config_json = redis_client.get("config")
     if config_json:
-        return json.loads(config_json)
+        config = json.loads(config_json)
+        # Ensure supported_timezones is always present
+        config["supported_timezones"] = SUPPORTED_TIMEZONES
+        return config
     else:
         redis_client.set("config", json.dumps(DEFAULT_CONFIG))
         return DEFAULT_CONFIG
 
 def save_config(data):
+    """Save configuration to Redis after validating timezone."""
+    if "timezone" in data and data["timezone"] not in SUPPORTED_TIMEZONES:
+        raise ValueError(f"Invalid timezone: {data['timezone']}")
     redis_client.set("config", json.dumps(data))
 
 def get_user_data(username):
+    """Retrieve user data from Redis."""
     user_json = redis_client.get(f"user:{username}")
     return json.loads(user_json) if user_json else {}
 
 def save_user_data(username, data):
+    """Save user data to Redis."""
     redis_client.set(f"user:{username}", json.dumps(data))
