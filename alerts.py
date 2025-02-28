@@ -3,7 +3,13 @@ import requests
 import base64
 from mappings import get_mapping
 
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
+
+# Optionally, enable HTTP connection debugging (uncomment if needed)
+# import http.client as http_client
+# http_client.HTTPConnection.debuglevel = 1
+# logging.getLogger("requests.packages.urllib3").setLevel(logging.DEBUG)
+# logging.getLogger("requests.packages.urllib3").propagate = True
 
 def map_state_to_event(state, device_type):
     if device_type == 'door_contact':
@@ -33,6 +39,7 @@ def trigger_alert(device_id, state, device_type):
         return
 
     event_description = map_state_to_event(state, device_type)
+    logger.debug(f"Device {device_id} event description: {event_description}")
 
     if receiver_type == "CHEKT":
         chekt_zone = mapping.get('chekt_zone', 'N/A')
@@ -56,12 +63,16 @@ def trigger_chekt_event(device_id, event_description, chekt_zone):
     chekt_config = config.get('chekt', {})
     ip = chekt_config.get('ip')
     port = chekt_config.get('port')
-    api_token = chekt_config.get('api_token')  # Might not be used now
+    api_token = chekt_config.get('api_token')  # May not be used if no auth is required
 
-    if not all([ip, port]):
+    # Log CHEKT configuration details for debugging
+    logger.debug(f"CHEKT config: IP = {ip}, Port = {port}, API Token = {api_token}")
+
+    if not ip or not port:
         logger.error("CHEKT API configuration is incomplete (missing IP or port).")
         return
 
+    # Construct the URL for a bridge channel event
     url = f"http://{ip}:{port}/channels/{chekt_zone}/events"
     headers = {
         "Content-Type": "application/json"
@@ -70,17 +81,21 @@ def trigger_chekt_event(device_id, event_description, chekt_zone):
         "event_description": event_description
     }
 
-    logger.debug(f"Triggering CHEKT event with URL: {url}")
-    logger.debug(f"Payload: {payload}")
-    logger.debug(f"Headers: {headers}")
+    # Detailed debug logging before making the request
+    logger.debug(f"Constructed URL: {url}")
+    logger.debug(f"Constructed Payload: {payload}")
+    logger.debug(f"Constructed Headers: {headers}")
 
     try:
         response = requests.post(url, json=payload, headers=headers, timeout=10)
+        logger.debug(f"HTTP Response status code: {response.status_code}")
+        logger.debug(f"HTTP Response text: {response.text}")
         if response.status_code in [200, 201, 202]:
             logger.info(f"Successfully triggered CHEKT event for device {device_id} on zone {chekt_zone}")
         else:
             logger.error(f"Failed to trigger CHEKT event: {response.status_code} - {response.text}")
     except requests.exceptions.RequestException as e:
-        logger.error(f"Error triggering CHEKT event for device {device_id}: {str(e)}")
+        logger.exception(f"Error triggering CHEKT event for device {device_id}: {str(e)}")
 
-
+def send_sia_message(device_id, event_description, zone, sia_config):
+    logger.info(f"SIA message: {event_description} on zone {zone}")
