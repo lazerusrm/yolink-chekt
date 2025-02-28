@@ -132,18 +132,44 @@ def on_message(client, userdata, msg):
         config = load_config()
         mapping = get_mapping(device_id)
         logger.debug(f"Mapping for device {device_id}: {mapping}")
-        logger.debug(f"Receiver type: {config.get('receiver_type', 'CHEKT')}")
+        receiver_type = config.get("receiver_type", "CHEKT").upper()
+        logger.debug(f"Receiver type: {receiver_type}")
         logger.debug(
             f"Device type: {device.get('type', 'unknown')}, State: {device['state']}, Previous State: {previous_state}")
 
-        if mapping and should_trigger_event(device["state"], previous_state):
-            receiver_type = config.get("receiver_type", "CHEKT").upper()
-            if receiver_type == "CHEKT":
-                logger.info(
-                    f"Triggering CHEKT alert for device {device_id} with state {device['state']} (from {previous_state})")
-                trigger_alert(device_id, device["state"], device.get("type", "unknown"))
-            # Add SIA logic here if needed, but focus on CHEKT
+        # If this is a DoorSensor and door prop alarm is enabled, process it specially:
+        if device.get("type", "").lower() == "doorsensor" and mapping.get("door_prop_alarm", False):
+            # Check if we have a closed -> open transition OR if the payload includes alertType "openRemind"
+            if ((previous_state == "closed" and device["state"] == "open") or (data.get("alertType") == "openRemind")):
+                # Use the payload's stateChangedAt if available, otherwise use the payload's time
+                current_time = data.get("stateChangedAt") or data.get("time") or int(time.time() * 1000)
+                last_trigger = get_last_door_prop_alarm(device_id)
+                if last_trigger is None or (int(current_time) - int(last_trigger)) >= 30000:
+                    # Update the last trigger time
+                    set_last_door_prop_alarm(device_id, current_time)
+                    # Trigger the CHEKT event with the fixed description "Door opened"
+                    logger.info(
+                        f"Door prop alarm triggered for device {device_id} on zone {mapping.get('chekt_zone')} at {current_time}")
+                    trigger_chekt_event(device_id, mapping.get("chekt_zone"))
+                else:
+                    wait_time = (30000 - (int(current_time) - int(last_trigger))) / 1000
+                    logger.info(
+                        f"Door prop alarm for device {device_id} not triggered; waiting for another {wait_time:.1f} seconds.")
+            else:
+                logger.debug(
+                    f"Door prop alarm conditions not met for device {device_id} (prev: {previous_state}, current: {device['state']}, alertType: {data.get('alertType')}).")
+        else:
+            # Normal processing for non-door sensors (or door sensors without door prop alarm enabled)
+            if mapping and should_trigger_event(device["state"], previous_state):
+                if receiver_type == "CHEKT":
+                    logger.info(
+                        f"Triggering CHEKT alert for device {device_id} with state {device['state']} (from {previous_state})")
+                    trigger_alert(device_id, device["state"], device.get("type", "unknown"))
+                elif receiver_type == "SIA":
+                    # SIA logic here if needed.
+                    pass
 
+        # Finally, publish an update for this device.
         publish_update(device_id, {
             "state": device["state"],
             "alarms": device.get("alarms", {})

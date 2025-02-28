@@ -25,6 +25,17 @@ def map_state_to_event(state, device_type):
             return "Water Leak Detected"
     return "Unknown Event"
 
+def get_last_door_prop_alarm(device_id):
+    """Retrieve the last door prop alarm trigger time (in ms) for a given device from Redis."""
+    key = f"door_prop_alarm:{device_id}"
+    ts = redis_client.get(key)
+    return int(ts) if ts else None
+
+def set_last_door_prop_alarm(device_id, timestamp):
+    """Set the door prop alarm trigger time (in ms) for a given device in Redis."""
+    key = f"door_prop_alarm:{device_id}"
+    redis_client.set(key, str(timestamp))
+
 def trigger_alert(device_id, state, device_type):
     from config import load_config
     config = load_config()
@@ -105,3 +116,4 @@ def trigger_chekt_event(device_id, target_channel):
 
 def send_sia_message(device_id, event_description, zone, sia_config):
     logger.info(f"SIA message: {event_description} on zone {zone}")
+
