@@ -234,7 +234,7 @@
                 $('#refresh-icon').addClass('hidden');
                 $('#refresh-message').text('Refreshing YoLink devices...');
                 $.get('/refresh_devices', function(response) {
-                    updateStatus('refresh-message', 'refresh-icon', response.message, response.status === "success", 'refresh-spinner');
+                    updateStatus('refresh-message', 'refresh-icon', response.message || 'Devices refreshed', response.status === "success", 'refresh-spinner');
                 }).fail(function() {
                     updateStatus('refresh-message', 'refresh-icon', 'Failed to refresh devices', false, 'refresh-spinner');
                 });
@@ -256,12 +256,12 @@
                         setTimeout(() => $('#save-status').html(''), 2000);
                     },
                     error: function(xhr) {
-                        $('#save-status').html('<span style="color: #dc3545;">Error: ' + (xhr.responseJSON ? xhr.responseJSON.message : 'Unknown error') + '</span>');
+                        var errorMsg = xhr.responseJSON ? xhr.responseJSON.message : 'Unknown error';
+                        $('#save-status').html('<span style="color: #dc3545;">Error: ' + errorMsg + '</span>');
                     }
                 });
             });
 
-            // Initial log fetch
             fetchLogs();
         });
     </script>

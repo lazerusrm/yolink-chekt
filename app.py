@@ -10,7 +10,7 @@ import logging
 import time
 import psutil
 import json
-from config import load_config, save_config, get_user_data, save_user_data
+from config import load_config, save_config, get_user_data, save_user_data, SUPPORTED_TIMEZONES
 from db import redis_client, ensure_redis_connection
 from device_manager import refresh_yolink_devices, get_all_devices
 from mappings import get_mappings, save_mapping, save_mappings  # Ensure save_mappings is imported
@@ -208,7 +208,7 @@ def config():
                 "timezone": request.form["timezone"],
                 "door_open_timeout": int(request.form["door_open_timeout"]),
                 "home_id": config_data.get("home_id", ""),
-                "supported_timezones": SUPPORTED_TIMEZONES
+                "supported_timezones": SUPPORTED_TIMEZONES  # Now properly imported
             }
             save_config(new_config)
             flash("Configuration saved", "success")
