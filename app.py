@@ -13,9 +13,9 @@ import json
 from config import load_config, save_config, get_user_data, save_user_data, SUPPORTED_TIMEZONES
 from db import redis_client, ensure_redis_connection
 from device_manager import refresh_yolink_devices, get_all_devices
-from mappings import get_mappings, save_mapping, save_mappings  # Ensure save_mappings is imported
-from yolink_mqtt import run_mqtt_client, connected as yolink_connected
-from monitor_mqtt import run_monitor_mqtt, connected as monitor_connected
+from mappings import get_mappings, save_mapping, save_mappings
+from yolink_mqtt import connected as yolink_connected
+from monitor_mqtt import connected as monitor_connected
 
 # Configure logging
 logging.basicConfig(
@@ -64,6 +64,7 @@ if not ensure_redis_connection():
 
 init_default_user()
 
+# Authentication Routes
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
@@ -151,6 +152,7 @@ def setup_totp():
     qr_img = base64.b64encode(buffered.getvalue()).decode("utf-8")
     return render_template("setup_totp.html", qr_img=qr_img)
 
+# Main Routes
 @app.route("/")
 @login_required
 def index():
@@ -208,7 +210,7 @@ def config():
                 "timezone": request.form["timezone"],
                 "door_open_timeout": int(request.form["door_open_timeout"]),
                 "home_id": config_data.get("home_id", ""),
-                "supported_timezones": SUPPORTED_TIMEZONES  # Now properly imported
+                "supported_timezones": SUPPORTED_TIMEZONES
             }
             save_config(new_config)
             flash("Configuration saved", "success")
@@ -223,6 +225,7 @@ def get_config():
     config = load_config()
     return jsonify(config)
 
+# User Management
 @app.route("/create_user", methods=["POST"])
 @login_required
 def create_user():
@@ -240,6 +243,7 @@ def create_user():
         flash("User created successfully", "success")
     return redirect(url_for("config"))
 
+# Device Management
 @app.route("/refresh_devices")
 @login_required
 def refresh_devices():
@@ -260,7 +264,7 @@ def system_uptime():
 def save_mapping_route():
     data = request.get_json()
     device_id = data.get("yolink_device_id")
-    chekt_zone = data.get("chekt_zone", "N/A")  # Default to "N/A" for clarity
+    chekt_zone = data.get("chekt_zone", "N/A")
     if not device_id:
         return jsonify({"status": "error", "message": "Missing device ID"}), 400
     logger.debug(f"Attempting to save CHEKT zone for device {device_id}: {chekt_zone}")
@@ -273,7 +277,7 @@ def save_mapping_route():
 def set_door_prop_alarm():
     data = request.get_json()
     device_id = data.get("device_id")
-    enabled = data.get("enabled") == True
+    enabled = data.get("enabled", False)
     if not device_id:
         return jsonify({"status": "error", "message": "Missing device ID"}), 400
     mappings = get_mappings()
@@ -287,7 +291,7 @@ def set_door_prop_alarm():
             "chekt_zone": "N/A",
             "door_prop_alarm": enabled
         })
-    save_mappings(mappings)  # Use save_mappings from mappings module
+    save_mappings(mappings)
     return jsonify({"status": "success"})
 
 @app.route("/get_sensor_data")
@@ -309,6 +313,7 @@ def get_sensor_data():
         device.setdefault("humidity", "unknown")
     return jsonify({"devices": devices})
 
+# Logging and Status
 @app.route("/get_logs", methods=["GET"])
 @login_required
 def get_logs():
@@ -353,9 +358,11 @@ def check_all_statuses():
         "receiver": {"status": "success", "message": "Receiver Connected"}
     })
 
+# Main Entry
 if __name__ == "__main__":
     import threading
     config_data = load_config()
+    # Start YoLink and Monitor MQTT clients in threads
     threading.Thread(target=run_mqtt_client, daemon=True).start()
     threading.Thread(target=run_monitor_mqtt, daemon=True).start()
     app.run(host="0.0.0.0", port=5000)

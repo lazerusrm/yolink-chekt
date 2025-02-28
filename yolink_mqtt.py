@@ -21,6 +21,28 @@ logger = logging.getLogger(__name__)
 client = None
 connected = False
 
+
+def should_trigger_event(current_state, previous_state, device_type=None):
+    """
+    Determine if an alert should be triggered based on state transitions or state="alert".
+    """
+    logger.debug(f"Checking trigger: current_state={current_state}, previous_state={previous_state}")
+
+    # Trigger if state is "alert"
+    if current_state == "alert":
+        logger.info(f"Triggering alert: state is 'alert'")
+        return True
+
+    # Trigger if state transitions from "open" to "closed" or "closed" to "open"
+    if previous_state and current_state:
+        if (previous_state == "open" and current_state == "closed") or (
+                previous_state == "closed" and current_state == "open"):
+            logger.info(f"Triggering alert: state changed from '{previous_state}' to '{current_state}'")
+            return True
+
+    return False
+
+
 def on_connect(client, userdata, flags, rc):
     global connected
     if rc == 0:
@@ -37,6 +59,7 @@ def on_connect(client, userdata, flags, rc):
             time.sleep(5)
             run_mqtt_client()
 
+
 def on_disconnect(client, userdata, rc):
     global connected
     if rc != 0:
@@ -45,29 +68,6 @@ def on_disconnect(client, userdata, rc):
         time.sleep(5)
         run_mqtt_client()
 
-def parse_device_type(event_type, payload):
-    """
-    Determine the device type based on the event or payload.
-    """
-    if "motionsensor" in event_type.lower():
-        return 'motion'
-    elif "doorsensor" in event_type.lower():
-        return 'door_contact'
-    elif "leaksensor" in event_type.lower():
-        return 'leak_sensor'
-    return None
-
-def should_trigger_event(state, device_type):
-    """
-    Determine if the event should trigger an alert.
-    """
-    if device_type == 'door_contact' and state in ['open', 'closed']:
-        return True
-    elif device_type == 'motion' and state == 'alert':
-        return True
-    elif device_type == 'leak_sensor' and state == 'alert':
-        return True
-    return False
 
 def on_message(client, userdata, msg):
     logger.info(f"Received message on topic {msg.topic}")
@@ -78,6 +78,7 @@ def on_message(client, userdata, msg):
             logger.warning("No deviceId in MQTT payload")
             return
 
+        # Get existing device data to retrieve previous_state
         device = get_device_data(device_id) or {}
         if not device.get("deviceId"):
             logger.warning(f"Device {device_id} not found, initializing")
@@ -93,13 +94,15 @@ def on_message(client, userdata, msg):
                 "temperature": "unknown",
                 "humidity": "unknown",
                 "chekt_zone": "N/A",
-                "door_prop_alarm": False
+                "door_prop_alarm": False,
+                "previous_state": "unknown"
             }
 
         logger.debug(f"MQTT payload for {device_id}: {json.dumps(payload, indent=2)}")
+        logger.debug(f"Current device data before update: {json.dumps(device, indent=2)}")
 
         data = payload.get("data", {})
-        # Update device data
+        previous_state = device.get("state", "unknown")  # Current state before update becomes previous_state
         if "state" in data:
             device["state"] = data["state"]
         if "battery" in data:
@@ -120,17 +123,21 @@ def on_message(client, userdata, msg):
 
         save_device_data(device_id, device)
 
-        # Check for alert conditions
         config = load_config()
         mapping = get_mapping(device_id)
-        if mapping and should_trigger_event(device["state"], device.get("type", "unknown")):
+        logger.debug(f"Mapping for device {device_id}: {mapping}")
+        logger.debug(f"Receiver type: {config.get('receiver_type', 'CHEKT')}")
+        logger.debug(
+            f"Device type: {device.get('type', 'unknown')}, State: {device['state']}, Previous State: {previous_state}")
+
+        if mapping and should_trigger_event(device["state"], previous_state):
             receiver_type = config.get("receiver_type", "CHEKT").upper()
             if receiver_type == "CHEKT":
-                logger.info(f"Triggering CHEKT alert for device {device_id} with state {device['state']}")
+                logger.info(
+                    f"Triggering CHEKT alert for device {device_id} with state {device['state']} (from {previous_state})")
                 trigger_alert(device_id, device["state"], device.get("type", "unknown"))
-            # SIA logic can be added here if needed, but focus on CHEKT for now
+            # Add SIA logic here if needed, but focus on CHEKT
 
-        # Publish update to monitor MQTT
         publish_update(device_id, {
             "state": device["state"],
             "alarms": device.get("alarms", {})
@@ -140,6 +147,7 @@ def on_message(client, userdata, msg):
         logger.error(f"Invalid JSON in MQTT payload: {str(e)}")
     except Exception as e:
         logger.error(f"Error processing message for device {device_id}: {str(e)}")
+
 
 def run_mqtt_client():
     global client, connected
@@ -152,7 +160,8 @@ def run_mqtt_client():
         return
 
     mqtt_config = config["mqtt"]
-    logger.info(f"Attempting YoLink MQTT connection: url={mqtt_config['url']}, port={mqtt_config['port']}, token={'*' * len(token)}")
+    logger.info(
+        f"Attempting YoLink MQTT connection: url={mqtt_config['url']}, port={mqtt_config['port']}, token={'*' * len(token)}")
     client = mqtt.Client()
     client.username_pw_set(username=token, password=None)
     client.on_connect = on_connect
@@ -167,6 +176,7 @@ def run_mqtt_client():
         connected = False
         time.sleep(5)
         run_mqtt_client()
+
 
 if __name__ == "__main__":
     run_mqtt_client()

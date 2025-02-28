@@ -125,6 +125,11 @@ def get_device_data(device_id):
 
 def save_device_data(device_id, data):
     try:
+        # Get existing data to preserve previous_state
+        existing = get_device_data(device_id) or {}
+        # Store current state as previous_state before updating
+        if "state" in data and existing.get("state") != data["state"]:
+            data["previous_state"] = existing.get("state", "unknown")
         redis_client.set(f"device:{device_id}", json.dumps(data))
     except redis.RedisError as e:
         logger.error(f"Failed to save device data for {device_id}: {e}")
