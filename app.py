@@ -16,6 +16,9 @@ from device_manager import refresh_yolink_devices, get_all_devices
 from mappings import get_mappings, save_mapping, save_mappings
 from yolink_mqtt import connected as yolink_connected
 from monitor_mqtt import connected as monitor_connected
+from yolink_mqtt import run_mqtt_client
+from monitor_mqtt import run_monitor_mqtt
+
 
 # Logging Setup
 from logging.handlers import RotatingFileHandler
