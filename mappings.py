@@ -12,13 +12,18 @@ def get_mapping(yolink_device_id):
     mappings = get_mappings()["mappings"]
     return next((m for m in mappings if m["yolink_device_id"] == yolink_device_id), None)
 
-def save_mapping(yolink_device_id, receiver_device_id):
+def save_mapping(yolink_device_id, chekt_zone):
     mappings = get_mappings()
     mappings_list = mappings["mappings"]
     existing = next((m for m in mappings_list if m["yolink_device_id"] == yolink_device_id), None)
     if existing:
-        existing["receiver_device_id"] = receiver_device_id
+        existing["chekt_zone"] = chekt_zone
     else:
-        mappings_list.append({"yolink_device_id": yolink_device_id, "receiver_device_id": receiver_device_id})
+        mappings_list.append({
+            "yolink_device_id": yolink_device_id,
+            "chekt_zone": chekt_zone,
+            "door_prop_alarm": False,
+            "receiver_device_id": ""  # Keep for compatibility if needed
+        })
     mappings["mappings"] = mappings_list
     save_mappings(mappings)

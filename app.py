@@ -260,10 +260,12 @@ def system_uptime():
 def save_mapping_route():
     data = request.get_json()
     device_id = data.get("yolink_device_id")
-    chekt_zone = data.get("chekt_zone", "")
+    chekt_zone = data.get("chekt_zone", "N/A")  # Default to "N/A" for clarity
     if not device_id:
         return jsonify({"status": "error", "message": "Missing device ID"}), 400
+    logger.debug(f"Attempting to save CHEKT zone for device {device_id}: {chekt_zone}")
     save_mapping(device_id, chekt_zone)
+    logger.debug(f"Saved mapping, current mappings: {json.dumps(get_mappings())}")
     return jsonify({"status": "success"})
 
 @app.route("/set_door_prop_alarm", methods=["POST"])
