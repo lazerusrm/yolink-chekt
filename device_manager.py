@@ -4,13 +4,23 @@ import json
 import logging
 from config import load_config, save_config
 from db import redis_client
-from mappings import get_mappings, save_mappings  # Added missing imports
+from mappings import get_mappings, save_mappings
 
 logger = logging.getLogger(__name__)
 
 def get_access_token(config):
-    if config["yolink"]["token_expiry"] > time.time():
+    """Retrieve or refresh the YoLink access token, validating its age."""
+    current_time = time.time()
+    issued_at = config["yolink"].get("issued_at", 0)  # When token was issued
+    expires_in = config["yolink"].get("expires_in", 0)  # Token lifetime in seconds
+    token_expiry = issued_at + expires_in  # Calculated expiration time
+
+    # Check if token is still valid based on issuance time and duration
+    if issued_at and expires_in and current_time < token_expiry:
+        logger.debug("Token still valid, using existing token.")
         return config["yolink"]["token"]
+
+    # Token is expired or not present, fetch a new one
     url = "https://api.yosmart.com/open/yolink/token"
     payload = {
         "grant_type": "client_credentials",
@@ -24,9 +34,13 @@ def get_access_token(config):
         if "access_token" not in data or "expires_in" not in data:
             logger.error(f"Invalid token response: {data}")
             return None
+        # Update config with new token details
         config["yolink"]["token"] = data["access_token"]
-        config["yolink"]["token_expiry"] = time.time() + data["expires_in"]
+        config["yolink"]["issued_at"] = current_time  # Store issuance time
+        config["yolink"]["expires_in"] = data["expires_in"]  # Store duration
+        config["yolink"]["token_expiry"] = current_time + data["expires_in"]  # Store for reference
         save_config(config)
+        logger.info("New YoLink token fetched and saved.")
         return data["access_token"]
     except requests.RequestException as e:
         logger.error(f"Failed to get access token: {e}")
@@ -65,7 +79,6 @@ def refresh_yolink_devices():
         for device in data["data"]["devices"]:
             device_id = device["deviceId"]
             existing = get_device_data(device_id) or {}
-            # Log the device response to verify field names
             logger.debug(f"Device response for {device_id}: {device}")
             device_data = {
                 "deviceId": device_id,

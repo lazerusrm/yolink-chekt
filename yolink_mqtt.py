@@ -4,7 +4,7 @@ import time
 import logging
 from config import load_config
 from db import redis_client
-from device_manager import get_device_data, save_device_data
+from device_manager import get_device_data, save_device_data, get_access_token
 from mappings import get_mapping
 from monitor_mqtt import publish_update
 import requests
@@ -25,12 +25,16 @@ def on_connect(client, userdata, flags, rc):
     if rc == 0:
         config = load_config()
         topic = config["mqtt"]["topic"].replace("${Home ID}", config["home_id"])
-        logger.info(f"Connected and subscribed to {topic}")
         client.subscribe(topic)
         connected = True
+        logger.info(f"Connected and subscribed to {topic}")
     else:
-        logger.error(f"YoLink MQTT connection failed with code {rc}")
         connected = False
+        logger.error(f"YoLink MQTT connection failed with code {rc}")
+        if rc == 5:  # Authentication error, likely due to expired token
+            logger.warning("Authentication failed, attempting to reconnect with fresh token...")
+            time.sleep(5)
+            run_mqtt_client()
 
 def on_disconnect(client, userdata, rc):
     global connected
@@ -90,7 +94,6 @@ def on_message(client, userdata, msg):
 
         save_device_data(device_id, device)
 
-        # Restore alerting logic if needed
         config = load_config()
         mapping = get_mapping(device_id)
         if mapping and device["state"] == "open" and config["receiver_type"] == "CHEKT":
@@ -118,9 +121,15 @@ def on_message(client, userdata, msg):
 def run_mqtt_client():
     global client, connected
     config = load_config()
+    token = get_access_token(config)  # Ensure a valid token on startup
+    if not token:
+        logger.error("Failed to obtain a valid YoLink token. Retrying in 5 seconds...")
+        time.sleep(5)
+        run_mqtt_client()
+        return
+
     mqtt_config = config["mqtt"]
-    token = config["yolink"]["token"]
-    logger.info(f"Attempting YoLink MQTT connection: url={mqtt_config['url']}, port={mqtt_config['port']}, token={'*' * len(token) if token else 'None'}")
+    logger.info(f"Attempting YoLink MQTT connection: url={mqtt_config['url']}, port={mqtt_config['port']}, token={'*' * len(token)}")
     client = mqtt.Client()
     client.username_pw_set(username=token, password=None)
     client.on_connect = on_connect
