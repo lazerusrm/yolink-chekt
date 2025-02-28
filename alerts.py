@@ -73,7 +73,7 @@ def trigger_chekt_event(device_id, event_description, chekt_zone):
         "event_description": event_description
     }
 
-    # Add debug logs here:
+    # Add these debug logs right before the POST request:
     logger.debug(f"Triggering CHEKT event with URL: {url}")
     logger.debug(f"Payload: {payload}")
     logger.debug(f"Headers: {headers}")
@@ -86,3 +86,4 @@ def trigger_chekt_event(device_id, event_description, chekt_zone):
             logger.error(f"Failed to trigger CHEKT event: {response.status_code} - {response.text}")
     except requests.exceptions.RequestException as e:
         logger.error(f"Error triggering CHEKT event for device {device_id}: {str(e)}")
+
