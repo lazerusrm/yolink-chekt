@@ -17,11 +17,14 @@ from mappings import get_mappings, save_mapping, save_mappings
 from yolink_mqtt import connected as yolink_connected
 from monitor_mqtt import connected as monitor_connected
 
-# Configure logging
-handler = logging.FileHandler("/app/logs/application.log")
+# Logging Setup
+from logging.handlers import RotatingFileHandler
+
+handler = RotatingFileHandler("/app/logs/app.log", maxBytes=10*1024*1024, backupCount=5)
+
 logging.basicConfig(
-    level=logging.INFO,  # Ensure this is set
-    format="%(asctime)s - %(levelname)s - %(message)s",
+    level=logging.DEBUG,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[handler, logging.StreamHandler()]
 )
 logger = logging.getLogger(__name__)
