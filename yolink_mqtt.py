@@ -140,7 +140,7 @@ def on_message(client, userdata, msg):
         # If this is a DoorSensor and door prop alarm is enabled, process it specially:
         if device.get("type", "").lower() == "doorsensor" and mapping.get("door_prop_alarm", False):
             # Check if we have a closed -> open transition OR if the payload includes alertType "openRemind"
-            if ((previous_state == "closed" and device["state"] == "open") or (data.get("alertType") == "openRemind")):
+            if data.get("alertType") == "openRemind":
                 # Use the payload's stateChangedAt if available, otherwise use the payload's time
                 current_time = data.get("stateChangedAt") or data.get("time") or int(time.time() * 1000)
                 last_trigger = get_last_door_prop_alarm(device_id)
