@@ -7,7 +7,7 @@ from config import load_config
 from db import redis_client
 from device_manager import get_device_data, save_device_data, get_access_token
 from mappings import get_mapping
-from alerts import trigger_alert
+from alerts import trigger_alert get_last_door_prop_alarm, set_last_door_prop_alarm
 from monitor_mqtt import publish_update
 import requests
 
