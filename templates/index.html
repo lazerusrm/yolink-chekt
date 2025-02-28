@@ -190,10 +190,30 @@
     <script>
         let selectedTimezone = "UTC"; // Default timezone
 
+        // Ensure Moment and Moment Timezone are loaded before proceeding
+        function ensureMomentLoaded() {
+            if (typeof moment === 'undefined' || typeof moment.tz !== 'function') {
+                console.error("Moment.js or Moment Timezone not loaded. Retrying in 1 second...");
+                setTimeout(ensureMomentLoaded, 1000);
+                return false;
+            }
+            return true;
+        }
+
         // Fetch timezone configuration on page load
         $(document).ready(function() {
             $.get("/get_config", function(config) {
                 selectedTimezone = config.timezone || "UTC";
+                console.log("Selected Timezone:", selectedTimezone);
+                if (ensureMomentLoaded()) {
+                    updateSensorData(); // Only proceed if libraries are loaded
+                }
+            }).fail(function() {
+                console.error("Failed to fetch config, using default UTC");
+                selectedTimezone = "UTC";
+                if (ensureMomentLoaded()) {
+                    updateSensorData();
+                }
             });
         });
 
@@ -265,6 +285,11 @@
         // Format UTC to local time using selected timezone
         function formatLocalTime(isoDateString) {
             if (!isoDateString || isoDateString === 'never') return "Never";
+            // Ensure Moment Timezone is loaded
+            if (typeof moment.tz !== 'function') {
+                console.error("Moment Timezone not loaded, using UTC fallback");
+                return moment(isoDateString).format("MM/DD/YYYY, h:mm:ss A");
+            }
             const localTime = moment.tz(isoDateString, selectedTimezone);
             return localTime.isValid() ? localTime.format("MM/DD/YYYY, h:mm:ss A") : "Invalid date";
         }
@@ -279,7 +304,7 @@
                 if (diffMinutes > 300) additionalClass = 'alarm'; // 5 hours
                 else if (diffMinutes > 255) additionalClass = 'warning'; // 4h15m
             }
-            const existingClass = sensor.alarms && Object.values(sensor.alarms.state || {}).some(v => v === true) ? 'alarm' : '';
+            const existingClass = sensor.alarms && sensor.alarms.state && Object.values(sensor.alarms.state).some(v => v === true) ? 'alarm' : '';
             return `${existingClass} ${additionalClass}`.trim();
         }
 
@@ -289,19 +314,27 @@
 
         // Fetch and update sensor data
         function updateSensorData() {
+            if (!ensureMomentLoaded()) return; // Wait for Moment Timezone to load
             toggleSpinnerSpeed(true);
             $.when(
                 $.get("/get_sensor_data"),
                 $.get("/system_uptime")
             ).done(function(sensorResponse, uptimeResponse) {
                 const sensorData = sensorResponse[0];
+                console.log("Raw Sensor Data:", sensorData);
                 const uptimeSeconds = uptimeResponse[0].uptime_seconds;
                 const sensorList = $('#sensor-list');
                 sensorList.empty();
 
-                console.log("Sensor Data Received:", sensorData.devices);
+                if (!sensorData || !sensorData.devices) {
+                    console.error("Invalid sensor data received:", sensorData);
+                    sensorList.html('<p>Error loading sensor data.</p>');
+                    toggleSpinnerSpeed(false);
+                    return;
+                }
 
                 sensorData.devices.sort(compareSensors);
+                console.log("Sorted Devices:", sensorData.devices);
 
                 sensorData.devices.forEach(sensor => {
                     const lastSeenLocal = formatLocalTime(sensor.last_seen);
@@ -315,7 +348,7 @@
                         ? `Outlet States: ${sensor.state.map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(', ')}`
                         : (sensor.type === "Switch" && sensor.state === "open") ? "On"
                         : (sensor.type === "Switch" && sensor.state === "closed") ? "Off"
-                        : sensor.state;
+                        : typeof sensor.state === "object" ? JSON.stringify(sensor.state) : sensor.state;
                     const hasBattery = batteryDeviceTypes.includes(sensor.type);
                     const hasTempHumidity = tempHumidityDeviceTypes.includes(sensor.type);
 
@@ -352,10 +385,12 @@
                             <span class="save-confirmation" id="save-confirmation-${sensor.deviceId}" style="display: none;">Saved!</span>
                         </div>
                     `;
+                    console.log(`Generating HTML for ${sensor.name}:`, sensorHTML);
                     sensorList.append(sensorHTML);
                 });
                 toggleSpinnerSpeed(false);
-            }).fail(function() {
+            }).fail(function(xhr, status, error) {
+                console.error("Failed to load sensor data:", error, xhr.responseText);
                 $('#sensor-list').html('<p>Error loading sensor data.</p>');
                 toggleSpinnerSpeed(false);
             });
@@ -389,6 +424,11 @@
 
         // Save CHEKT zone to server and refresh UI
         function saveZone(deviceId, newZone) {
+            if (!ensureMomentLoaded()) {
+                console.error("Moment Timezone not loaded, retrying save...");
+                setTimeout(() => saveZone(deviceId, newZone), 1000);
+                return;
+            }
             $.ajax({
                 type: "POST",
                 url: "/save_mapping",
@@ -413,6 +453,11 @@
 
         // Toggle door prop alarm and save to server
         function toggleDoorPropAlarm(deviceId, enabled) {
+            if (!ensureMomentLoaded()) {
+                console.error("Moment Timezone not loaded, retrying toggle...");
+                setTimeout(() => toggleDoorPropAlarm(deviceId, enabled), 1000);
+                return;
+            }
             $.ajax({
                 type: "POST",
                 url: "/set_door_prop_alarm",
@@ -452,11 +497,23 @@
                     'Receiver is alive.', 'Receiver connection failed.');
             }, 5000);
 
-            // Initial sensor data load
-            updateSensorData();
+            // Initial sensor data load with retry if Moment Timezone fails
+            if (ensureMomentLoaded()) {
+                updateSensorData();
+            } else {
+                console.error("Waiting for Moment Timezone to load...");
+                setTimeout(() => updateSensorData(), 1000);
+            }
 
-            // Auto-update sensor data every 10 seconds
-            setInterval(updateSensorData, 10000);
+            // Auto-update sensor data every 10 seconds with retry
+            setInterval(() => {
+                if (ensureMomentLoaded()) {
+                    updateSensorData();
+                } else {
+                    console.error("Moment Timezone not loaded, retrying update in 1 second...");
+                    setTimeout(updateSensorData, 1000);
+                }
+            }, 10000);
 
             // Update devices button
             $('#update-devices').click(function() {
@@ -466,7 +523,12 @@
                     $('#refresh-spinner').addClass('hidden');
                     $('#refresh-message').text(response.status === "success" ?
                         'YoLink devices updated successfully!' : 'Failed to update YoLink devices.');
-                    updateSensorData();
+                    if (ensureMomentLoaded()) {
+                        updateSensorData();
+                    } else {
+                        console.error("Waiting for Moment Timezone to load after refresh...");
+                        setTimeout(updateSensorData, 1000);
+                    }
                 }).fail(function() {
                     $('#refresh-spinner').addClass('hidden');
                     $('#refresh-message').text('Failed to update YoLink devices.');
