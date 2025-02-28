@@ -277,21 +277,25 @@ def save_mapping_route():
 def set_door_prop_alarm():
     data = request.get_json()
     device_id = data.get("device_id")
-    enabled = data.get("enabled", False)
+    enabled = data.get("enabled", False)  # Default to False if not provided
     if not device_id:
         return jsonify({"status": "error", "message": "Missing device ID"}), 400
+    logger.debug(f"Setting door prop alarm for device {device_id} to {enabled}")
     mappings = get_mappings()
+    updated = False
     for mapping in mappings["mappings"]:
         if mapping["yolink_device_id"] == device_id:
             mapping["door_prop_alarm"] = enabled
+            updated = True
             break
-    else:
+    if not updated:
         mappings["mappings"].append({
             "yolink_device_id": device_id,
             "chekt_zone": "N/A",
             "door_prop_alarm": enabled
         })
     save_mappings(mappings)
+    logger.debug(f"Updated mappings: {json.dumps(mappings)}")
     return jsonify({"status": "success"})
 
 @app.route("/get_sensor_data")
