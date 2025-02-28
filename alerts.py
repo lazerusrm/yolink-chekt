@@ -2,12 +2,6 @@ import logging
 import requests
 import base64
 from mappings import get_mapping
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
-session = requests.Session()
-retry = Retry(total=3, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
-session.mount("http://", HTTPAdapter(max_retries=retry))
-response = session.post(url, json=payload, headers=headers, timeout=10)
 
 logger = logging.getLogger()
 
