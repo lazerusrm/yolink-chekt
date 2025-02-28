@@ -13,17 +13,16 @@ import requests
 
 # Logging Setup
 from logging.handlers import RotatingFileHandler
-handler = RotatingFileHandler("/app/logs/application.log", maxBytes=10*1024*1024, backupCount=5)
-logging.basicConfig(handlers=[handler, logging.StreamHandler()], ...)
+
+handler = RotatingFileHandler("/app/logs/yolink.log", maxBytes=10*1024*1024, backupCount=5)
 
 logging.basicConfig(
-    filename="yolink_mqtt.log",
     level=logging.DEBUG,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[handler, logging.StreamHandler()]
 )
 logger = logging.getLogger(__name__)
 
-app.secret_key = os.getenv("FLASK_SECRET_KEY", secrets.token_hex(16))
 
 client = None
 connected = False
