@@ -19,12 +19,9 @@ from monitor_mqtt import connected as monitor_connected
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.INFO,  # Ensure this is set
     format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.FileHandler("/app/logs/application.log"),
-        logging.StreamHandler()
-    ]
+    handlers=[handler, logging.StreamHandler()]
 )
 logger = logging.getLogger(__name__)
 
