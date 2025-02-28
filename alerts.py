@@ -56,24 +56,20 @@ def trigger_chekt_event(device_id, event_description, chekt_zone):
     chekt_config = config.get('chekt', {})
     ip = chekt_config.get('ip')
     port = chekt_config.get('port')
-    api_token = chekt_config.get('api_token')
+    api_token = chekt_config.get('api_token')  # Might not be used now
 
-    if not all([ip, port, api_token]):
-        logger.error("CHEKT API configuration is incomplete (missing IP, port, or API token).")
+    if not all([ip, port]):
+        logger.error("CHEKT API configuration is incomplete (missing IP or port).")
         return
 
     url = f"http://{ip}:{port}/channels/{chekt_zone}/events"
-    auth_string = f"apikey:{api_token}"
-    auth_header = base64.b64encode(auth_string.encode()).decode()
     headers = {
-        "Authorization": f"Basic {auth_header}",
         "Content-Type": "application/json"
     }
     payload = {
         "event_description": event_description
     }
 
-    # Add these debug logs right before the POST request:
     logger.debug(f"Triggering CHEKT event with URL: {url}")
     logger.debug(f"Payload: {payload}")
     logger.debug(f"Headers: {headers}")
@@ -86,4 +82,5 @@ def trigger_chekt_event(device_id, event_description, chekt_zone):
             logger.error(f"Failed to trigger CHEKT event: {response.status_code} - {response.text}")
     except requests.exceptions.RequestException as e:
         logger.error(f"Error triggering CHEKT event for device {device_id}: {str(e)}")
+
 
