@@ -45,7 +45,7 @@ def trigger_alert(device_id, state, device_type):
         chekt_zone = mapping.get('chekt_zone', 'N/A')
         if chekt_zone and chekt_zone.strip() and chekt_zone != 'N/A':
             logger.info(f"Triggering CHEKT event in zone {chekt_zone} for device {device_id}")
-            trigger_chekt_event(device_id, event_description, chekt_zone)
+            trigger_chekt_event(device_id, chekt_zone)
         else:
             logger.warning(f"No valid CHEKT zone for device {device_id}. Mapping: {mapping}")
     elif receiver_type == "SIA":
