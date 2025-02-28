@@ -6,6 +6,7 @@ from config import load_config
 from db import redis_client
 from device_manager import get_device_data, save_device_data, get_access_token
 from mappings import get_mapping
+from alerts import trigger_alert
 from monitor_mqtt import publish_update
 import requests
 
@@ -44,6 +45,30 @@ def on_disconnect(client, userdata, rc):
         time.sleep(5)
         run_mqtt_client()
 
+def parse_device_type(event_type, payload):
+    """
+    Determine the device type based on the event or payload.
+    """
+    if "motionsensor" in event_type.lower():
+        return 'motion'
+    elif "doorsensor" in event_type.lower():
+        return 'door_contact'
+    elif "leaksensor" in event_type.lower():
+        return 'leak_sensor'
+    return None
+
+def should_trigger_event(state, device_type):
+    """
+    Determine if the event should trigger an alert.
+    """
+    if device_type == 'door_contact' and state in ['open', 'closed']:
+        return True
+    elif device_type == 'motion' and state == 'alert':
+        return True
+    elif device_type == 'leak_sensor' and state == 'alert':
+        return True
+    return False
+
 def on_message(client, userdata, msg):
     logger.info(f"Received message on topic {msg.topic}")
     try:
@@ -53,8 +78,8 @@ def on_message(client, userdata, msg):
             logger.warning("No deviceId in MQTT payload")
             return
 
-        device = get_device_data(device_id)
-        if not device:
+        device = get_device_data(device_id) or {}
+        if not device.get("deviceId"):
             logger.warning(f"Device {device_id} not found, initializing")
             device = {
                 "deviceId": device_id,
@@ -74,6 +99,7 @@ def on_message(client, userdata, msg):
         logger.debug(f"MQTT payload for {device_id}: {json.dumps(payload, indent=2)}")
 
         data = payload.get("data", {})
+        # Update device data
         if "state" in data:
             device["state"] = data["state"]
         if "battery" in data:
@@ -94,29 +120,26 @@ def on_message(client, userdata, msg):
 
         save_device_data(device_id, device)
 
+        # Check for alert conditions
         config = load_config()
         mapping = get_mapping(device_id)
-        if mapping and device["state"] == "open" and config["receiver_type"] == "CHEKT":
-            chekt_config = config["chekt"]
-            alarm_data = {
-                "device_id": device_id,
-                "zone": mapping.get("receiver_device_id", ""),
-                "state": device["state"]
-            }
-            logger.info(f"Sending CHEKT alarm: {alarm_data}")
-            try:
-                requests.post(
-                    f"http://{chekt_config['ip']}:{chekt_config['port']}/alarm",
-                    json=alarm_data,
-                    headers={"Authorization": f"Bearer {chekt_config['api_token']}"},
-                    timeout=5
-                )
-            except requests.RequestException as e:
-                logger.error(f"Failed to send CHEKT alarm: {e}")
+        if mapping and should_trigger_event(device["state"], device.get("type", "unknown")):
+            receiver_type = config.get("receiver_type", "CHEKT").upper()
+            if receiver_type == "CHEKT":
+                logger.info(f"Triggering CHEKT alert for device {device_id} with state {device['state']}")
+                trigger_alert(device_id, device["state"], device.get("type", "unknown"))
+            # SIA logic can be added here if needed, but focus on CHEKT for now
 
-        publish_update(device_id, {"state": device["state"], "alarms": device.get("alarms", {})})
+        # Publish update to monitor MQTT
+        publish_update(device_id, {
+            "state": device["state"],
+            "alarms": device.get("alarms", {})
+        })
+
+    except json.JSONDecodeError as e:
+        logger.error(f"Invalid JSON in MQTT payload: {str(e)}")
     except Exception as e:
-        logger.error(f"Error processing message: {str(e)}")
+        logger.error(f"Error processing message for device {device_id}: {str(e)}")
 
 def run_mqtt_client():
     global client, connected
