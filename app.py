@@ -18,6 +18,7 @@ from yolink_mqtt import connected as yolink_connected
 from monitor_mqtt import connected as monitor_connected
 
 # Configure logging
+handler = logging.FileHandler("/app/logs/application.log")
 logging.basicConfig(
     level=logging.INFO,  # Ensure this is set
     format="%(asctime)s - %(levelname)s - %(message)s",
