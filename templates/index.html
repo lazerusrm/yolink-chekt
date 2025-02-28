@@ -7,10 +7,17 @@
     <!-- Bootstrap CSS -->
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css">
     <!-- Font Awesome CSS -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css" integrity="sha512-Kc323vGBEqzTmouAECnVceyQqyqdsSiqLQISBL29aUW4U/M7pSPA/gEUZQqv1cwx4OnYxTxve5UMg5GT6L4JJg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="stylesheet"
+          href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css"
+          integrity="sha512-Kc323vGBEqzTmouAECnVceyQqyqdsSiqLQISBL29aUW4U/M7pSPA/gEUZQqv1cwx4OnYxTxve5UMg5GT6L4JJg=="
+          crossorigin="anonymous"
+          referrerpolicy="no-referrer" />
+
     <!-- Moment.js and Moment Timezone for timezone handling -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.1/moment.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/moment-timezone/0.5.34/moment-timezone-with-data.min.js"></script>
+
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -130,7 +137,8 @@
     <!-- Navigation Bar -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
         <a class="navbar-brand" href="#">YoLink to CHEKT</a>
-        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav"
+                aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
             <span class="navbar-toggler-icon"></span>
         </button>
         <div class="collapse navbar-collapse" id="navbarNav">
@@ -184,38 +192,23 @@
     <script>window.location.href = "{{ url_for('login') }}";</script>
     {% endif %}
 
-    <!-- JavaScript Dependencies -->
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <!-- Bootstrap JS -->
     <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/js/bootstrap.min.js"></script>
-    <script>
-        let selectedTimezone = "UTC"; // Default timezone
 
-        // Ensure Moment and Moment Timezone are loaded before proceeding
-        function ensureMomentLoaded() {
-            if (typeof moment === 'undefined' || typeof moment.tz !== 'function') {
-                console.error("Moment.js or Moment Timezone not loaded. Retrying in 1 second...");
-                setTimeout(ensureMomentLoaded, 1000);
-                return false;
-            }
-            return true;
+    <!-- Main Script -->
+    <script>
+    // Put all logic in one place to avoid multiple .ready() calls
+    $(document).ready(function() {
+        // Quick check: if Moment or moment-timezone didn’t load, log once
+        if (typeof moment === 'undefined' || typeof moment.tz !== 'function') {
+            console.error("Moment.js or Moment Timezone did not load. Some features may not work properly.");
         }
 
-        // Fetch timezone configuration on page load
-        $(document).ready(function() {
-            $.get("/get_config", function(config) {
-                selectedTimezone = config.timezone || "UTC";
-                console.log("Selected Timezone:", selectedTimezone);
-                if (ensureMomentLoaded()) {
-                    updateSensorData(); // Only proceed if libraries are loaded
-                }
-            }).fail(function() {
-                console.error("Failed to fetch config, using default UTC");
-                selectedTimezone = "UTC";
-                if (ensureMomentLoaded()) {
-                    updateSensorData();
-                }
-            });
-        });
+        let selectedTimezone = "UTC"; // Default timezone
+
+        // --------------------------------------------------------------------
+        // HELPER FUNCTIONS
+        // --------------------------------------------------------------------
 
         // Toggle spinner speed
         function toggleSpinnerSpeed(fast) {
@@ -228,7 +221,9 @@
 
         // Update status UI
         function updateStatus(elementId, iconId, message, success) {
-            const icon = success ? 'https://img.icons8.com/color/48/000000/checkmark.png' : 'https://img.icons8.com/color/48/000000/cancel.png';
+            const icon = success
+                ? 'https://img.icons8.com/color/48/000000/checkmark.png'
+                : 'https://img.icons8.com/color/48/000000/cancel.png';
             $('#' + iconId).attr('src', icon).removeClass('hidden');
             $('#' + elementId).text(message);
         }
@@ -239,7 +234,9 @@
                 type: "GET",
                 url: url,
                 success: function(response) {
-                    updateStatus(elementId, iconId, response.message || (response.status === "success" ? successMessage : errorMessage), response.status === "success");
+                    const ok = (response.status === "success");
+                    const msg = response.message || (ok ? successMessage : errorMessage);
+                    updateStatus(elementId, iconId, msg, ok);
                 },
                 error: function() {
                     updateStatus(elementId, iconId, errorMessage, false);
@@ -249,30 +246,33 @@
 
         // Map battery level to percentage and icon
         function getBatteryInfo(batteryLevel) {
-            if (batteryLevel === "unknown" || batteryLevel == null) return { percentage: "N/A", iconClass: "fa-battery-empty" };
+            if (!batteryLevel || batteryLevel === "unknown") {
+                return { percentage: "N/A", iconClass: "fa-battery-empty" };
+            }
             let percentage, iconClass;
             switch (parseInt(batteryLevel)) {
-                case 0: percentage = "0%"; iconClass = "fa-battery-empty"; break;
-                case 1: percentage = "25%"; iconClass = "fa-battery-quarter"; break;
-                case 2: percentage = "50%"; iconClass = "fa-battery-half"; break;
-                case 3: percentage = "75%"; iconClass = "fa-battery-three-quarters"; break;
-                case 4: percentage = "100%"; iconClass = "fa-battery-full"; break;
-                default: percentage = "N/A"; iconClass = "fa-battery-empty"; break;
+                case 0: percentage = "0%";   iconClass = "fa-battery-empty";         break;
+                case 1: percentage = "25%";  iconClass = "fa-battery-quarter";       break;
+                case 2: percentage = "50%";  iconClass = "fa-battery-half";          break;
+                case 3: percentage = "75%";  iconClass = "fa-battery-three-quarters";break;
+                case 4: percentage = "100%"; iconClass = "fa-battery-full";          break;
+                default:percentage = "N/A";  iconClass = "fa-battery-empty";         break;
             }
             return { percentage, iconClass };
         }
 
         // Determine signal quality
         function getSignalQuality(signal) {
-            if (signal === "unknown" || signal == null) return "N/A";
-            if (signal >= -70) return "Excellent";
-            else if (signal >= -90) return "High";
-            else if (signal >= -110) return "Good";
-            else if (signal >= -130) return "Poor";
-            else return "Very Poor";
+            if (!signal || signal === "unknown") return "N/A";
+            const s = parseInt(signal);
+            if (s >= -70)  return "Excellent";
+            if (s >= -90)  return "High";
+            if (s >= -110) return "Good";
+            if (s >= -130) return "Poor";
+            return "Very Poor";
         }
 
-        // Sort sensors by last_seen (recent first) then name
+        // Sort sensors by last_seen (most recent first), then by name
         function compareSensors(a, b) {
             const timeA = new Date(a.last_seen).getTime();
             const timeB = new Date(b.last_seen).getTime();
@@ -282,48 +282,55 @@
             return a.name.localeCompare(b.name);
         }
 
-        // Format UTC to local time using selected timezone
+        // Format UTC to local time using selected timezone (fallback if not loaded)
         function formatLocalTime(isoDateString) {
             if (!isoDateString || isoDateString === 'never') return "Never";
-            // Ensure Moment Timezone is loaded
-            if (typeof moment.tz !== 'function') {
-                console.error("Moment Timezone not loaded, using UTC fallback");
-                return moment(isoDateString).format("MM/DD/YYYY, h:mm:ss A");
+            // If moment is missing, just return raw or basic format
+            if (typeof moment === 'undefined' || typeof moment.tz !== 'function') {
+                return isoDateString;
             }
             const localTime = moment.tz(isoDateString, selectedTimezone);
-            return localTime.isValid() ? localTime.format("MM/DD/YYYY, h:mm:ss A") : "Invalid date";
+            return localTime.isValid()
+                ? localTime.format("MM/DD/YYYY, h:mm:ss A")
+                : "Invalid date";
         }
 
         // Determine sensor border class for alarm/warning
         function getBorderClass(sensor, uptimeSeconds) {
             let additionalClass = '';
-            if (uptimeSeconds > 14400) { // 4 hours
+            // If system uptime is > 4 hours, check last_seen to highlight stale devices
+            if (uptimeSeconds > 14400) {
                 const lastSeenTime = new Date(sensor.last_seen).getTime();
                 const currentTime = new Date().getTime();
                 const diffMinutes = (currentTime - lastSeenTime) / (1000 * 60);
-                if (diffMinutes > 300) additionalClass = 'alarm'; // 5 hours
-                else if (diffMinutes > 255) additionalClass = 'warning'; // 4h15m
+                if (diffMinutes > 300) {
+                    additionalClass = 'alarm';   // 5 hours
+                } else if (diffMinutes > 255) {
+                    additionalClass = 'warning'; // 4h15m
+                }
             }
-            const existingClass = sensor.alarms && sensor.alarms.state && Object.values(sensor.alarms.state).some(v => v === true) ? 'alarm' : '';
-            return `${existingClass} ${additionalClass}`.trim();
+            // If the device itself is in an alarm state
+            const deviceAlarm = (sensor.alarms && sensor.alarms.state &&
+                                 Object.values(sensor.alarms.state).some(v => v === true))
+                                ? 'alarm' : '';
+            return `${deviceAlarm} ${additionalClass}`.trim();
         }
 
         // Device type capabilities
-        const batteryDeviceTypes = ["DoorSensor", "MotionSensor", "LeakSensor", "THSensor", "COSmokeSensor", "SmartRemoter", "PowerFailureAlarm", "Siren", "Finger", "LockV2"];
+        const batteryDeviceTypes      = ["DoorSensor", "MotionSensor", "LeakSensor", "THSensor", "COSmokeSensor", "SmartRemoter", "PowerFailureAlarm", "Siren", "Finger", "LockV2"];
         const tempHumidityDeviceTypes = ["THSensor"];
 
         // Fetch and update sensor data
         function updateSensorData() {
-            if (!ensureMomentLoaded()) return; // Wait for Moment Timezone to load
             toggleSpinnerSpeed(true);
+
             $.when(
                 $.get("/get_sensor_data"),
                 $.get("/system_uptime")
             ).done(function(sensorResponse, uptimeResponse) {
-                const sensorData = sensorResponse[0];
-                console.log("Raw Sensor Data:", sensorData);
-                const uptimeSeconds = uptimeResponse[0].uptime_seconds;
-                const sensorList = $('#sensor-list');
+                const sensorData   = sensorResponse[0];
+                const uptimeSeconds= uptimeResponse[0].uptime_seconds;
+                const sensorList   = $('#sensor-list');
                 sensorList.empty();
 
                 if (!sensorData || !sensorData.devices) {
@@ -333,61 +340,124 @@
                     return;
                 }
 
+                // Sort sensors
                 sensorData.devices.sort(compareSensors);
-                console.log("Sorted Devices:", sensorData.devices);
 
                 sensorData.devices.forEach(sensor => {
                     const lastSeenLocal = formatLocalTime(sensor.last_seen);
-                    const borderClass = getBorderClass(sensor, uptimeSeconds);
-                    const chektZone = sensor.chekt_zone && sensor.chekt_zone !== 'N/A' ? sensor.chekt_zone : 'No Zone';
-                    const batteryInfo = getBatteryInfo(sensor.battery);
+                    const borderClass   = getBorderClass(sensor, uptimeSeconds);
+                    const chektZone     = (sensor.chekt_zone && sensor.chekt_zone !== 'N/A')
+                                          ? sensor.chekt_zone : 'No Zone';
+                    const batteryInfo   = getBatteryInfo(sensor.battery);
                     const signalQuality = getSignalQuality(sensor.signal);
-                    const signalHighlight = sensor.signal !== "unknown" && sensor.signal != null && sensor.signal <= -115 ? 'warning' : '';
-                    const batteryHighlight = sensor.battery === 0 || sensor.battery === "0" ? 'alarm' : sensor.battery === 1 || sensor.battery === "1" ? 'warning' : '';
-                    const displayState = Array.isArray(sensor.state)
-                        ? `Outlet States: ${sensor.state.map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(', ')}`
-                        : (sensor.type === "Switch" && sensor.state === "open") ? "On"
-                        : (sensor.type === "Switch" && sensor.state === "closed") ? "Off"
-                        : typeof sensor.state === "object" ? JSON.stringify(sensor.state) : sensor.state;
-                    const hasBattery = batteryDeviceTypes.includes(sensor.type);
+
+                    // Highlight if signal is very low
+                    const signalHighlight = (sensor.signal && parseInt(sensor.signal) <= -115)
+                                            ? 'warning' : '';
+                    // Battery highlight if battery is 0 or 1
+                    const batteryVal     = parseInt(sensor.battery);
+                    const batteryHighlight = (batteryVal === 0) ? 'alarm'
+                                           : (batteryVal === 1) ? 'warning'
+                                           : '';
+
+                    // If sensor.state is array or object, handle special formatting
+                    let displayState;
+                    if (Array.isArray(sensor.state)) {
+                        // e.g. multiple outlets
+                        displayState = "Outlet States: " + sensor.state.map(s =>
+                            s.charAt(0).toUpperCase() + s.slice(1)
+                        ).join(', ');
+                    } else if (typeof sensor.state === 'object') {
+                        displayState = JSON.stringify(sensor.state);
+                    } else if (sensor.type === "Switch") {
+                        if (sensor.state === "open")   displayState = "On";
+                        else if (sensor.state === "closed") displayState = "Off";
+                        else displayState = sensor.state;
+                    } else {
+                        displayState = sensor.state;
+                    }
+
+                    const hasBattery      = batteryDeviceTypes.includes(sensor.type);
                     const hasTempHumidity = tempHumidityDeviceTypes.includes(sensor.type);
 
+                    // Build sensor card
                     const sensorHTML = `
                         <div class="sensor ${borderClass}">
                             <p class="sensor-name">${sensor.name || 'Unknown Device'}</p>
-                            <span class="chekt-zone" onclick="makeZoneEditable(this, '${sensor.deviceId}')">${chektZone}</span>
-                            ${sensor.type === 'DoorSensor' ? `
-                                <label for="door-prop-${sensor.deviceId}">Door Prop Alarm:
-                                    <input type="checkbox" id="door-prop-${sensor.deviceId}"
-                                           ${sensor.door_prop_alarm ? "checked" : ""}
-                                           onchange="toggleDoorPropAlarm('${sensor.deviceId}', this.checked)">
-                                </label>
-                                <small>(Alerts if door is propped open)</small>
-                            ` : ''}
-                            ${sensor.state && sensor.state !== 'unknown' ? `<p class="sensor-data-item">State: ${displayState}</p>` : ''}
-                            ${hasBattery && sensor.battery !== "unknown" && sensor.battery != null ? `
-                                <p class="sensor-data-item ${batteryHighlight}">
-                                    <i class="fas ${batteryInfo.iconClass} battery-icon"></i>
-                                    Battery: ${batteryInfo.percentage}
-                                </p>` : ''}
-                            ${sensor.signal !== "unknown" && sensor.signal != null ? `
-                                <p class="sensor-data-item ${signalHighlight}">
-                                    Signal: ${sensor.signal} dBm (${signalQuality})
-                                </p>` : ''}
-                            ${hasTempHumidity && sensor.temperature !== "unknown" && sensor.temperature != null ? `
-                                <p class="sensor-data-item">Temperature: ${sensor.temperature}°F</p>` : ''}
-                            ${hasTempHumidity && sensor.humidity !== "unknown" && sensor.humidity != null ? `
-                                <p class="sensor-data-item">Humidity: ${sensor.humidity}%</p>` : ''}
-                            ${sensor.last_seen && sensor.last_seen !== 'never' ? `
-                                <p class="sensor-data-item">Last Seen: ${lastSeenLocal}</p>` : ''}
-                            ${sensor.alarms && sensor.alarms.state && Object.values(sensor.alarms.state).some(v => v === true) ? `
-                                <p class="sensor-data-item" style="color: red;">Alarm: ${JSON.stringify(sensor.alarms.state)}</p>` : ''}
-                            <span class="save-confirmation" id="save-confirmation-${sensor.deviceId}" style="display: none;">Saved!</span>
+                            <span class="chekt-zone" onclick="makeZoneEditable(this, '${sensor.deviceId}')">
+                                ${chektZone}
+                            </span>
+
+                            ${
+                                sensor.type === 'DoorSensor'
+                                ? `<label for="door-prop-${sensor.deviceId}">
+                                     Door Prop Alarm:
+                                     <input type="checkbox" id="door-prop-${sensor.deviceId}"
+                                            ${sensor.door_prop_alarm ? "checked" : ""}
+                                            onchange="toggleDoorPropAlarm('${sensor.deviceId}', this.checked)">
+                                   </label>
+                                   <small>(Alerts if door is propped open)</small>`
+                                : ''
+                            }
+
+                            ${
+                                sensor.state && sensor.state !== 'unknown'
+                                ? `<p class="sensor-data-item">State: ${displayState}</p>`
+                                : ''
+                            }
+
+                            ${
+                                hasBattery && sensor.battery !== "unknown"
+                                ? `<p class="sensor-data-item ${batteryHighlight}">
+                                     <i class="fas ${batteryInfo.iconClass} battery-icon"></i>
+                                     Battery: ${batteryInfo.percentage}
+                                   </p>`
+                                : ''
+                            }
+
+                            ${
+                                sensor.signal && sensor.signal !== "unknown"
+                                ? `<p class="sensor-data-item ${signalHighlight}">
+                                     Signal: ${sensor.signal} dBm (${signalQuality})
+                                   </p>`
+                                : ''
+                            }
+
+                            ${
+                                hasTempHumidity && sensor.temperature !== "unknown"
+                                ? `<p class="sensor-data-item">Temperature: ${sensor.temperature}°F</p>`
+                                : ''
+                            }
+
+                            ${
+                                hasTempHumidity && sensor.humidity !== "unknown"
+                                ? `<p class="sensor-data-item">Humidity: ${sensor.humidity}%</p>`
+                                : ''
+                            }
+
+                            ${
+                                sensor.last_seen && sensor.last_seen !== 'never'
+                                ? `<p class="sensor-data-item">Last Seen: ${lastSeenLocal}</p>`
+                                : ''
+                            }
+
+                            ${
+                                sensor.alarms && sensor.alarms.state &&
+                                Object.values(sensor.alarms.state).some(v => v === true)
+                                ? `<p class="sensor-data-item" style="color: red;">
+                                     Alarm: ${JSON.stringify(sensor.alarms.state)}
+                                   </p>`
+                                : ''
+                            }
+
+                            <span class="save-confirmation"
+                                  id="save-confirmation-${sensor.deviceId}"
+                                  style="display: none;">Saved!</span>
                         </div>
                     `;
-                    console.log(`Generating HTML for ${sensor.name}:`, sensorHTML);
                     sensorList.append(sensorHTML);
                 });
+
                 toggleSpinnerSpeed(false);
             }).fail(function(xhr, status, error) {
                 console.error("Failed to load sensor data:", error, xhr.responseText);
@@ -397,13 +467,14 @@
         }
 
         // Make CHEKT zone editable
-        function makeZoneEditable(zoneSpan, deviceId) {
+        window.makeZoneEditable = function(zoneSpan, deviceId) {
             const currentZoneText = zoneSpan.textContent.trim();
-            const currentZone = currentZoneText.replace('No Zone', '').trim();
-            const input = document.createElement('input');
-            input.type = 'text';
-            input.value = currentZone;
+            const currentZone     = currentZoneText.replace('No Zone', '').trim();
+            const input           = document.createElement('input');
+            input.type            = 'text';
+            input.value           = currentZone;
             input.classList.add('chekt-zone-input');
+
             zoneSpan.parentNode.insertBefore(input, zoneSpan);
             zoneSpan.style.display = 'none';
             input.focus();
@@ -417,18 +488,15 @@
             }
 
             input.addEventListener('keydown', function(event) {
-                if (event.key === 'Enter') saveAndUpdate();
+                if (event.key === 'Enter') {
+                    saveAndUpdate();
+                }
             });
             input.addEventListener('blur', saveAndUpdate);
-        }
+        };
 
-        // Save CHEKT zone to server and refresh UI
+        // Save CHEKT zone to server
         function saveZone(deviceId, newZone) {
-            if (!ensureMomentLoaded()) {
-                console.error("Moment Timezone not loaded, retrying save...");
-                setTimeout(() => saveZone(deviceId, newZone), 1000);
-                return;
-            }
             $.ajax({
                 type: "POST",
                 url: "/save_mapping",
@@ -440,7 +508,7 @@
                         confirmation.style.display = 'inline';
                         setTimeout(() => {
                             confirmation.style.display = 'none';
-                            updateSensorData(); // Refresh UI with latest data
+                            updateSensorData(); // Refresh after saving
                         }, 2000);
                     }
                 },
@@ -451,13 +519,8 @@
             });
         }
 
-        // Toggle door prop alarm and save to server
-        function toggleDoorPropAlarm(deviceId, enabled) {
-            if (!ensureMomentLoaded()) {
-                console.error("Moment Timezone not loaded, retrying toggle...");
-                setTimeout(() => toggleDoorPropAlarm(deviceId, enabled), 1000);
-                return;
-            }
+        // Toggle door prop alarm
+        window.toggleDoorPropAlarm = function(deviceId, enabled) {
             $.ajax({
                 type: "POST",
                 url: "/set_door_prop_alarm",
@@ -467,7 +530,9 @@
                     if (response.status === 'success') {
                         const confirmation = document.getElementById(`save-confirmation-${deviceId}`);
                         confirmation.style.display = 'inline';
-                        setTimeout(() => confirmation.style.display = 'none', 2000);
+                        setTimeout(() => {
+                            confirmation.style.display = 'none';
+                        }, 2000);
                     }
                 },
                 error: function(xhr) {
@@ -475,66 +540,65 @@
                     alert('Error saving door prop alarm: ' + xhr.responseText);
                 }
             });
-        }
+        };
 
-        // Document ready
-        $(document).ready(function() {
-            // Initial status checks
-            checkStatus('/check_mqtt_status', 'yolink-mqtt-message', 'yolink-mqtt-icon',
-                'YoLink MQTT connection is active.', 'YoLink MQTT connection is inactive.');
-            checkStatus('/check_monitor_mqtt_status', 'monitor-mqtt-message', 'monitor-mqtt-icon',
-                'Monitor MQTT connection is active.', 'Monitor MQTT connection is inactive.');
-            checkStatus('/check_receiver_status', 'receiver-message', 'receiver-icon',
-                'Receiver is alive.', 'Receiver connection failed.');
+        // --------------------------------------------------------------------
+        // INITIALIZE
+        // --------------------------------------------------------------------
 
-            // Periodic status checks (every 5 seconds)
-            setInterval(function() {
-                checkStatus('/check_mqtt_status', 'yolink-mqtt-message', 'yolink-mqtt-icon',
+        // Fetch timezone from server config, then load sensors
+        $.get("/get_config", function(config) {
+            selectedTimezone = config.timezone || "UTC";
+            console.log("Selected Timezone:", selectedTimezone);
+            updateSensorData();
+        }).fail(function() {
+            console.error("Failed to fetch config, using default UTC");
+            selectedTimezone = "UTC";
+            updateSensorData();
+        });
+
+        // Check initial statuses
+        checkStatus('/check_mqtt_status', 'yolink-mqtt-message', 'yolink-mqtt-icon',
                     'YoLink MQTT connection is active.', 'YoLink MQTT connection is inactive.');
-                checkStatus('/check_monitor_mqtt_status', 'monitor-mqtt-message', 'monitor-mqtt-icon',
+        checkStatus('/check_monitor_mqtt_status', 'monitor-mqtt-message', 'monitor-mqtt-icon',
                     'Monitor MQTT connection is active.', 'Monitor MQTT connection is inactive.');
-                checkStatus('/check_receiver_status', 'receiver-message', 'receiver-icon',
+        checkStatus('/check_receiver_status', 'receiver-message', 'receiver-icon',
                     'Receiver is alive.', 'Receiver connection failed.');
-            }, 5000);
 
-            // Initial sensor data load with retry if Moment Timezone fails
-            if (ensureMomentLoaded()) {
+        // Periodic status checks every 5 seconds
+        setInterval(function() {
+            checkStatus('/check_mqtt_status', 'yolink-mqtt-message', 'yolink-mqtt-icon',
+                        'YoLink MQTT connection is active.', 'YoLink MQTT connection is inactive.');
+            checkStatus('/check_monitor_mqtt_status', 'monitor-mqtt-message', 'monitor-mqtt-icon',
+                        'Monitor MQTT connection is active.', 'Monitor MQTT connection is inactive.');
+            checkStatus('/check_receiver_status', 'receiver-message', 'receiver-icon',
+                        'Receiver is alive.', 'Receiver connection failed.');
+        }, 5000);
+
+        // Auto-update sensor data every 10 seconds
+        setInterval(function() {
+            updateSensorData();
+        }, 10000);
+
+        // "Update YoLink Devices" button
+        $('#update-devices').click(function() {
+            $('#refresh-spinner').removeClass('hidden');
+            $('#refresh-message').text('Updating YoLink devices...');
+
+            $.get('/refresh_devices', function(response) {
+                $('#refresh-spinner').addClass('hidden');
+                $('#refresh-message').text(
+                    response.status === "success"
+                        ? 'YoLink devices updated successfully!'
+                        : 'Failed to update YoLink devices.'
+                );
                 updateSensorData();
-            } else {
-                console.error("Waiting for Moment Timezone to load...");
-                setTimeout(() => updateSensorData(), 1000);
-            }
-
-            // Auto-update sensor data every 10 seconds with retry
-            setInterval(() => {
-                if (ensureMomentLoaded()) {
-                    updateSensorData();
-                } else {
-                    console.error("Moment Timezone not loaded, retrying update in 1 second...");
-                    setTimeout(updateSensorData, 1000);
-                }
-            }, 10000);
-
-            // Update devices button
-            $('#update-devices').click(function() {
-                $('#refresh-spinner').removeClass('hidden');
-                $('#refresh-message').text('Updating YoLink devices...');
-                $.get('/refresh_devices', function(response) {
-                    $('#refresh-spinner').addClass('hidden');
-                    $('#refresh-message').text(response.status === "success" ?
-                        'YoLink devices updated successfully!' : 'Failed to update YoLink devices.');
-                    if (ensureMomentLoaded()) {
-                        updateSensorData();
-                    } else {
-                        console.error("Waiting for Moment Timezone to load after refresh...");
-                        setTimeout(updateSensorData, 1000);
-                    }
-                }).fail(function() {
-                    $('#refresh-spinner').addClass('hidden');
-                    $('#refresh-message').text('Failed to update YoLink devices.');
-                });
+            }).fail(function() {
+                $('#refresh-spinner').addClass('hidden');
+                $('#refresh-message').text('Failed to update YoLink devices.');
             });
         });
+    });
     </script>
 </body>
 </html>
