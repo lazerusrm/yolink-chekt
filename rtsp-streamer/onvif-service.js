@@ -144,7 +144,7 @@ class OnvifService {
           },
           quality: 6,
           rateControl: {
-            frameRateLimit: this.config.frameRate || 10,
+            frameRateLimit: this.config.frameRate || 1,
             encodingInterval: 1,
             bitrateLimit: 2048
           },

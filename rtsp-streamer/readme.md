@@ -99,15 +99,7 @@ docker logs yolink-rtsp-streamer
 
 If you experience performance issues:
 1. Try reducing the resolution via WIDTH/HEIGHT environment variables
-2. Lower the FRAME_RATE
-3. Ensure your host has sufficient CPU resources
-
-### ONVIF Discovery Problems
-
-If your NVR can't discover the device via ONVIF:
-1. Make sure UDP port 1900 is open for WS-Discovery
-2. Try adding the device manually using the ONVIF URL
-3. Check if your NVR supports ONVIF Profile S
+2. Ensure your host has sufficient CPU resources
 
 ## Notes on Resource Usage
 

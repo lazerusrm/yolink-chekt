@@ -27,27 +27,20 @@ services:
     networks:
       - yolink-network
 
-  dashboard:
-    build: ./YolinkChekt
-    container_name: yolink-dashboard
+  websocket-proxy:
+    build:
+      context: .
+      dockerfile: websocket-proxy/Dockerfile
+    container_name: yolink-websocket-proxy
     restart: unless-stopped
     environment:
-      - TZ=America/Chicago
-      - API_KEY=${API_KEY:-YOUR_API_KEY_HERE}  # Replace or set via .env file
-      - FRONT_URL=${FRONT_URL:-http://localhost:3000}
-      - SCAN_INTERVAL=${SCAN_INTERVAL:-60000}
-      - EMERGENCY_TIME=${EMERGENCY_TIME:-3000}
-      - DISABLE_TLS_CHECK=${DISABLE_TLS_CHECK:-true}
-      - EMAIL_ON_ALARM=${EMAIL_ON_ALARM:-false}
-      - EMAIL_TO=${EMAIL_TO:-yourmail@domain.com}
-      - SMTP_HOST=${SMTP_HOST:-yoursmtp.server.com}
-      - SMTP_PORT=${SMTP_PORT:-587}
-      - SMTP_USER=${SMTP_USER:-smtpuser}
-      - SMTP_PASS=${SMTP_PASS:-smtppassword}
+      - PORT=3000
+      - API_URL=http://yolink_chekt:5000/get_sensor_data
+      - FETCH_INTERVAL=5000
     ports:
-      - "${DASHBOARD_PORT:-3000}:3000"
-    volumes:
-      - ./config:/app/config
+      - "3010:3000"
+    depends_on:
+      - yolink_chekt
     networks:
       - yolink-network
 
@@ -58,8 +51,8 @@ services:
     container_name: yolink-rtsp-streamer
     restart: unless-stopped
     environment:
-      - TZ=${TZ:-America/Chicago}
-      - DASHBOARD_URL=${DASHBOARD_URL:-http://dashboard:3000}
+      - TZ=${TZ:-America/Denver}
+      - DASHBOARD_URL=${DASHBOARD_URL:-http://websocket-proxy:3000}
       - RTSP_PORT=${RTSP_PORT:-8554}
       - STREAM_NAME=${STREAM_NAME:-yolink-dashboard}
       - FRAME_RATE=${FRAME_RATE:-1}
@@ -70,12 +63,12 @@ services:
       - ENABLE_ONVIF=${ENABLE_ONVIF:-true}
       - SERVER_IP=${SERVER_IP:-auto}
     ports:
-      - "${RTSP_PORT:-8554}:8554"  # RTSP port
-      - "${ONVIF_PORT:-8555}:8555"  # ONVIF port
-      - "${RTSP_API_PORT:-3001}:3001"  # HTTP API port
-      - "1900:1900/udp"  # WS-Discovery port
+      - "${RTSP_PORT:-8554}:8554"
+      - "${ONVIF_PORT:-8555}:8555"
+      - "${RTSP_API_PORT:-3001}:3001"
+      - "1900:1900/udp"
     depends_on:
-      - dashboard
+      - websocket-proxy
     networks:
       - yolink-network
 

@@ -32,8 +32,10 @@ const config = {
   // ONVIF
   onvifPort: parseInt(process.env.ONVIF_PORT || '8555'),
   enableOnvif: process.env.ENABLE_ONVIF !== 'false', // Enabled by default
-  serverIp: process.env.SERVER_IP || ip.address()
+  serverIp: process.env.SERVER_IP === 'auto' ? ip.address() : (process.env.SERVER_IP || ip.address())
 };
+
+console.log(`Starting RTSP streamer with configuration:`, config);
 
 // Initialize Express app
 const app = express();
@@ -270,8 +272,7 @@ function initializeRtspStream() {
       try {
         const currentTime = Date.now();
 
-        // Only update the frame if something has changed or after a specific time interval
-        // For 1 FPS, we'll update regardless, but could be optimized further
+        // Generate and save frame
         const frame = renderDashboard();
         fs.writeFileSync(imagePath, frame);
 

@@ -16,6 +16,8 @@ LOG_DIR="/var/log"
 LOG_FILE="$LOG_DIR/yolink-update.log"
 MAX_RETRIES=3
 RETRY_DELAY=5
+ENV_FILE="$APP_DIR/.env"
+ENV_BACKUP="$APP_DIR/.env.bak"
 
 # Ensure log directory exists
 mkdir -p "$LOG_DIR" || { echo "Failed to create log directory $LOG_DIR"; exit 1; }
@@ -72,6 +74,7 @@ log "Working in $APP_DIR"
 backup_file "$CONFIG_FILE" "$CONFIG_BACKUP"
 backup_file "$MAPPINGS_FILE" "$MAPPINGS_BACKUP"
 backup_file "$DEVICES_FILE" "$DEVICES_BACKUP"
+backup_file "$ENV_FILE" "$ENV_BACKUP"
 
 # Download with retry logic
 download_with_retry() {
@@ -96,6 +99,13 @@ download_with_retry() {
     done
 }
 
+# Backup rtsp-streamer directory if it exists
+if [ -d "$APP_DIR/rtsp-streamer" ]; then
+    log "Backing up rtsp-streamer directory"
+    mkdir -p "$APP_DIR/rtsp-streamer.bak"
+    cp -r "$APP_DIR/rtsp-streamer/"* "$APP_DIR/rtsp-streamer.bak/" || { log "Error: Failed to backup rtsp-streamer"; exit 1; }
+fi
+
 # Download and unzip
 download_with_retry "$REPO_URL" "$APP_DIR/repo.zip"
 log "Unzipping latest code..."
@@ -103,21 +113,52 @@ unzip -o "$APP_DIR/repo.zip" -d "$APP_DIR" || { log "Error: Unzip failed"; exit 
 
 # Update files while preserving configs
 log "Updating application files..."
-rsync -a --exclude='config.yaml' --exclude='mappings.yaml' --exclude='devices.yaml' "$APP_DIR/yolink-chekt-main/" "$APP_DIR/" || { log "Error: Move extracted files failed"; exit 1; }
+rsync -a --exclude='config.yaml' --exclude='mappings.yaml' --exclude='devices.yaml' --exclude='.env' "$APP_DIR/yolink-chekt-main/" "$APP_DIR/" || { log "Error: Move extracted files failed"; exit 1; }
 
 # Restore configuration files
 restore_file "$CONFIG_BACKUP" "$CONFIG_FILE"
 restore_file "$MAPPINGS_BACKUP" "$MAPPINGS_FILE"
 restore_file "$DEVICES_BACKUP" "$DEVICES_FILE"
+restore_file "$ENV_BACKUP" "$ENV_FILE"
+
+# Restore rtsp-streamer directory if backup exists and new version doesn't have it
+if [ -d "$APP_DIR/rtsp-streamer.bak" ] && [ ! -d "$APP_DIR/rtsp-streamer" ]; then
+    log "Restoring rtsp-streamer directory from backup"
+    mkdir -p "$APP_DIR/rtsp-streamer"
+    cp -r "$APP_DIR/rtsp-streamer.bak/"* "$APP_DIR/rtsp-streamer/" || { log "Error: Failed to restore rtsp-streamer"; exit 1; }
+fi
 
 # Clean up
 log "Cleaning up temporary files..."
-rm -rf "$APP_DIR/yolink-chekt-main" "$APP_DIR/repo.zip" /tmp/curl_error || log "Warning: Some cleanup failed"
+rm -rf "$APP_DIR/yolink-chekt-main" "$APP_DIR/repo.zip" "$APP_DIR/rtsp-streamer.bak" /tmp/curl_error || log "Warning: Some cleanup failed"
 
 # Set permissions
 log "Setting permissions..."
 chmod -R u+rwX,go+rX "$APP_DIR" || { log "Error: Failed to set permissions"; exit 1; }
 chmod +x "$APP_DIR/self-update.sh" || { log "Error: Failed to set executable permission"; exit 1; }
+
+# Check and update .env file with RTSP configuration if not present
+if [ -f "$ENV_FILE" ]; then
+    log "Checking .env file for RTSP configuration..."
+    if ! grep -q "RTSP_PORT" "$ENV_FILE"; then
+        log "Adding RTSP configuration to .env file"
+        cat >> "$ENV_FILE" <<EOT
+
+# RTSP Streamer Configuration
+RTSP_PORT=8554
+RTSP_API_PORT=3001
+ONVIF_PORT=8555
+STREAM_NAME=yolink-dashboard
+FRAME_RATE=1
+WIDTH=1920
+HEIGHT=1080
+CYCLE_INTERVAL=10000
+ENABLE_ONVIF=true
+DASHBOARD_URL=http://dashboard:3000
+SERVER_IP=auto
+EOT
+    fi
+fi
 
 # Rebuild Docker containers
 log "Rebuilding Docker containers..."
@@ -135,6 +176,14 @@ if docker exec "$container_name" test -f "/app/templates/config.html"; then
 else
     log "Error: config.html not found in container"
     exit 1
+fi
+
+# Verify RTSP streamer container is running
+rtsp_container=$(docker ps --filter "name=yolink-rtsp-streamer" --format '{{.Names}}' | head -n 1)
+if [ -n "$rtsp_container" ]; then
+    log "Verified: RTSP streamer container is running"
+else
+    log "Warning: RTSP streamer container not found. Check logs for details."
 fi
 
 log "Update applied successfully!"

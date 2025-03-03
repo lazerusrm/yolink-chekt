@@ -1,30 +1,60 @@
-# Yolink to CHEKT Integration - Version 1.1
+# YoLink-Chekt Integration
 
-## Overview
+A complete integration between YoLink sensors and alarm/monitoring systems.
 
-This project integrates **Yolink** smart sensors (e.g., door contacts, motion sensors) with the **CHEKT** alarm system.
-It uses an MQTT client to listen for sensor events and triggers the corresponding zones in the CHEKT system via its local API.
-Additionally, a web interface is provided for mapping Yolink sensors to CHEKT zones, configuring settings, and managing user authentication with TOTP.
+## New Feature: RTSP Streaming with ONVIF Support
 
-## Features
+This release adds RTSP streaming capabilities to the YoLink-Chekt dashboard, allowing you to:
 
-- **Containerized Deployment:** Managed with Docker and Docker Compose.
-- **Automatic Restart & Updates:** Services are automatically restarted via Docker/systemd and updated through a self-update script.
-- **Device Management:** Real-time monitoring of sensor states, battery levels, and last-seen times, with data stored in Redis.
-- **Alert Integration:** Supports both CHEKT and SIA alert receivers.
-- **Prop Alarm Functionality:** When the door prop alarm is enabled, alerts are triggered only upon receiving an "openRemind" message, avoiding premature alerts from a simple closed-to-open transition.
-- **Web Interface:** A dashboard for device status, configuration pages for settings, and secure user authentication (TOTP).
-- **Persistent Storage:** Device and mapping data are stored in Redis, with YAML backups.
-- **Automatic Updates:** A self-update mechanism checks for new GitHub releases daily at 2 AM.
+- View your YoLink sensor dashboard in any RTSP-compatible viewer
+- Add the dashboard as a camera in your NVR system using RTSP or ONVIF
+- Show sensors in alarm state full-screen with a red background
+- Automatically cycle through pages of sensors if they don't all fit on one screen
 
-## Prerequisites
+### Accessing the Stream
 
-- **Docker:** Required for containerized deployment.
-- **Docker Compose:** Used for managing multi-container setups (application + Redis).
-- **Linux Host:** Recommended for Debian-based systems (e.g., Ubuntu).
+- **RTSP Stream**: `rtsp://[your-host-ip]:8554/yolink-dashboard`
+- **ONVIF Device**: `onvif://[your-host-ip]:8555`
+- **HTTP API**: `http://[your-host-ip]:3001/status`
+- **Snapshot**: `http://[your-host-ip]:3001/snapshot`
 
-## Installation
+### Key Features
 
-1. **Clone the Repository:**
-   ```bash
-   git clone https://github.com/lazerusrm/yolink-chekt.git
+- **Real-time Updates**: Sensors in alarm state are immediately shown full-screen
+- **Low Resource Usage**: Uses just 1 FPS to minimize CPU and bandwidth usage
+- **NVR Integration**: Compatible with most NVR systems through RTSP or ONVIF
+- **Automatic Page Cycling**: If you have more sensors than fit on one screen, the view will cycle every 10 seconds
+
+For complete details, see the [RTSP Streamer README](rtsp-streamer/README.md).
+
+## Setup and Configuration
+
+1. Make sure all required environmental variables are set in your `.env` file
+2. The RTSP streamer service will automatically start with the rest of the system when you run:
+   ```
+   docker-compose up -d
+   ```
+
+## Viewing the Stream
+
+You can access the RTSP stream in any compatible player, such as:
+- VLC Media Player: `rtsp://[your-host-ip]:8554/yolink-dashboard`
+- NVR Systems: Add as an IP camera using the RTSP URL or ONVIF protocol
+- Smart Home Systems: Many support RTSP camera integration
+
+## Configuration Options
+
+Edit your `.env` file to customize the RTSP streamer:
+
+```
+# RTSP Streamer Configuration
+RTSP_PORT=8554
+RTSP_API_PORT=3001
+ONVIF_PORT=8555
+STREAM_NAME=yolink-dashboard
+FRAME_RATE=1
+WIDTH=1920
+HEIGHT=1080
+CYCLE_INTERVAL=10000
+ENABLE_ONVIF=true
+```
