@@ -47,6 +47,11 @@ def safe_float(val):
     except (ValueError, TypeError):
         return None
 
+def get_text_width(draw, text, font):
+    """Return the width of text using draw.textbbox."""
+    bbox = draw.textbbox((0, 0), text, font=font)
+    return bbox[2] - bbox[0]
+
 # ----------------------
 # Dashboard Renderer
 # ----------------------
@@ -92,7 +97,7 @@ class DashboardRenderer:
                 if state.get("smokeAlarm") or state.get("gasAlarm") or state.get("unexpected"):
                     self.alarm_sensors.append(s)
                     continue
-            # Low battery check with safe conversion
+            # Low battery check using safe conversion
             battery_val = safe_float(s.get("battery"))
             if battery_val is not None and battery_val <= 1:
                 self.alarm_sensors.append(s)
@@ -148,7 +153,8 @@ class DashboardRenderer:
             name = sensor.get("name", f"Sensor {i+1}")
             max_width = cell_width - 40
             display_name = name
-            while draw.textsize(display_name, font=self.font_medium)[0] > max_width and len(display_name) > 3:
+            # Use our helper to get text width
+            while get_text_width(draw, display_name, self.font_medium) > max_width and len(display_name) > 3:
                 display_name = display_name[:-1]
             if display_name != name:
                 display_name += "..."
@@ -218,7 +224,7 @@ class DashboardRenderer:
             name = sensor.get("name", f"Sensor {start_idx+i+1}")
             max_width = cell_width - 40
             display_name = name
-            while draw.textsize(display_name, font=self.font_medium)[0] > max_width and len(display_name) > 3:
+            while get_text_width(draw, display_name, self.font_medium) > max_width and len(display_name) > 3:
                 display_name = display_name[:-1]
             if display_name != name:
                 display_name += "..."
@@ -266,12 +272,12 @@ class DashboardRenderer:
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         draw.text((10, self.height - footer_height + 5), f"Last Updated: {timestamp}", font=self.font_xsmall, fill="#ffffff")
         alarm_text = f"⚠️ {len(self.alarm_sensors)} ALARM(S) ACTIVE" if self.alarm_sensors else "System Normal"
-        text_width, _ = draw.textsize(alarm_text, font=self.font_xsmall)
+        text_width = get_text_width(draw, alarm_text, self.font_xsmall)
         draw.text((self.width - text_width - 20, self.height - footer_height + 5), alarm_text, font=self.font_xsmall, fill="#ffffff")
         active_count = sum(1 for s in self.sensor_data if "2025" in s.get("last_seen", ""))
         sensor_stats = f"Active Sensors: {active_count}/{len(self.sensor_data)}"
-        text_width, _ = draw.textsize(sensor_stats, font=self.font_xsmall)
-        draw.text(((self.width - text_width) / 2, self.height - footer_height + 5), sensor_stats, font=self.font_xsmall, fill="#ffffff")
+        stats_width = get_text_width(draw, sensor_stats, self.font_xsmall)
+        draw.text(((self.width - stats_width) / 2, self.height - footer_height + 5), sensor_stats, font=self.font_xsmall, fill="#ffffff")
 
 # ----------------------
 # WebSocket Client (using websocket-client)
@@ -565,17 +571,13 @@ def onvif_device_service():
 # Start Background Services
 # ----------------------
 def start_background_services():
-    # Start the WebSocket client
     ws_url = f"ws://{config['dashboard_url'].replace('http://','').replace('https://','')}/ws"
     ws_client = WebSocketClient(ws_url, renderer)
     ws_client.start()
-    # Start the RTSP streamer
     streamer.start()
-    # Start ONVIF service if enabled
     if config.get("enable_onvif"):
         onvif_service = OnvifService(config, config.get("server_ip"))
         onvif_service.start()
-    # Cycle pages periodically when no alarms
     def cycle_pages():
         while True:
             if not renderer.alarm_sensors and renderer.total_pages > 1:
