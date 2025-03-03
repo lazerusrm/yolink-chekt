@@ -1,7 +1,8 @@
-# rtsp-simple-server.yml
 protocols: [tcp, udp]
-rtspPort: 8554
-rtmpPort: 1935
+rtsp:
+  port: 8554
+rtmp:
+  port: 1935
 hls:
   segmentCount: 3
 paths:
