@@ -27,6 +27,7 @@ class RtspStreamer {
         streamUrl: `rtsp://${this.config.serverIp}:${this.config.rtspPort}/${this.config.streamName}`,
         wsPort: 9999,
         ffmpegOptions: {
+          '-loop': '1',
           '-f': 'image2',
           '-r': this.config.frameRate.toString(),
           '-i': this.imagePath,

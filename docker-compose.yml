@@ -59,7 +59,7 @@ services:
       - HEIGHT=1080
       - CYCLE_INTERVAL=10000
       - ENABLE_ONVIF=true
-      - SERVER_IP=auto
+      - SERVER_IP=10.250.250.2
     ports:
       - "8554:8554"
       - "3001:3001"
