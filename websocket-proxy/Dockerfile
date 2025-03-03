@@ -7,7 +7,8 @@ WORKDIR /app
 COPY websocket-proxy/package*.json ./
 
 # Install dependencies
-RUN npm install --production
+RUN npm install --production --silent \
+    && npm cache clean --force
 
 # Copy application code
 COPY websocket-proxy/ ./

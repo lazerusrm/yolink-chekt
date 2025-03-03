@@ -1,7 +1,7 @@
 {
   "name": "yolink-rtsp-streamer",
   "version": "1.0.0",
-  "description": "RTSP stream generator for YoLink Dashboard with ONVIF support",
+  "description": "RTSP streamer for YoLink Dashboard with ONVIF support",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -11,13 +11,11 @@
     "canvas": "^2.11.2",
     "express": "^4.18.2",
     "fluent-ffmpeg": "^2.1.2",
-    "node-rtsp-stream": "^0.0.9",
-    "node-onvif": "^0.1.7",
-    "uuid": "^9.0.0",
-    "ws": "^8.13.0",
     "ip": "^1.1.8",
-    "xml2js": "^0.6.0",
-    "soap": "^1.0.0"
+    "node-onvif-server": "^0.0.3",
+    "node-rtsp-stream": "^0.0.9",
+    "uuid": "^9.0.0",
+    "ws": "^8.13.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"

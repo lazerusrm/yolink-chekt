@@ -1,37 +1,16 @@
-FROM node:18-alpine
-
-# Set working directory
+# Build stage
+FROM node:18-alpine AS builder
 WORKDIR /app
-
-# Install dependencies for canvas and ffmpeg
-RUN apk add --no-cache \
-    build-base \
-    g++ \
-    cairo-dev \
-    jpeg-dev \
-    pango-dev \
-    giflib-dev \
-    pixman-dev \
-    pangomm-dev \
-    libjpeg-turbo-dev \
-    freetype-dev \
-    ffmpeg \
-    python3
-
-# Copy package files
-COPY rtsp-streamer/package*.json ./
-
-# Install Node.js dependencies
+RUN apk add --no-cache build-base g++ cairo-dev jpeg-dev pango-dev giflib-dev pixman-dev pangomm-dev libjpeg-turbo-dev freetype-dev python3
+COPY package*.json ./
 RUN npm install
 
-# Copy application code
-COPY rtsp-streamer/ ./
-
-# Create directory for temporary stream files
+# Runtime stage
+FROM node:18-alpine
+WORKDIR /app
+RUN apk add --no-cache ffmpeg
+COPY --from=builder /app/node_modules ./node_modules
+COPY . ./
 RUN mkdir -p /tmp/streams
-
-# Expose ports for HTTP API, RTSP, and ONVIF
-EXPOSE 3001 8554 8555 1900/udp
-
-# Start the application
+EXPOSE 3001 8554 9999 8555
 CMD ["node", "server.js"]
