@@ -1,4 +1,5 @@
 version: '3'
+
 services:
   yolink_chekt:
     build: .
@@ -13,6 +14,9 @@ services:
     depends_on:
       - redis
     restart: unless-stopped
+    networks:
+      - yolink-network
+
   redis:
     image: redis:6
     ports:
@@ -20,5 +24,63 @@ services:
     volumes:
       - redis-data:/data
     restart: unless-stopped
+    networks:
+      - yolink-network
+
+  dashboard:
+    build: ./YolinkChekt
+    container_name: yolink-dashboard
+    restart: unless-stopped
+    environment:
+      - TZ=America/Chicago
+      - API_KEY=${API_KEY:-YOUR_API_KEY_HERE}  # Replace or set via .env file
+      - FRONT_URL=${FRONT_URL:-http://localhost:3000}
+      - SCAN_INTERVAL=${SCAN_INTERVAL:-60000}
+      - EMERGENCY_TIME=${EMERGENCY_TIME:-3000}
+      - DISABLE_TLS_CHECK=${DISABLE_TLS_CHECK:-true}
+      - EMAIL_ON_ALARM=${EMAIL_ON_ALARM:-false}
+      - EMAIL_TO=${EMAIL_TO:-yourmail@domain.com}
+      - SMTP_HOST=${SMTP_HOST:-yoursmtp.server.com}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-smtpuser}
+      - SMTP_PASS=${SMTP_PASS:-smtppassword}
+    ports:
+      - "${DASHBOARD_PORT:-3000}:3000"
+    volumes:
+      - ./config:/app/config
+    networks:
+      - yolink-network
+
+  rtsp-streamer:
+    build:
+      context: .
+      dockerfile: rtsp-streamer/Dockerfile
+    container_name: yolink-rtsp-streamer
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ:-America/Chicago}
+      - DASHBOARD_URL=${DASHBOARD_URL:-http://dashboard:3000}
+      - RTSP_PORT=${RTSP_PORT:-8554}
+      - STREAM_NAME=${STREAM_NAME:-yolink-dashboard}
+      - FRAME_RATE=${FRAME_RATE:-1}
+      - WIDTH=${WIDTH:-1920}
+      - HEIGHT=${HEIGHT:-1080}
+      - CYCLE_INTERVAL=${CYCLE_INTERVAL:-10000}
+      - ONVIF_PORT=${ONVIF_PORT:-8555}
+      - ENABLE_ONVIF=${ENABLE_ONVIF:-true}
+      - SERVER_IP=${SERVER_IP:-auto}
+    ports:
+      - "${RTSP_PORT:-8554}:8554"  # RTSP port
+      - "${ONVIF_PORT:-8555}:8555"  # ONVIF port
+      - "${RTSP_API_PORT:-3001}:3001"  # HTTP API port
+      - "1900:1900/udp"  # WS-Discovery port
+    depends_on:
+      - dashboard
+    networks:
+      - yolink-network
+
+networks:
+  yolink-network:
+
 volumes:
   redis-data:
