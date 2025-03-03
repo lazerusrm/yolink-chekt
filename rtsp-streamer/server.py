@@ -355,6 +355,7 @@ class RtspStreamer(threading.Thread):
             "-c:v", "libx264",
             "-f", "rtsp",
             "-rtsp_transport", "tcp",
+            "-rtsp_flags", "listen",
             rtsp_url
         ]
         logging.info("Starting FFmpeg with command: " + " ".join(cmd))
