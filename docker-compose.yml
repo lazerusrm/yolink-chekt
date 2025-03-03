@@ -51,20 +51,20 @@ services:
     container_name: yolink-rtsp-streamer
     restart: unless-stopped
     environment:
-      - TZ=${TZ:-America/Denver}
-      - DASHBOARD_URL=${DASHBOARD_URL:-http://websocket-proxy:3000}
+      - TZ=America/Denver
+      - DASHBOARD_URL=http://websocket-proxy:3000
       - RTSP_PORT=8554
-      - STREAM_NAME=${STREAM_NAME:-yolink-dashboard}
-      - FRAME_RATE=${FRAME_RATE:-1}
-      - WIDTH=${WIDTH:-1920}
-      - HEIGHT=${HEIGHT:-1080}
-      - CYCLE_INTERVAL=${CYCLE_INTERVAL:-10000}
-      - ENABLE_ONVIF=${ENABLE_ONVIF:-true}
-      - SERVER_IP=${SERVER_IP:-auto}
-      - RTSP_API_PORT=3001  # HTTP and SOAP port
+      - STREAM_NAME=yolink-dashboard
+      - FRAME_RATE=1
+      - WIDTH=1920
+      - HEIGHT=1080
+      - CYCLE_INTERVAL=10000
+      - ENABLE_ONVIF=true
+      - SERVER_IP=auto
+      - RTSP_API_PORT=3001
     ports:
-      - "8554:8554"        # RTSP port
-      - "3001:3001"        # HTTP and SOAP port
+      - "8554:8554"        # RTSP
+      - "3001:3001"        # HTTP and SOAP
       - "1900:1900/udp"    # WS-Discovery
     depends_on:
       - websocket-proxy
