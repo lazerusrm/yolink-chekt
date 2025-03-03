@@ -17,15 +17,15 @@ const config = {
   width: parseInt(process.env.WIDTH, 10) || 1920,
   height: parseInt(process.env.HEIGHT, 10) || 1080,
   cycleInterval: parseInt(process.env.CYCLE_INTERVAL, 10) || 10000,
-  onvifPort: parseInt(process.env.ONVIF_PORT, 10) || 8555,
+  httpPort: parseInt(process.env.RTSP_API_PORT, 10) || 3001,
+  wsPort: parseInt(process.env.WS_PORT, 10) || 9999,
   enableOnvif: process.env.ENABLE_ONVIF !== 'false',
-  serverIp: process.env.SERVER_IP === 'auto' ? ip.address() : process.env.SERVER_IP || ip.address(),
-  httpPort: parseInt(process.env.RTSP_API_PORT, 10) || 3001
+  serverIp: process.env.SERVER_IP === 'auto' ? ip.address() : process.env.SERVER_IP || ip.address()
 };
 
 // Warn if using auto-detected IP in Docker
 if (process.env.SERVER_IP === 'auto') {
-  console.warn('Using auto-detected IP. In Docker, this might not be accessible externally. Consider setting SERVER_IP to the host\'s IP.');
+  console.warn('Using auto-detected IP. In Docker, set SERVER_IP to the host\'s IP for external access.');
 }
 
 // Canvas setup
@@ -46,6 +46,7 @@ function connectToDashboard() {
   ws.on('message', (data) => {
     try {
       const message = JSON.parse(data.toString());
+      console.log('Received WebSocket message:', message);
       if (message.type === 'sensors-update') {
         sensorData = message.sensors || [];
         alarmSensors = sensorData.filter(s => ['alarm', 'leak', 'motion', 'open'].includes(s.state));
@@ -59,10 +60,7 @@ function connectToDashboard() {
     console.log('Dashboard WebSocket closed, reconnecting in 5 seconds...');
     setTimeout(connectToDashboard, 5000);
   });
-  ws.on('error', (err) => {
-    console.error('Dashboard WebSocket error:', err);
-    ws.close();
-  });
+  ws.on('error', (err) => console.error('Dashboard WebSocket error:', err));
 }
 connectToDashboard();
 
@@ -72,7 +70,6 @@ function renderDashboard() {
   ctx.fillRect(0, 0, config.width, config.height);
 
   if (alarmSensors.length > 0) {
-    // Simplified alarm mode rendering
     ctx.fillStyle = '#ff0000';
     ctx.fillRect(0, 0, config.width, config.height);
     ctx.fillStyle = '#ffffff';
@@ -84,7 +81,6 @@ function renderDashboard() {
       y += 40;
     });
   } else {
-    // Normal mode with pagination
     ctx.fillStyle = '#ffffff';
     ctx.font = '20px Arial';
     ctx.fillText(`Page ${currentPage + 1} of ${totalPages}`, 20, 40);
@@ -98,7 +94,6 @@ function renderDashboard() {
     });
   }
 
-  // Timestamp
   ctx.fillStyle = '#ffffff';
   ctx.font = '14px Arial';
   const timestamp = new Date().toLocaleString();
@@ -115,31 +110,34 @@ const imagePath = path.join(streamDir, 'dashboard.jpg');
 const streamOptions = {
   name: config.streamName,
   streamUrl: `rtsp://${config.serverIp}:${config.rtspPort}/${config.streamName}`,
-  ffmpegPath: '/usr/bin/ffmpeg',
-  ffmpegArgs: [
-    '-re', // Real-time input
-    '-f', 'image2',
-    '-loop', '1',
-    '-r', config.frameRate.toString(),
-    '-i', imagePath,
-    '-c:v', 'libx264',
-    '-preset', 'ultrafast',
-    '-tune', 'zerolatency',
-    '-pix_fmt', 'yuv420p',
-    '-b:v', '2M',
-    '-bufsize', '2M',
-    '-maxrate', '2M',
-    '-g', (config.frameRate * 2).toString(),
-    '-f', 'rtsp',
-    '-rtsp_transport', 'tcp',
-    `rtsp://0.0.0.0:${config.rtspPort}/${config.streamName}` // Internal bind
-  ]
+  port: config.wsPort, // WebSocket port for RTSP clients
+  ffmpegOptions: {
+    '-re': '',
+    '-f': 'image2',
+    '-loop': '1',
+    '-r': String(config.frameRate),
+    '-i': imagePath,
+    '-c:v': 'libx264',
+    '-preset': 'ultrafast',
+    '-tune': 'zerolatency',
+    '-pix_fmt': 'yuv420p',
+    '-b:v': '2M',
+    '-bufsize': '2M',
+    '-maxrate': '2M',
+    '-g': String(config.frameRate * 2),
+    '-f': 'rtsp',
+    '-rtsp_transport': 'tcp'
+  }
 };
 
-const rtspStream = new Stream(streamOptions);
-console.log(`RTSP stream started: rtsp://${config.serverIp}:${config.rtspPort}/${config.streamName}`);
+let rtspStream;
+try {
+  rtspStream = new Stream(streamOptions);
+  console.log(`RTSP stream started: ${streamOptions.streamUrl}`);
+} catch (err) {
+  console.error('Failed to start RTSP stream:', err);
+}
 
-// Update frame periodically
 function updateFrame() {
   try {
     const frame = renderDashboard();
@@ -159,7 +157,7 @@ setInterval(() => {
   }
 }, config.cycleInterval);
 
-// Create Express app and HTTP server
+// Express app and HTTP server
 const app = express();
 const server = http.createServer(app);
 
@@ -174,14 +172,12 @@ if (config.enableOnvif) {
 app.get('/', (req, res) => res.send('YoLink RTSP Streamer with ONVIF is running!'));
 
 app.get('/status', (req, res) => {
-  const streamUrl = streamOptions.streamUrl;
-  const onvifUrl = config.enableOnvif ? `onvif://${config.serverIp}:${config.onvifPort}` : null;
   res.json({
     status: 'online',
     sensors: { total: sensorData.length, alarmsActive: alarmSensors.length },
     stream: {
-      rtspUrl: streamUrl,
-      onvifUrl,
+      rtspUrl: streamOptions.streamUrl,
+      onvifUrl: config.enableOnvif ? `onvif://${config.serverIp}:${config.httpPort}` : null,
       frameRate: config.frameRate,
       resolution: `${config.width}x${config.height}`,
       currentPage: currentPage + 1,
@@ -202,7 +198,7 @@ app.get('/snapshot', (req, res) => {
   }
 });
 
-// Start the HTTP server
+// Start HTTP server
 server.listen(config.httpPort, () => {
   console.log(`HTTP server running on http://${config.serverIp}:${config.httpPort}`);
 });
@@ -210,7 +206,10 @@ server.listen(config.httpPort, () => {
 // Graceful shutdown
 function shutdown(signal) {
   console.log(`${signal} received, shutting down...`);
-  if (rtspStream) rtspStream.stop();
+  if (rtspStream) {
+    rtspStream.stop();
+    console.log('RTSP stream stopped');
+  }
   if (onvifService) onvifService.stop();
   server.close(() => {
     console.log('HTTP server stopped');
@@ -218,5 +217,5 @@ function shutdown(signal) {
   });
 }
 
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
