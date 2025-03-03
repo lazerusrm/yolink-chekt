@@ -59,14 +59,17 @@ services:
       - HEIGHT=1080
       - CYCLE_INTERVAL=10000
       - ENABLE_ONVIF=true
+      - ONVIF_PORT=8555
       - SERVER_IP=10.250.250.2
       - RTSP_API_PORT=3001
       - WS_PORT=9999
     ports:
-      - "8554:8554"    # RTSP
-      - "3001:3001"    # HTTP and ONVIF
-      - "9999:9999"    # WebSocket for RTSP clients
-      - "1900:1900/udp" # WS-Discovery
+      - "8554:8554"
+      - "3001:3001"
+      - "9999:9999"
+      - "3702:3702/udp"
+    volumes:
+      - /tmp/streams:/tmp/streams
     depends_on:
       - websocket-proxy
     networks:

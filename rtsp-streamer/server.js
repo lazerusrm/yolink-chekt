@@ -1,12 +1,16 @@
+/**
+ * YoLink Dashboard RTSP Streamer
+ * Main server file that initializes all components
+ */
+
 const express = require('express');
 const http = require('http');
-const WebSocket = require('ws');
-const { createCanvas } = require('canvas');
-const Stream = require('node-rtsp-stream');
-const fs = require('fs');
-const path = require('path');
 const ip = require('ip');
+const WebSocketClient = require('./webSocketClient');
+const DashboardRenderer = require('./DashboardRenderer');
+const RtspStreamer = require('./rtspStreamer');
 const OnvifService = require('./onvif-service');
+const createApiRouter = require('./apiRouter');
 
 // Configuration from environment variables
 const config = {
@@ -20,183 +24,65 @@ const config = {
   httpPort: parseInt(process.env.RTSP_API_PORT, 10) || 3001,
   wsPort: parseInt(process.env.WS_PORT, 10) || 9999,
   enableOnvif: process.env.ENABLE_ONVIF !== 'false',
-  serverIp: process.env.SERVER_IP === 'auto' ? ip.address() : process.env.SERVER_IP || ip.address()
+  onvifPort: parseInt(process.env.ONVIF_PORT, 10) || 8555,
+  serverIp: process.env.SERVER_IP || ip.address()
 };
 
-if (process.env.SERVER_IP === 'auto') {
-  console.warn('Using auto-detected IP. In Docker, set SERVER_IP to the host\'s IP for external access.');
-}
+// Display configuration
+console.log('Starting YoLink Dashboard RTSP Streamer with configuration:', config);
 
-// Canvas setup
-const canvas = createCanvas(config.width, config.height);
-const ctx = canvas.getContext('2d');
-
-// Sensor state
-let sensorData = [];
-let alarmSensors = [];
-let currentPage = 0;
-let totalPages = 1;
-
-// WebSocket connection to dashboard
-const wsUrl = `ws://${config.dashboardUrl.replace(/^https?:\/\//, '')}/ws`;
-function connectToDashboard() {
-  const ws = new WebSocket(wsUrl);
-  ws.on('open', () => console.log('Connected to dashboard WebSocket'));
-  ws.on('message', (data) => {
-    try {
-      const message = JSON.parse(data.toString());
-      console.log('Received WebSocket message:', JSON.stringify(message));
-      if (message.type === 'sensors-update') {
-        sensorData = message.sensors || [];
-        alarmSensors = sensorData.filter(s => ['alarm', 'leak', 'motion', 'open'].includes(s.state));
-        totalPages = Math.max(1, Math.ceil(sensorData.length / 12));
-      }
-    } catch (err) {
-      console.error('Error processing dashboard message:', err);
-    }
-  });
-  ws.on('close', () => {
-    console.log('Dashboard WebSocket closed, reconnecting in 5 seconds...');
-    setTimeout(connectToDashboard, 5000);
-  });
-  ws.on('error', (err) => console.error('Dashboard WebSocket error:', err));
-}
-connectToDashboard();
-
-// Render dashboard to canvas
-function renderDashboard() {
-  ctx.fillStyle = '#1e1e1e';
-  ctx.fillRect(0, 0, config.width, config.height);
-
-  if (alarmSensors.length > 0) {
-    ctx.fillStyle = '#ff0000';
-    ctx.fillRect(0, 0, config.width, config.height);
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 36px Arial';
-    ctx.fillText('⚠️ ALARM SENSORS DETECTED ⚠️', 20, 40);
-    let y = 80;
-    alarmSensors.slice(0, 12).forEach(sensor => {
-      ctx.fillText(`${sensor.name}: ${sensor.state.toUpperCase()}`, 20, y);
-      y += 40;
-    });
-  } else {
-    ctx.fillStyle = '#ffffff';
-    ctx.font = '20px Arial';
-    ctx.fillText(`Page ${currentPage + 1} of ${totalPages}`, 20, 40);
-    const sensorsPerPage = 12;
-    const start = currentPage * sensorsPerPage;
-    const end = start + sensorsPerPage;
-    let y = 80;
-    sensorData.slice(start, end).forEach(sensor => {
-      ctx.fillText(`${sensor.name}: ${sensor.state}`, 20, y);
-      y += 30;
-    });
-  }
-
-  ctx.fillStyle = '#ffffff';
-  ctx.font = '14px Arial';
-  ctx.fillText(`Last Updated: ${new Date().toLocaleString()}`, 10, config.height - 20);
-
-  return canvas.toBuffer('image/jpeg');
-}
-
-// RTSP Stream setup
-const streamDir = '/tmp/streams';
-if (!fs.existsSync(streamDir)) fs.mkdirSync(streamDir, { recursive: true });
-const imagePath = path.join(streamDir, 'dashboard.jpg');
-
-// Write initial frame
-fs.writeFileSync(imagePath, renderDashboard());
-
-const streamOptions = {
-  name: config.streamName,
-  streamUrl: `rtsp://${config.serverIp}:${config.rtspPort}/${config.streamName}`,
-  port: config.wsPort, // WebSocket port for RTSP clients
-  ffmpegOptions: {
-    '-re': '',
-    '-f': 'image2',
-    '-loop': '1',
-    '-r': String(config.frameRate),
-    '-i': imagePath,
-    '-c:v': 'libx264',
-    '-preset': 'ultrafast',
-    '-tune': 'zerolatency',
-    '-pix_fmt': 'yuv420p',
-    '-b:v': '2M',
-    '-bufsize': '2M',
-    '-maxrate': '2M',
-    '-g': String(config.frameRate * 2),
-    '-f': 'rtsp',
-    '-rtsp_transport': 'tcp'
-  }
-};
-
-let rtspStream;
-try {
-  rtspStream = new Stream(streamOptions);
-  console.log(`RTSP stream started: ${streamOptions.streamUrl}`);
-} catch (err) {
-  console.error('Failed to start RTSP stream:', err);
-}
-
-function updateFrame() {
-  try {
-    const frame = renderDashboard();
-    fs.writeFileSync(imagePath, frame);
-    console.log('Frame updated');
-  } catch (err) {
-    console.error('Error updating frame:', err);
-  }
-  setTimeout(updateFrame, 1000 / config.frameRate);
-}
-updateFrame();
-
-// Cycle pages when no alarms
-setInterval(() => {
-  if (alarmSensors.length === 0 && totalPages > 1) {
-    currentPage = (currentPage + 1) % totalPages;
-  }
-}, config.cycleInterval);
-
-// Express app and HTTP server
+// Initialize Express app and HTTP server
 const app = express();
 const server = http.createServer(app);
+
+// Initialize dashboard renderer
+const renderer = new DashboardRenderer({
+  width: config.width,
+  height: config.height
+});
+
+// Connect to the dashboard WebSocket server
+const wsUrl = `ws://${config.dashboardUrl.replace(/^https?:\/\//, '')}/ws`;
+const wsClient = new WebSocketClient(wsUrl);
+
+// Handle incoming sensor data
+wsClient.on('sensors-update', (sensors) => {
+  renderer.updateSensors(sensors);
+  console.log(`Updated sensors: ${sensors.length}, alarms: ${sensors.filter(s =>
+    ['alarm', 'leak', 'motion', 'open'].includes(s?.state)
+  ).length}`);
+});
+
+// Initialize RTSP streamer
+const streamer = new RtspStreamer(config, renderer);
+streamer.initialize();
+
+// Page cycling when no alarms
+setInterval(() => {
+  if (renderer.alarmSensors.length === 0 && renderer.totalPages > 1) {
+    renderer.setPage((renderer.currentPage + 1) % renderer.totalPages);
+  }
+}, config.cycleInterval);
 
 // ONVIF Service
 let onvifService = null;
 if (config.enableOnvif) {
-  onvifService = new OnvifService(config, server);
-  onvifService.initialize(streamOptions.streamUrl);
+  onvifService = new OnvifService({
+    serverIp: config.serverIp,
+    onvifPort: config.onvifPort
+  }, server);
+
+  const rtspUrl = `rtsp://${config.serverIp}:${config.rtspPort}/${config.streamName}`;
+  onvifService.initialize(rtspUrl);
 }
 
-// Express API endpoints
-app.get('/', (req, res) => res.send('YoLink RTSP Streamer with ONVIF is running!'));
+// Create and mount API routes
+const apiRouter = createApiRouter(renderer, streamer, config);
+app.use(apiRouter);
 
-app.get('/status', (req, res) => {
-  res.json({
-    status: 'online',
-    sensors: { total: sensorData.length, alarmsActive: alarmSensors.length },
-    stream: {
-      rtspUrl: streamOptions.streamUrl,
-      onvifUrl: config.enableOnvif ? `onvif://${config.serverIp}:${config.httpPort}` : null,
-      frameRate: config.frameRate,
-      resolution: `${config.width}x${config.height}`,
-      currentPage: currentPage + 1,
-      totalPages
-    },
-    lastUpdate: new Date().toISOString()
-  });
-});
-
-app.get('/snapshot', (req, res) => {
-  try {
-    const frame = renderDashboard();
-    res.contentType('image/jpeg');
-    res.send(frame);
-  } catch (err) {
-    console.error('Error generating snapshot:', err);
-    res.status(500).send('Error generating snapshot');
-  }
+// Root endpoint
+app.get('/', (req, res) => {
+  res.send('YoLink RTSP Streamer with ONVIF is running!');
 });
 
 // Start HTTP server
@@ -207,16 +93,29 @@ server.listen(config.httpPort, () => {
 // Graceful shutdown
 function shutdown(signal) {
   console.log(`${signal} received, shutting down...`);
-  if (rtspStream) {
-    rtspStream.stop();
-    console.log('RTSP stream stopped');
+
+  // Stop RTSP streaming
+  if (streamer) {
+    streamer.stop();
   }
-  if (onvifService) onvifService.stop();
+
+  // Close WebSocket connection
+  if (wsClient) {
+    wsClient.close();
+  }
+
+  // Stop ONVIF service
+  if (onvifService) {
+    onvifService.stop();
+  }
+
+  // Close HTTP server
   server.close(() => {
     console.log('HTTP server stopped');
     process.exit(0);
   });
 }
 
+// Register signal handlers
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
