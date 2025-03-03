@@ -12,13 +12,12 @@
     "express": "^4.18.2",
     "fluent-ffmpeg": "^2.1.2",
     "node-rtsp-stream": "^0.0.9",
-    "onvif": "^0.6.8",
+    "node-onvif": "^0.1.7",
     "uuid": "^9.0.0",
     "ws": "^8.13.0",
     "ip": "^1.1.8",
     "xml2js": "^0.6.0",
-    "soap": "^1.0.0",
-    "node-onvif": "^0.1.7"
+    "soap": "^1.0.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"
