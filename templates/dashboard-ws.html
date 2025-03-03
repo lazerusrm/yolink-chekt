@@ -93,12 +93,12 @@
         <div class="header">
             <h1>YoLink Sensors Dashboard</h1>
             <div id="connection-status">
-                <span class="status-dot normal"></span> Connected
+                <span class="status-dot warning"></span> Connecting...
             </div>
         </div>
 
         <div class="sensors-grid" id="sensors-container">
-            <!-- Sensors will be dynamically added here -->
+            <p>Loading sensors...</p>
         </div>
     </div>
 
@@ -106,6 +106,9 @@
         // Sensor data and WebSocket handling
         let sensors = [];
         let ws = null;
+        let reconnectAttempts = 0;
+        const maxReconnectAttempts = 10;
+        const reconnectDelay = 5000; // 5 seconds
 
         // Get status class based on sensor state
         function getStatusClass(sensor) {
@@ -130,6 +133,8 @@
             }
 
             sensors.forEach(sensor => {
+                if (!sensor) return; // Skip null/undefined entries
+
                 const statusClass = getStatusClass(sensor);
 
                 const card = document.createElement('div');
@@ -180,24 +185,43 @@
             });
         }
 
-        // Initial load of sensors
+        // Initial load of sensors from status endpoint
         async function loadSensors() {
             try {
-                const response = await fetch('/api/sensors');
+                // Use the status endpoint to get initial sensor data
+                const response = await fetch('/status');
                 const data = await response.json();
-                if (data.devices) {
-                    sensors = data.devices;
-                    renderSensors();
+
+                if (data.status === "online" && data.sensors && data.sensors.total > 0) {
+                    // We don't have sensor details from this endpoint, just wait for WebSocket
+                    document.getElementById('sensors-container').innerHTML =
+                        `<p>Detected ${data.sensors.total} sensors. Waiting for WebSocket connection...</p>`;
+                } else {
+                    document.getElementById('sensors-container').innerHTML =
+                        '<p>No sensors detected yet. Please check your YoLink configuration.</p>';
                 }
             } catch (error) {
-                console.error('Error loading sensors:', error);
+                console.error('Error loading sensor status:', error);
+                document.getElementById('sensors-container').innerHTML =
+                    '<p>Error connecting to the server. Please check if the service is running.</p>';
             }
         }
 
         // Connect to WebSocket for real-time updates
         function connectWebSocket() {
+            if (reconnectAttempts >= maxReconnectAttempts) {
+                document.getElementById('connection-status').innerHTML =
+                    '<span class="status-dot alarm"></span> Failed to connect after multiple attempts';
+                document.getElementById('sensors-container').innerHTML =
+                    '<p>Could not establish WebSocket connection. Please reload the page or check server status.</p>';
+                return;
+            }
+
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const wsUrl = `${protocol}//${window.location.host}/ws`;
+
+            document.getElementById('connection-status').innerHTML =
+                '<span class="status-dot warning"></span> Connecting...';
 
             if (ws) {
                 ws.close();
@@ -209,12 +233,13 @@
                 console.log('WebSocket connection established');
                 document.getElementById('connection-status').innerHTML =
                     '<span class="status-dot normal"></span> Connected';
+                reconnectAttempts = 0; // Reset reconnect counter on successful connection
             };
 
             ws.onmessage = (event) => {
                 try {
                     const data = JSON.parse(event.data);
-                    if (data.type === 'sensors-update') {
+                    if (data.type === 'sensors-update' && Array.isArray(data.sensors)) {
                         sensors = data.sensors;
                         renderSensors();
                     }
@@ -233,7 +258,8 @@
                 console.log('WebSocket connection closed');
                 document.getElementById('connection-status').innerHTML =
                     '<span class="status-dot warning"></span> Disconnected, reconnecting...';
-                setTimeout(connectWebSocket, 5000);
+                reconnectAttempts++;
+                setTimeout(connectWebSocket, reconnectDelay);
             };
         }
 
