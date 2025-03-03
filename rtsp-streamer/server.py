@@ -332,7 +332,7 @@ class RtspStreamer(threading.Thread):
         frame_interval = 1.0 / self.config.get("frame_rate", 1)  # 1 second for 1 FPS
         while self.running:
             self.start_ffmpeg()
-            time.sleep(2)  # Wait for FFmpeg to connect to MediaMTX
+            time.sleep(3)  # Increased delay to ensure FFmpeg connects to MediaMTX
             try:
                 with open(self.pipe_path, "wb") as fifo:
                     logging.info(f"Opened FIFO {self.pipe_path} for writing")
@@ -363,10 +363,11 @@ class RtspStreamer(threading.Thread):
             "-f", "image2pipe",   # Input format
             "-i", self.pipe_path, # FIFO input
             "-c:v", "libx264",    # Video codec
-            "-r", "1",            # Output frame rate: 1 FPS
+            "-r", "1",            # Output 1 FPS
             "-preset", "ultrafast",  # Fast encoding
             "-tune", "zerolatency",  # Reduce latency
             "-bufsize", "100k",   # Small buffer for low frame rate
+            "-maxrate", "500k",   # Limit bitrate for stability
             "-f", "rtsp",         # Output format
             "-rtsp_transport", "tcp",  # Force TCP
             rtsp_url
@@ -375,6 +376,7 @@ class RtspStreamer(threading.Thread):
         try:
             self.ffmpeg_process = subprocess.Popen(
                 cmd,
+                stdin=subprocess.PIPE,  # Not used but ensures pipe compatibility
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 universal_newlines=True,

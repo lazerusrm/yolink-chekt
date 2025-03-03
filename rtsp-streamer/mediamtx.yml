@@ -3,3 +3,6 @@ rtspAddress: ":8554"
 paths:
   yolink-dashboard:
     source: publisher
+rtspKeepalivePeriod: 30s  # Increase keepalive to avoid timeouts at 1 FPS
+readTimeout: 30s         # Allow slow frame delivery
+writeTimeout: 30s        # Match read timeout
