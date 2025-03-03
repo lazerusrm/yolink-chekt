@@ -61,9 +61,9 @@ services:
       - ENABLE_ONVIF=true
       - SERVER_IP=auto
     ports:
-      - "8554:8554"        # RTSP port
-      - "3001:3001"        # HTTP and SOAP port
-      - "1900:1900/udp"    # WS-Discovery
+      - "8554:8554"
+      - "3001:3001"
+      - "1900:1900/udp"
     depends_on:
       - websocket-proxy
     networks:
