@@ -14,7 +14,7 @@ RUN apk add --no-cache \
     freetype-dev \
     python3
 COPY rtsp-streamer/package.json rtsp-streamer/package-lock.json* ./
-RUN npm install --silent && npm cache clean --force
+RUN npm install && npm cache clean --force
 
 # Runtime stage
 FROM node:18-alpine
