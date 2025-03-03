@@ -33,5 +33,5 @@ COPY rtsp-streamer/server.js ./server.js
 COPY rtsp-streamer/onvif-service.js ./onvif-service.js
 COPY rtsp-streamer/package.json ./package.json
 RUN mkdir -p /tmp/streams
-EXPOSE 3001 8554 9999  # Removed 8555 since SOAP uses 3001 now
+EXPOSE 3001 8554 9999
 CMD ["node", "server.js"]
