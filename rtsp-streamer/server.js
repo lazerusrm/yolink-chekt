@@ -155,6 +155,10 @@ setInterval(() => {
   }
 }, config.cycleInterval);
 
+// Create Express app and HTTP server
+const app = express();
+const server = http.createServer(app);
+
 // ONVIF Service
 let onvifService = null;
 if (config.enableOnvif) {
@@ -162,10 +166,7 @@ if (config.enableOnvif) {
   onvifService.initialize(streamOptions.streamUrl);
 }
 
-// Express API
-const app = express();
-const server = http.createServer(app);
-
+// Express API endpoints
 app.get('/', (req, res) => res.send('YoLink RTSP Streamer with ONVIF is running!'));
 
 app.get('/status', (req, res) => {
@@ -197,6 +198,7 @@ app.get('/snapshot', (req, res) => {
   }
 });
 
+// Start the HTTP server
 server.listen(config.httpPort, () => {
   console.log(`HTTP server running on http://${config.serverIp}:${config.httpPort}`);
 });
