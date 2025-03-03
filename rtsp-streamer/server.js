@@ -114,10 +114,10 @@ const imagePath = path.join(streamDir, 'dashboard.jpg');
 
 const streamOptions = {
   name: config.streamName,
-  streamUrl: `rtsp://0.0.0.0:${config.rtspPort}/${config.streamName}`, // Internal bind address
-  wsPort: 9999,
+  streamUrl: `rtsp://${config.serverIp}:${config.rtspPort}/${config.streamName}`,
   ffmpegPath: '/usr/bin/ffmpeg',
   ffmpegArgs: [
+    '-re', // Real-time input
     '-f', 'image2',
     '-loop', '1',
     '-r', config.frameRate.toString(),
@@ -132,7 +132,7 @@ const streamOptions = {
     '-g', (config.frameRate * 2).toString(),
     '-f', 'rtsp',
     '-rtsp_transport', 'tcp',
-    `rtsp://0.0.0.0:${config.rtspPort}/${config.streamName}`
+    `rtsp://0.0.0.0:${config.rtspPort}/${config.streamName}` // Internal bind
   ]
 };
 
@@ -144,6 +144,7 @@ function updateFrame() {
   try {
     const frame = renderDashboard();
     fs.writeFileSync(imagePath, frame);
+    console.log('Frame updated');
   } catch (err) {
     console.error('Error updating frame:', err);
   }
