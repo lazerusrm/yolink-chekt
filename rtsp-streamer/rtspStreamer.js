@@ -6,10 +6,10 @@ class RtspStreamer {
   constructor(config, renderer) {
     this.config = config;
     this.renderer = renderer;
-    this.pipeDir = '/tmp/streams';
-    this.pipePath = path.join(this.pipeDir, 'dashboard_pipe');
+    this.tempDir = '/tmp/streams';
+    this.frameFile = path.join(this.tempDir, 'current_frame.jpg');
+    this.inputListPath = path.join(this.tempDir, 'input.txt');
     this.ffmpegProcess = null;
-    this.pipeWriteStream = null;
     this.updateInterval = null;
     this.isStopping = false;
     this.retryCount = 0;
@@ -20,7 +20,7 @@ class RtspStreamer {
     this.rtspPort = this.config.rtspPort || 8554;
     this.rtspUrl = `rtsp://${this.config.serverIp}:${this.rtspPort}/${this.config.streamName}`;
 
-    // Add a flag to track initialization state
+    // Flag to track initialization state
     this.isInitialized = false;
   }
 
@@ -28,7 +28,7 @@ class RtspStreamer {
     if (this.isStopping || this.isInitialized) return;
 
     try {
-      this.setupPipe()
+      this.setupTempDir()
         .then(() => this.startFFmpegProcess())
         .then(() => this.startFrameUpdates())
         .catch(err => {
@@ -41,84 +41,48 @@ class RtspStreamer {
     }
   }
 
-  async setupPipe() {
-    // Ensure the directory for the pipe exists
-    if (!fs.existsSync(this.pipeDir)) {
-      fs.mkdirSync(this.pipeDir, { recursive: true });
-      console.log(`Created directory for pipe: ${this.pipeDir}`);
+  async setupTempDir() {
+    // Ensure the directory for temporary files exists
+    if (!fs.existsSync(this.tempDir)) {
+      fs.mkdirSync(this.tempDir, { recursive: true });
+      console.log(`Created directory for temporary files: ${this.tempDir}`);
     }
 
-    // Remove any existing pipe to avoid stale FIFOs
-    if (fs.existsSync(this.pipePath)) {
-      try {
-        fs.unlinkSync(this.pipePath);
-        console.log(`Removed existing pipe: ${this.pipePath}`);
-      } catch (err) {
-        console.warn(`Could not remove existing pipe: ${err.message}`);
-      }
-    }
-
-    // Create a new named pipe (FIFO)
-    console.log(`Creating FIFO at ${this.pipePath}`);
-    try {
-      execSync(`mkfifo ${this.pipePath}`);
-    } catch (err) {
-      throw new Error(`Failed to create FIFO: ${err.message}`);
-    }
+    // Write an initial frame file
+    const initialFrame = this.renderer.renderFrame();
+    fs.writeFileSync(this.frameFile, initialFrame);
+    console.log(`Created initial frame file at ${this.frameFile}`);
 
     return true;
   }
 
   async startFFmpegProcess() {
     return new Promise((resolve, reject) => {
-      // Determine appropriate H.264 level based on resolution
-      let h264Level = '5.1'; // Use a higher level to accommodate the 1080p resolution
-
-      // If we have a very high resolution, consider downscaling
-      const inputWidth = this.config.width || 1920;
-      const inputHeight = this.config.height || 1080;
-
-      // Calculate output dimensions if needed
-      let outputWidth = inputWidth;
-      let outputHeight = inputHeight;
-
-      // Scale params - only add if we're downscaling
-      let scaleParams = [];
-
-      // For 1080p, we need to use a higher profile level
-      if (inputWidth >= 1920 || inputHeight >= 1080) {
-        // Using High profile instead of Baseline for better compatibility with 1080p
-        // and explicitly setting a higher H.264 level
-        h264Level = '5.1';
-      }
-
-      // More resilient FFmpeg configuration with high profile
+      // Using a completely different approach with image2 demuxer
+      // This uses a single input file that we'll update between frames
       const ffmpegArgs = [
-        '-f', 'mjpeg',                              // Input format is MJPEG
+        // Input options
+        '-re',                                       // Read input at native framerate
+        '-loop', '1',                                // Loop the input (we'll replace the file)
         '-framerate', String(this.config.frameRate || 1), // Input framerate
-        '-use_wallclock_as_timestamps', '1',        // Use system clock for timestamps
-        '-i', this.pipePath,                        // Input from FIFO
+        '-i', this.frameFile,                        // Input file that we'll update
 
-        // Video encoding settings adjusted for higher resolution
-        '-c:v', 'libx264',                          // H.264 encoder
-        '-preset', 'ultrafast',                     // Fastest encoding preset for low latency
-        '-tune', 'zerolatency',                     // Tune for low latency
+        // Video encoding options - using more compatible settings
+        '-c:v', 'libx264',                           // H.264 encoder
+        '-preset', 'ultrafast',                      // Fastest encoding preset for low latency
+        '-tune', 'zerolatency',                      // Tune for low latency
+        '-profile:v', 'baseline',                    // Most compatible profile
+        '-level', '4.0',                             // Compatible level for 1080p
+        '-pix_fmt', 'yuv420p',                       // Required pixel format for H.264
+        '-vf', 'format=yuv420p',                     // Force yuv420p pixel format
+        '-r', String(this.config.frameRate || 1),    // Output framerate
+        '-g', '30',                                  // Keyframe interval
+        '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2', // Ensure dimensions are even
 
-        // Changed from 'baseline' to 'high' for better support of 1080p
-        '-profile:v', 'high',
-        '-level', h264Level,                        // Higher level for 1080p
-
-        '-pix_fmt', 'yuv420p',                      // Required pixel format for H.264
-        '-r', String(this.config.frameRate || 1),   // Output framerate
-        '-g', '30',                                 // Keyframe interval
-        '-maxrate', '4M',                           // Maximum bitrate
-        '-bufsize', '8M',                           // Encoder buffer size (increased)
-
-        // Output settings
-        '-f', 'rtsp',                               // Output format RTSP
-        '-rtsp_transport', 'tcp',                   // Use TCP for RTSP (more reliable)
-        '-muxdelay', '0.1',                         // Low muxing delay
-        this.rtspUrl                                // Output URL
+        // RTSP output options
+        '-f', 'rtsp',                                // Output format RTSP
+        '-rtsp_transport', 'tcp',                    // Use TCP for RTSP (more reliable)
+        this.rtspUrl                                 // Output URL
       ];
 
       console.log('Starting FFmpeg RTSP server with command:', 'ffmpeg', ffmpegArgs.join(' '));
@@ -141,12 +105,14 @@ class RtspStreamer {
         const message = data.toString();
         errorOutput += message;
 
-        // Only log errors and warnings to keep logs cleaner
+        // Only log key messages to keep logs cleaner
         if (message.includes('Error') || message.includes('error') || message.includes('Invalid') ||
             message.includes('warning') || message.includes('Could not')) {
           console.error('FFmpeg stderr:', message);
-        } else if (message.includes('fps=') || message.includes('frame=')) {
-          // This indicates FFmpeg is successfully processing frames
+        }
+
+        // Look for indicators of successful initialization
+        if (message.includes('fps=') || message.includes('frame=')) {
           if (!initialized) {
             initialized = true;
             resolve();
@@ -185,14 +151,6 @@ class RtspStreamer {
   }
 
   async startFrameUpdates() {
-    // Open a write stream to the FIFO
-    this.pipeWriteStream = fs.createWriteStream(this.pipePath);
-
-    this.pipeWriteStream.on('error', (err) => {
-      console.error('Pipe write stream error:', err);
-      this.handleStreamError();
-    });
-
     // Mark as initialized now that everything is ready
     this.isInitialized = true;
 
@@ -208,27 +166,21 @@ class RtspStreamer {
       // Render a new frame
       const frame = this.renderer.renderFrame();
 
-      // Check if pipe is writable before attempting to write
-      if (this.pipeWriteStream && this.pipeWriteStream.writable) {
-        this.pipeWriteStream.write(frame, (err) => {
-          if (err) {
-            console.error('Error writing frame to FIFO:', err);
-            // Only handle as error if not a broken pipe (which is common when stopping)
-            if (err.code !== 'EPIPE' || !this.isStopping) {
-              this.handleStreamError();
-            }
-          } else {
-            this.frameCount++;
-            // Log frame count occasionally for monitoring
-            if (this.frameCount % 10 === 0) {
-              console.log(`Sent ${this.frameCount} frames to RTSP stream`);
-            }
-          }
-        });
-      } else {
-        if (!this.isStopping) {
-          console.error('FIFO write stream is not writable');
-        }
+      // Write the frame to the file that FFmpeg is reading
+      // Use a unique temporary filename to avoid partial reads
+      const tempFileName = `${this.tempDir}/frame_tmp_${Date.now()}.jpg`;
+
+      // Write to temp file first
+      fs.writeFileSync(tempFileName, frame);
+
+      // Then rename to the file FFmpeg is reading (atomic operation)
+      fs.renameSync(tempFileName, this.frameFile);
+
+      this.frameCount++;
+
+      // Log frame count occasionally for monitoring
+      if (this.frameCount % 10 === 0) {
+        console.log(`Updated frame file ${this.frameCount} times`);
       }
 
       // Schedule next frame based on frame rate
@@ -288,18 +240,7 @@ class RtspStreamer {
       console.log('Frame update interval cleared');
     }
 
-    // Close the pipe write stream
-    if (this.pipeWriteStream) {
-      try {
-        this.pipeWriteStream.end();
-        console.log('Pipe write stream closed');
-      } catch (err) {
-        console.error('Error closing pipe write stream:', err);
-      }
-      this.pipeWriteStream = null;
-    }
-
-    // Kill the FFmpeg process last
+    // Kill the FFmpeg process
     if (this.ffmpegProcess) {
       try {
         this.ffmpegProcess.kill('SIGTERM');
