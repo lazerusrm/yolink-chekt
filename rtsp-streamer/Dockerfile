@@ -1,44 +1,18 @@
-# Build stage (unchanged)
-FROM node:18-alpine AS builder
-WORKDIR /app
-RUN apk add --no-cache \
-    build-base \
-    g++ \
-    cairo-dev \
-    jpeg-dev \
-    pango-dev \
-    giflib-dev \
-    pixman-dev \
-    pangomm-dev \
-    libjpeg-turbo-dev \
-    freetype-dev \
-    python3
-COPY rtsp-streamer/package.json rtsp-streamer/package-lock.json* ./
-RUN npm install && npm cache clean --force
+# Use an official Python slim image
+FROM python:3.9-slim
 
-# Runtime stage
-FROM node:18-alpine
+# Set the working directory
 WORKDIR /app
-RUN apk add --no-cache \
-    ffmpeg \
-    cairo \
-    jpeg \
-    pango \
-    giflib \
-    pixman \
-    libjpeg-turbo \
-    freetype \
-    font-dejavu \
-    font-liberation \
-    fontconfig
-COPY --from=builder /app/node_modules ./node_modules
-COPY rtsp-streamer/server.js ./server.js
-COPY rtsp-streamer/webSocketClient.js ./webSocketClient.js
-COPY rtsp-streamer/DashboardRenderer.js ./DashboardRenderer.js
-COPY rtsp-streamer/rtspStreamer.js ./rtspStreamer.js
-COPY rtsp-streamer/apiRouter.js ./apiRouter.js
-COPY rtsp-streamer/onvif-service.js ./onvif-service.js
-COPY rtsp-streamer/package.json ./package.json
-RUN mkdir -p /tmp/streams
-EXPOSE 3001 8554 8555 9999
-CMD ["node", "server.js"]
+
+# Copy the RTSP streamer requirements and install them
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy the rest of your RTSP streamer code
+COPY . .
+
+# Expose the necessary ports (HTTP API, RTSP stream, WebSocket, WS-Discovery)
+EXPOSE 3001 8554 9999 3702
+
+# Start the server (make sure your entrypoint is named 'server.py')
+CMD ["python", "server.py"]

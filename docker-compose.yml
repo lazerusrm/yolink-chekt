@@ -46,8 +46,8 @@ services:
 
   rtsp-streamer:
     build:
-      context: .
-      dockerfile: rtsp-streamer/Dockerfile
+      context: ./yolink-chekt/rtsp-streamer
+      dockerfile: Dockerfile
     container_name: yolink-rtsp-streamer
     restart: unless-stopped
     environment:
