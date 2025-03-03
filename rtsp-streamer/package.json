@@ -12,7 +12,6 @@
     "express": "^4.18.2",
     "fluent-ffmpeg": "^2.1.2",
     "ip": "^1.1.8",
-    "node-onvif-server": "^0.0.3",
     "node-rtsp-stream": "^0.0.9",
     "uuid": "^9.0.0",
     "ws": "^8.13.0"
