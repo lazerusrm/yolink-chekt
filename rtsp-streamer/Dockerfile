@@ -27,7 +27,10 @@ RUN apk add --no-cache \
     giflib \
     pixman \
     libjpeg-turbo \
-    freetype
+    freetype \
+    font-dejavu \
+    font-liberation \
+    fontconfig
 COPY --from=builder /app/node_modules ./node_modules
 COPY rtsp-streamer/server.js ./server.js
 COPY rtsp-streamer/webSocketClient.js ./webSocketClient.js
