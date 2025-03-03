@@ -1,8 +1,4 @@
-/**
- * Dashboard Renderer for YoLink RTSP Streamer
- * Renders sensor data to a canvas for streaming
- */
-
+cat > /tmp/DashboardRenderer.js << 'EOF'
 const { createCanvas } = require('canvas');
 
 class DashboardRenderer {
@@ -285,7 +281,7 @@ class DashboardRenderer {
       
       // Sensor state
       let stateText = "unknown";
-
+      
       if (typeof sensor.state === 'object') {
         if (sensor.type === 'COSmokeSensor') {
           if (sensor.state.smokeAlarm) stateText = "SMOKE ALARM";
@@ -300,12 +296,12 @@ class DashboardRenderer {
       } else if (sensor.state !== undefined) {
         stateText = sensor.state.toString();
       }
-
+      
       ctx.fillText(`State: ${stateText}`, x + 20, y + 80);
-
+      
       // Additional sensor information
       let yOffset = 105;
-
+      
       // Show battery if available
       if (sensor.battery !== undefined && sensor.battery !== "unknown") {
         const batteryColor = sensor.battery <= 1 ? '#ff6666' : '#ffffff';
@@ -314,27 +310,55 @@ class DashboardRenderer {
         ctx.fillStyle = '#ffffff';
         yOffset += 25;
       }
-
+      
       // Show signal if available
       if (sensor.signal !== undefined && sensor.signal !== "unknown") {
         ctx.fillText(`Signal: ${sensor.signal}`, x + 20, y + yOffset);
         yOffset += 25;
       }
-
+      
       // Show temperature if available
       if (sensor.temperature !== undefined && sensor.temperature !== "unknown") {
         ctx.fillText(`Temp: ${sensor.temperature}°${sensor.temperatureUnit || 'F'}`, x + 20, y + yOffset);
         yOffset += 25;
       }
-
+      
       // Show humidity if available
       if (sensor.humidity !== undefined && sensor.humidity !== "unknown") {
         ctx.fillText(`Humidity: ${sensor.humidity}%`, x + 20, y + yOffset);
       }
-
+      
       // Show last seen if available
       if (sensor.last_seen && sensor.last_seen !== "never") {
         const lastSeenTime = sensor.last_seen.split(' ')[1] || sensor.last_seen;
         ctx.font = '12px Arial';
         ctx.fillText(`Last: ${lastSeenTime}`, x + 20, y + cellHeight - 35);
       }
+    });
+  }
+
+  renderFooter(ctx, width, height) {
+    // Add footer with timestamp and system information
+    ctx.fillStyle = '#333333';
+    ctx.fillRect(0, height - 30, width, 30);
+    
+    // Current time
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '14px Arial';
+    const timestamp = new Date().toLocaleString();
+    ctx.fillText(`Last Updated: ${timestamp}`, 10, height - 10);
+    
+    // System information on the right
+    const alarmText = this.alarmSensors.length > 0 ? 
+      `⚠️ ${this.alarmSensors.length} ALARM(S) ACTIVE` : 
+      'System Normal';
+    ctx.fillText(alarmText, width - ctx.measureText(alarmText).width - 20, height - 10);
+    
+    // Center - sensor stats
+    const sensorStats = `Active Sensors: ${this.sensorData.filter(s => s.last_seen && s.last_seen.includes('2025')).length}/${this.sensorData.length}`;
+    ctx.fillText(sensorStats, (width - ctx.measureText(sensorStats).width) / 2, height - 10);
+  }
+}
+
+module.exports = DashboardRenderer;
+EOF
