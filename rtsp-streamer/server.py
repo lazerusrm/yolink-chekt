@@ -27,7 +27,7 @@ config = {
     "dashboard_url": os.environ.get("DASHBOARD_URL", "http://websocket-proxy:3000"),
     "rtsp_port": int(os.environ.get("RTSP_PORT", 8554)),
     "stream_name": os.environ.get("STREAM_NAME", "yolink-dashboard"),
-    "frame_rate": int(os.environ.get("FRAME_RATE", 1)),
+    "frame_rate": int(os.environ.get("FRAME_RATE", 1)),  # Target 1 FPS
     "width": int(os.environ.get("WIDTH", 1920)),
     "height": int(os.environ.get("HEIGHT", 1080)),
     "cycle_interval": int(os.environ.get("CYCLE_INTERVAL", 10000)),  # in ms
@@ -65,7 +65,6 @@ class DashboardRenderer:
         self.current_page = 0
         self.total_pages = 1
         self.last_render_time = time.time()
-        # Use DejaVu fonts installed in the container
         try:
             self.font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 48)
             self.font_medium = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 32)
@@ -88,16 +87,13 @@ class DashboardRenderer:
             if not s:
                 continue
             state = s.get("state")
-            # Check standard alarm states
             if state in ["alarm", "leak", "motion", "open"]:
                 self.alarm_sensors.append(s)
                 continue
-            # Check COSmokeSensor states
             if s.get("type") == "COSmokeSensor" and isinstance(state, dict):
                 if state.get("smokeAlarm") or state.get("gasAlarm") or state.get("unexpected"):
                     self.alarm_sensors.append(s)
                     continue
-            # Low battery check using safe conversion
             battery_val = safe_float(s.get("battery"))
             if battery_val is not None and battery_val <= 1:
                 self.alarm_sensors.append(s)
@@ -277,7 +273,7 @@ class DashboardRenderer:
         draw.text(((self.width - stats_width) / 2, self.height - footer_height + 5), sensor_stats, font=self.font_xsmall, fill="#ffffff")
 
 # ----------------------
-# WebSocket Client (using websocket-client)
+# WebSocket Client
 # ----------------------
 import websocket
 
@@ -312,7 +308,7 @@ class WebSocketClient(threading.Thread):
             self.ws.close()
 
 # ----------------------
-# RTSP Streamer (pushes encoded frames to rtsp-simple-server)
+# RTSP Streamer (Updated for 1 FPS)
 # ----------------------
 class RtspStreamer(threading.Thread):
     def __init__(self, config, renderer):
@@ -322,6 +318,7 @@ class RtspStreamer(threading.Thread):
         self.ffmpeg_process = None
         self.daemon = True
         self.pipe_path = "/tmp/streams/dashboard_pipe"
+        self.running = True
         if not os.path.exists("/tmp/streams"):
             os.makedirs("/tmp/streams")
         if not os.path.exists(self.pipe_path):
@@ -332,68 +329,90 @@ class RtspStreamer(threading.Thread):
                 logging.error(f"Error creating FIFO pipe: {e}")
 
     def run(self):
-        self.start_ffmpeg()
-        frame_interval = 1.0 / self.config.get("frame_rate", 1)
-        try:
-            fifo = open(self.pipe_path, "wb")
-            logging.info(f"Opened FIFO {self.pipe_path} for writing")
-        except Exception as e:
-            logging.error(f"Error opening FIFO pipe: {e}")
-            return
-
-        while True:
-            frame = self.renderer.render_frame()
+        frame_interval = 1.0 / self.config.get("frame_rate", 1)  # 1 second for 1 FPS
+        while self.running:
+            self.start_ffmpeg()
+            time.sleep(2)  # Wait for FFmpeg to connect to MediaMTX
             try:
-                fifo.write(frame)
-                fifo.flush()
-                logging.debug("Wrote a frame to FIFO")
-            except BrokenPipeError as e:
-                logging.error(f"Broken pipe detected, restarting ffmpeg: {e}")
-                fifo.close()
+                with open(self.pipe_path, "wb") as fifo:
+                    logging.info(f"Opened FIFO {self.pipe_path} for writing")
+                    while self.running:
+                        frame = self.renderer.render_frame()
+                        try:
+                            fifo.write(frame)
+                            fifo.flush()
+                            logging.debug("Wrote frame to FIFO")
+                        except BrokenPipeError as e:
+                            logging.error(f"Broken pipe: {e}, restarting FFmpeg")
+                            break
+                        except Exception as e:
+                            logging.error(f"Error writing to FIFO: {e}")
+                        time.sleep(frame_interval)
+            except Exception as e:
+                logging.error(f"Failed to open FIFO: {e}")
+                time.sleep(2)
+            if self.running:
                 self.restart_stream()
                 time.sleep(1)
-                try:
-                    fifo = open(self.pipe_path, "wb")
-                    logging.info(f"Reopened FIFO {self.pipe_path} for writing")
-                except Exception as e:
-                    logging.error(f"Error reopening FIFO pipe: {e}")
-                    time.sleep(frame_interval)
-                    continue
-            except Exception as e:
-                logging.error(f"Error writing frame to pipe: {e}")
-            time.sleep(frame_interval)
 
     def start_ffmpeg(self):
-        # Push mode: we push the stream to rtsp-simple-server, which runs locally.
-        # Note: The rtsp-simple-server should be running in the container (see Dockerfile/entrypoint).
         rtsp_url = f"rtsp://127.0.0.1:{self.config.get('rtsp_port')}/{self.config.get('stream_name')}"
         cmd = [
             "ffmpeg",
-            "-re",
-            "-f", "image2pipe",
-            "-i", self.pipe_path,
-            "-c:v", "libx264",
-            "-f", "rtsp",
-            "-rtsp_transport", "tcp",
+            "-re",                # Real-time input
+            "-f", "image2pipe",   # Input format
+            "-i", self.pipe_path, # FIFO input
+            "-c:v", "libx264",    # Video codec
+            "-r", "1",            # Output frame rate: 1 FPS
+            "-preset", "ultrafast",  # Fast encoding
+            "-tune", "zerolatency",  # Reduce latency
+            "-bufsize", "100k",   # Small buffer for low frame rate
+            "-f", "rtsp",         # Output format
+            "-rtsp_transport", "tcp",  # Force TCP
             rtsp_url
         ]
-        logging.info("Starting FFmpeg with command: " + " ".join(cmd))
+        logging.info(f"Starting FFmpeg: {' '.join(cmd)}")
         try:
-            self.ffmpeg_process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            self.ffmpeg_process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True,
+                bufsize=1  # Line-buffered
+            )
+            threading.Thread(target=self.log_ffmpeg_output, daemon=True).start()
         except Exception as e:
             logging.error(f"Failed to start FFmpeg: {e}")
 
+    def log_ffmpeg_output(self):
+        """Log FFmpeg stdout and stderr."""
+        if not self.ffmpeg_process:
+            return
+        while self.ffmpeg_process.poll() is None:
+            stdout_line = self.ffmpeg_process.stdout.readline().strip()
+            stderr_line = self.ffmpeg_process.stderr.readline().strip()
+            if stdout_line:
+                logging.info(f"FFmpeg stdout: {stdout_line}")
+            if stderr_line:
+                logging.info(f"FFmpeg stderr: {stderr_line}")
+        logging.info(f"FFmpeg process ended with return code {self.ffmpeg_process.returncode}")
+
     def restart_stream(self):
         if self.ffmpeg_process:
-            self.ffmpeg_process.kill()
-        self.start_ffmpeg()
+            self.ffmpeg_process.terminate()
+            self.ffmpeg_process.wait()
+            self.ffmpeg_process = None
+        if self.running:
+            self.start_ffmpeg()
 
     def stop(self):
+        self.running = False
         if self.ffmpeg_process:
-            self.ffmpeg_process.kill()
+            self.ffmpeg_process.terminate()
+            self.ffmpeg_process.wait()
 
 # ----------------------
-# ONVIF Service (SOAP endpoint + WS-Discovery)
+# ONVIF Service
 # ----------------------
 class OnvifService(threading.Thread):
     def __init__(self, config, server_ip):
@@ -485,8 +504,8 @@ def status():
             "totalPages": renderer.total_pages,
         },
         "system": {
-            "uptime": time.time() - os.getpid(),  # Placeholder value
-            "memory": {}  # Optionally add memory details here
+            "uptime": time.time() - os.getpid(),
+            "memory": {}
         },
         "lastUpdate": datetime.datetime.now().isoformat()
     })
@@ -550,7 +569,6 @@ def set_page(page_num):
         "total_pages": renderer.total_pages
     })
 
-# SOAP endpoint for ONVIF
 @app.route('/onvif/device_service', methods=["POST"])
 def onvif_device_service():
     soap_action = request.headers.get("SOAPAction", "")
