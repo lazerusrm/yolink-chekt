@@ -322,10 +322,8 @@ class RtspStreamer(threading.Thread):
         self.ffmpeg_process = None
         self.daemon = True
         self.pipe_path = "/tmp/streams/dashboard_pipe"
-        # Ensure directory exists
         if not os.path.exists("/tmp/streams"):
             os.makedirs("/tmp/streams")
-        # Create the FIFO if it does not exist
         if not os.path.exists(self.pipe_path):
             try:
                 os.mkfifo(self.pipe_path)
@@ -349,6 +347,18 @@ class RtspStreamer(threading.Thread):
                 fifo.write(frame)
                 fifo.flush()
                 logging.debug("Wrote a frame to FIFO")
+            except BrokenPipeError as e:
+                logging.error(f"Broken pipe detected, restarting ffmpeg: {e}")
+                fifo.close()
+                self.restart_stream()
+                time.sleep(1)
+                try:
+                    fifo = open(self.pipe_path, "wb")
+                    logging.info(f"Reopened FIFO {self.pipe_path} for writing")
+                except Exception as e:
+                    logging.error(f"Error reopening FIFO pipe: {e}")
+                    time.sleep(frame_interval)
+                    continue
             except Exception as e:
                 logging.error(f"Error writing frame to pipe: {e}")
             time.sleep(frame_interval)

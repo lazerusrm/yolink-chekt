@@ -1,0 +1,11 @@
+# rtsp-simple-server.yml
+protocols: [tcp, udp]
+rtspPort: 8554
+rtmpPort: 1935
+hls:
+  segmentCount: 3
+paths:
+  yolink-dashboard:
+    # Allow pushing streams without authentication
+    allowPublish: yes
+    allowPlay: yes
