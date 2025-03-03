@@ -349,7 +349,6 @@ def set_door_prop_alarm():
     return jsonify({"status": "success"})
 
 @app.route("/get_sensor_data")
-@login_required
 def get_sensor_data():
     devices = get_all_devices()
     mappings = get_mappings().get("mappings", [])
