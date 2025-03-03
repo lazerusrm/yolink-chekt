@@ -152,4 +152,3 @@ class RtspStreamer {
 }
 
 module.exports = RtspStreamer;
-rtsp-streamer
