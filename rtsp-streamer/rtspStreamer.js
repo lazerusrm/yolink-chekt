@@ -1,10 +1,14 @@
-const { spawn } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+const { spawn, execSync } = require('child_process');
 
 class RtspStreamer {
   constructor(config, renderer) {
     this.config = config;
     this.renderer = renderer;
+    this.pipePath = path.join('/tmp/streams', 'dashboard_pipe');
     this.ffmpegProcess = null;
+    this.pipeWriteStream = null;
     this.updateInterval = null;
     this.isStopping = false;
     this.retryCount = 0;
@@ -19,26 +23,40 @@ class RtspStreamer {
     if (this.isStopping) return;
 
     try {
-      // Start FFmpeg with MJPEG input to force JPEG recognition
+      // Ensure the directory for the pipe exists
+      const pipeDir = path.dirname(this.pipePath);
+      if (!fs.existsSync(pipeDir)) {
+        fs.mkdirSync(pipeDir, { recursive: true });
+        console.log(`Created directory for pipe: ${pipeDir}`);
+      }
+
+      // Create a named pipe (FIFO) if it doesn't exist
+      if (!fs.existsSync(this.pipePath)) {
+        console.log(`Creating FIFO at ${this.pipePath}`);
+        execSync(`mkfifo ${this.pipePath}`);
+      }
+
+      // Start FFmpeg reading from the FIFO
       this.startRTSPServer();
 
-      // Immediately write an initial frame
+      // Open a persistent write stream to the FIFO
+      this.pipeWriteStream = fs.createWriteStream(this.pipePath);
+      this.pipeWriteStream.on('error', (err) => {
+        console.error('Pipe write stream error:', err);
+        this.handleStreamError();
+      });
+
+      // Immediately write an initial frame so FFmpeg can negotiate headers
       const initialFrame = this.renderer.renderFrame();
-      if (this.ffmpegProcess && this.ffmpegProcess.stdin.writable) {
-        // Optional: log first two bytes to confirm JPEG header (should be 0xFF, 0xD8)
-        console.log('Initial frame header bytes:', initialFrame[0].toString(16), initialFrame[1].toString(16));
-        this.ffmpegProcess.stdin.write(initialFrame, (err) => {
-          if (err) {
-            console.error('Error writing initial frame:', err);
-            this.handleStreamError();
-          } else {
-            // Start frame updates after a brief pause to ensure FFmpeg parses the header
-            setTimeout(() => this.updateFrame(), 200);
-          }
-        });
-      } else {
-        throw new Error('FFmpeg stdin is not writable during initialization.');
-      }
+      this.pipeWriteStream.write(initialFrame, (err) => {
+        if (err) {
+          console.error('Error writing initial frame:', err);
+          this.handleStreamError();
+        } else {
+          // Give FFmpeg a moment to parse the header, then start frame updates
+          setTimeout(() => this.updateFrame(), 200);
+        }
+      });
     } catch (err) {
       console.error('Failed to initialize RTSP stream:', err);
       this.handleStreamError();
@@ -46,11 +64,11 @@ class RtspStreamer {
   }
 
   startRTSPServer() {
-    // Use -f mjpeg to indicate input is a stream of JPEG images
+    // Use -f mjpeg to tell FFmpeg that the input stream is a series of JPEG images
     const ffmpegArgs = [
       '-f', 'mjpeg',
       '-framerate', String(this.config.frameRate || 1),
-      '-i', 'pipe:0',
+      '-i', this.pipePath,
       '-c:v', 'libx264',
       '-profile:v', 'baseline',
       '-pix_fmt', 'yuv420p',
@@ -62,10 +80,7 @@ class RtspStreamer {
 
     console.log('Starting FFmpeg RTSP server with command:', 'ffmpeg', ffmpegArgs.join(' '));
 
-    this.ffmpegProcess = spawn('ffmpeg', ffmpegArgs, {
-      detached: false,
-      stdio: ['pipe', 'pipe', 'pipe']
-    });
+    this.ffmpegProcess = spawn('ffmpeg', ffmpegArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
 
     this.ffmpegProcess.stdout.on('data', (data) => {
       console.log('FFmpeg stdout:', data.toString());
@@ -93,26 +108,19 @@ class RtspStreamer {
 
     try {
       const frame = this.renderer.renderFrame();
-      if (this.ffmpegProcess && this.ffmpegProcess.stdin.writable) {
-        this.ffmpegProcess.stdin.write(frame, (err) => {
+      if (this.pipeWriteStream && this.pipeWriteStream.writable) {
+        this.pipeWriteStream.write(frame, (err) => {
           if (err) {
-            console.error('Error writing frame to ffmpeg stdin:', err);
+            console.error('Error writing frame to FIFO:', err);
             this.handleStreamError();
           }
         });
       } else {
-        console.error('FFmpeg process STDIN not writable');
+        console.error('FIFO write stream is not writable');
       }
 
-      // Log occasionally
-      if (Math.random() < 0.01) {
-        console.log('Frame sent to ffmpeg successfully');
-      }
-
-      this.updateInterval = setTimeout(
-        () => this.updateFrame(),
-        1000 / (this.config.frameRate || 1)
-      );
+      // Schedule next frame based on frame rate
+      this.updateInterval = setTimeout(() => this.updateFrame(), 1000 / (this.config.frameRate || 1));
     } catch (err) {
       console.error('Error updating frame:', err);
       this.handleStreamError();
@@ -152,6 +160,11 @@ class RtspStreamer {
         console.error('Error stopping FFmpeg process:', err);
       }
       this.ffmpegProcess = null;
+    }
+
+    if (this.pipeWriteStream) {
+      this.pipeWriteStream.end();
+      this.pipeWriteStream = null;
     }
 
     if (this.updateInterval) {
