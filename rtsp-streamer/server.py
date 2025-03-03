@@ -67,12 +67,12 @@ class DashboardRenderer:
         self.last_render_time = time.time()
         # Try to load a TrueType font; fall back to default if not available
         try:
-            self.font_large = ImageFont.truetype("arial.ttf", 36)
-            self.font_medium = ImageFont.truetype("arial.ttf", 24)
-            self.font_small = ImageFont.truetype("arial.ttf", 16)
-            self.font_xsmall = ImageFont.truetype("arial.ttf", 12)
+            self.font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 48)
+            self.font_medium = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 32)
+            self.font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 24)
+            self.font_xsmall = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 16)
         except Exception as e:
-            logging.warning("Could not load TrueType fonts, using default fonts.")
+            logging.warning("Could not load DejaVu fonts, using default fonts.")
             self.font_large = ImageFont.load_default()
             self.font_medium = ImageFont.load_default()
             self.font_small = ImageFont.load_default()
