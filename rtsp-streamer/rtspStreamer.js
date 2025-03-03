@@ -40,8 +40,9 @@ class RtspStreamer {
           '-bufsize': '2M',
           '-maxrate': '2M',
           '-g': (this.config.frameRate * 2).toString(),
+          '-rtsp_flags': 'listen',  // New option: make ffmpeg act as an RTSP server
           '-f': 'rtsp',
-          '-rtsp_transport': 'tcp',
+          '-rtsp_transport': 'tcp'
         },
       };
 
@@ -88,4 +89,4 @@ class RtspStreamer {
   }
 }
 
-module.exports = RtspStreamer;*
+module.exports = RtspStreamer;
