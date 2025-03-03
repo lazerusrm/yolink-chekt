@@ -23,7 +23,6 @@ const config = {
   serverIp: process.env.SERVER_IP === 'auto' ? ip.address() : process.env.SERVER_IP || ip.address()
 };
 
-// Warn if using auto-detected IP in Docker
 if (process.env.SERVER_IP === 'auto') {
   console.warn('Using auto-detected IP. In Docker, set SERVER_IP to the host\'s IP for external access.');
 }
@@ -46,7 +45,7 @@ function connectToDashboard() {
   ws.on('message', (data) => {
     try {
       const message = JSON.parse(data.toString());
-      console.log('Received WebSocket message:', message);
+      console.log('Received WebSocket message:', JSON.stringify(message));
       if (message.type === 'sensors-update') {
         sensorData = message.sensors || [];
         alarmSensors = sensorData.filter(s => ['alarm', 'leak', 'motion', 'open'].includes(s.state));
@@ -96,8 +95,7 @@ function renderDashboard() {
 
   ctx.fillStyle = '#ffffff';
   ctx.font = '14px Arial';
-  const timestamp = new Date().toLocaleString();
-  ctx.fillText(`Last Updated: ${timestamp}`, 10, config.height - 20);
+  ctx.fillText(`Last Updated: ${new Date().toLocaleString()}`, 10, config.height - 20);
 
   return canvas.toBuffer('image/jpeg');
 }
@@ -106,6 +104,9 @@ function renderDashboard() {
 const streamDir = '/tmp/streams';
 if (!fs.existsSync(streamDir)) fs.mkdirSync(streamDir, { recursive: true });
 const imagePath = path.join(streamDir, 'dashboard.jpg');
+
+// Write initial frame
+fs.writeFileSync(imagePath, renderDashboard());
 
 const streamOptions = {
   name: config.streamName,
