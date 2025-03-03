@@ -30,6 +30,10 @@ RUN apk add --no-cache \
     freetype
 COPY --from=builder /app/node_modules ./node_modules
 COPY rtsp-streamer/server.js ./server.js
+COPY rtsp-streamer/webSocketClient.js ./webSocketClient.js
+COPY rtsp-streamer/DashboardRenderer.js ./DashboardRenderer.js
+COPY rtsp-streamer/rtspStreamer.js ./rtspStreamer.js
+COPY rtsp-streamer/apiRouter.js ./apiRouter.js
 COPY rtsp-streamer/onvif-service.js ./onvif-service.js
 COPY rtsp-streamer/package.json ./package.json
 RUN mkdir -p /tmp/streams
