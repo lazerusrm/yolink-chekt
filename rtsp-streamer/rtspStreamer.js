@@ -12,6 +12,10 @@ class RtspStreamer {
     this.isStopping = false;
     this.retryCount = 0;
     this.maxRetries = 5;
+
+    // For RTSP server
+    this.rtspPort = this.config.rtspPort || 8554;
+    this.rtspUrl = `rtsp://${this.config.serverIp}:${this.rtspPort}/${this.config.streamName}`;
   }
 
   initialize() {
@@ -30,8 +34,8 @@ class RtspStreamer {
       fs.writeFileSync(this.imagePath, initialFrame);
       console.log('Initial frame written to', this.imagePath);
 
-      // Start ffmpeg directly
-      this.startFFmpeg();
+      // Start simple RTSP server (using ffserver approach)
+      this.startRTSPServer();
 
       // Start updating frames
       this.updateFrame();
@@ -41,40 +45,38 @@ class RtspStreamer {
     }
   }
 
-  startFFmpeg() {
-    const rtspUrl = `rtsp://${this.config.serverIp}:${this.config.rtspPort}/${this.config.streamName}`;
-
-    // Build ffmpeg command
+  startRTSPServer() {
+    // First, start ffmpeg to generate an RTSP stream using TCP
     const ffmpegArgs = [
-      '-re',                // Read input at native frame rate
-      '-f', 'image2',       // Force image format
-      '-loop', '1',         // Loop the input
-      '-r', this.config.frameRate.toString(), // Frame rate
-      '-i', this.imagePath, // Input file
-      '-c:v', 'libx264',    // Video codec
-      '-preset', 'ultrafast',
-      '-tune', 'zerolatency',
+      '-re',
+      '-loop', '1',
+      '-framerate', String(this.config.frameRate || 1),
+      '-i', this.imagePath,
+      '-c:v', 'libx264',
+      '-profile:v', 'baseline',
       '-pix_fmt', 'yuv420p',
-      '-f', 'rtsp',         // Output format
+      '-f', 'rtsp',
       '-rtsp_transport', 'tcp',
-      rtspUrl               // Output URL
+      '-muxdelay', '0.1',
+      this.rtspUrl
     ];
 
-    console.log('Starting FFmpeg with command: ffmpeg', ffmpegArgs.join(' '));
+    console.log('Starting FFmpeg RTSP server with command:', 'ffmpeg', ffmpegArgs.join(' '));
 
-    // Start FFmpeg process
-    this.ffmpegProcess = spawn('ffmpeg', ffmpegArgs);
+    this.ffmpegProcess = spawn('ffmpeg', ffmpegArgs, {
+      detached: false,
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
 
-    // Handle FFmpeg output
     this.ffmpegProcess.stdout.on('data', (data) => {
-      console.log(`FFmpeg stdout: ${data}`);
+      console.log('FFmpeg stdout:', data.toString());
     });
 
     this.ffmpegProcess.stderr.on('data', (data) => {
-      // FFmpeg logs to stderr by default, so only log important messages
       const message = data.toString();
+      // Filter out repetitive messages
       if (message.includes('Error') || message.includes('error') || message.includes('warning')) {
-        console.error(`FFmpeg stderr: ${message}`);
+        console.error('FFmpeg stderr:', message);
       }
     });
 
@@ -85,7 +87,7 @@ class RtspStreamer {
       }
     });
 
-    console.log(`RTSP stream started at ${rtspUrl}`);
+    console.log(`RTSP stream should be available at: ${this.rtspUrl}`);
   }
 
   updateFrame() {
@@ -117,7 +119,7 @@ class RtspStreamer {
       this.stop();
       setTimeout(() => this.initialize(), delay);
     } else {
-      console.error(`Max retries (${this.maxRetries}) reached. Please check configuration.`);
+      console.error(`Max retries (${this.maxRetries}) reached. Please check configuration and restart manually.`);
       this.stop();
     }
   }
