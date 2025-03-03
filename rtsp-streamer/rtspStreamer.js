@@ -1,4 +1,3 @@
-cat > /tmp/rtspStreamer.js << 'EOF'
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
@@ -153,7 +152,4 @@ class RtspStreamer {
 }
 
 module.exports = RtspStreamer;
-EOF
-
-docker cp /tmp/rtspStreamer.js yolink-rtsp-streamer:/app/
-docker restart yolink-rtsp-streamer
+rtsp-streamer
