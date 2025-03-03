@@ -325,22 +325,34 @@ class RtspStreamer(threading.Thread):
         self.ffmpeg_process = None
         self.daemon = True
         self.pipe_path = "/tmp/streams/dashboard_pipe"
+        # Ensure directory exists
         if not os.path.exists("/tmp/streams"):
             os.makedirs("/tmp/streams")
+        # Create the FIFO if it does not exist
         if not os.path.exists(self.pipe_path):
             try:
                 os.mkfifo(self.pipe_path)
+                logging.info(f"FIFO created at {self.pipe_path}")
             except Exception as e:
                 logging.error(f"Error creating FIFO pipe: {e}")
 
     def run(self):
         self.start_ffmpeg()
         frame_interval = 1.0 / self.config.get("frame_rate", 1)
+        # Open the FIFO pipe once for writing; this provides a continuous stream.
+        try:
+            fifo = open(self.pipe_path, "wb")
+            logging.info(f"Opened FIFO {self.pipe_path} for writing")
+        except Exception as e:
+            logging.error(f"Error opening FIFO pipe: {e}")
+            return
+
         while True:
             frame = self.renderer.render_frame()
             try:
-                with open(self.pipe_path, "wb") as fifo:
-                    fifo.write(frame)
+                fifo.write(frame)
+                fifo.flush()
+                logging.debug("Wrote a frame to FIFO")
             except Exception as e:
                 logging.error(f"Error writing frame to pipe: {e}")
             time.sleep(frame_interval)
