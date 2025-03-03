@@ -6,6 +6,5 @@ hls:
   segmentCount: 3
 paths:
   yolink-dashboard:
-    # Allow pushing streams without authentication
     allowPublish: yes
     allowPlay: yes

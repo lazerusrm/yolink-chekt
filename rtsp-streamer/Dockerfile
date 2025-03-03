@@ -23,9 +23,8 @@ RUN mkdir -p /tmp/streams
 # Set working directory
 WORKDIR /app
 
-# Copy the rtsp-simple-server configuration file
-# (This file should define a path like 'yolink-dashboard' with allowPublish enabled)
-COPY rtsp-simple-server.yml /app/rtsp-simple-server.yml
+# Copy the rtsp-simple-server configuration file into /opt so it's available at /opt/rtsp-simple-server.yml
+COPY rtsp-simple-server.yml /opt/rtsp-simple-server.yml
 
 # Copy requirements and install Python dependencies
 COPY requirements.txt .
