@@ -1,6 +1,17 @@
 #!/bin/bash
-# Start rtsp-simple-server with the configuration file located in /opt
-rtsp-simple-server /opt/rtsp-simple-server.yml &
+set -e  # Exit on error
 
-# Start the Python application
+# Start MediaMTX and capture its PID
+mediamtx /opt/mediamtx.yml &
+MEDIAMTX_PID=$!
+
+# Wait briefly to ensure MediaMTX starts, then check if it's running
+sleep 2
+if ! ps -p $MEDIAMTX_PID > /dev/null; then
+    echo "Error: MediaMTX failed to start. Check logs."
+    cat /opt/mediamtx.log  # Assuming MediaMTX logs here
+    exit 1
+fi
+
+# Start the Python app
 exec python server.py

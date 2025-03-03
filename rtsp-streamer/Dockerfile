@@ -1,7 +1,6 @@
-# Use an official Python slim image
 FROM python:3.9-slim
 
-# Install dependencies: FFmpeg, fonts, and debug tools
+# Install dependencies
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     fonts-dejavu \
@@ -11,35 +10,31 @@ RUN apt-get update && apt-get install -y \
     vim \
  && rm -rf /var/lib/apt/lists/*
 
-# Download rtsp-simple-server (mediaMTX)
-RUN curl -L https://github.com/aler9/rtsp-simple-server/releases/download/v0.20.1/rtsp-simple-server_v0.20.1_linux_amd64.tar.gz -o rtsp-simple-server.tar.gz \
-    && tar -xzvf rtsp-simple-server.tar.gz \
-    && mv rtsp-simple-server /usr/local/bin/rtsp-simple-server \
-    && rm rtsp-simple-server.tar.gz
+# Download MediaMTX v0.20.1
+RUN curl -L https://github.com/aler9/rtsp-simple-server/releases/download/v0.20.1/rtsp-simple-server_v0.20.1_linux_amd64.tar.gz -o mediamtx.tar.gz \
+    && tar -xzvf mediamtx.tar.gz \
+    && mv rtsp-simple-server /usr/local/bin/mediamtx \
+    && rm mediamtx.tar.gz
 
-# Create FIFO directory (used for RTSP streaming)
+# Create FIFO directory
 RUN mkdir -p /tmp/streams
 
-# Set working directory
 WORKDIR /app
 
-# Copy the rtsp-simple-server configuration file into /opt so it's available at /opt/rtsp-simple-server.yml
-COPY rtsp-simple-server.yml /opt/rtsp-simple-server.yml
+# Copy config (renamed for clarity)
+COPY mediamtx.yml /opt/mediamtx.yml
 
-# Copy requirements and install Python dependencies
+# Install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of your application code
+# Copy application code
 COPY . .
 
-# Copy the entrypoint script and ensure it's executable
+# Copy and set entrypoint
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-# Expose the necessary ports:
-# 3001 for the Flask API; 8554 for RTSP; 8555 for ONVIF; 3702 for WS-Discovery.
 EXPOSE 3001 8554 8555 3702
 
-# Set the entrypoint
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
