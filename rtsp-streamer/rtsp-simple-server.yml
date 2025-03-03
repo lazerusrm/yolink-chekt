@@ -1,11 +1,11 @@
-protocols: [tcp, udp]
-rtsp:
-  port: 8554
-rtmp:
-  port: 1935
+logLevel: info
+protocols: [udp, tcp]  # RTSP transport protocols
+rtspAddress: ":8554"
+rtmpAddress: ":1935"
+hlsAddress: ":8888"    # Simplified HLS config (alternative to nested)
 hls:
   segmentCount: 3
+  segmentDuration: 2s  # Explicitly seconds for clarity
 paths:
   yolink-dashboard:
-    allowPublish: yes
-    allowPlay: yes
+    source: publisher    # Expects a publisher to push to this path
