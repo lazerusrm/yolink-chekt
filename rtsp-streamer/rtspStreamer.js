@@ -19,10 +19,18 @@ class RtspStreamer {
     if (this.isStopping) return;
 
     try {
-      // Start ffmpeg with pipe input (instead of a static file)
+      // Start ffmpeg with pipe input (removing -re)
       this.startRTSPServer();
 
-      // Begin updating frames by writing them to ffmpeg's STDIN
+      // Immediately write an initial frame so FFmpeg can read the header info
+      const initialFrame = this.renderer.renderFrame();
+      if (this.ffmpegProcess && this.ffmpegProcess.stdin.writable) {
+        this.ffmpegProcess.stdin.write(initialFrame);
+      } else {
+        throw new Error('FFmpeg stdin is not writable during initialization.');
+      }
+
+      // Start the frame update loop
       this.updateFrame();
     } catch (err) {
       console.error('Failed to initialize RTSP stream:', err);
@@ -31,9 +39,8 @@ class RtspStreamer {
   }
 
   startRTSPServer() {
-    // Use image2pipe input so that ffmpeg reads consecutive JPEG images from STDIN.
+    // Removed the -re flag for pipe input
     const ffmpegArgs = [
-      '-re',
       '-f', 'image2pipe',
       '-framerate', String(this.config.frameRate || 1),
       '-i', 'pipe:0',
@@ -78,10 +85,8 @@ class RtspStreamer {
     if (this.isStopping) return;
 
     try {
-      // Render a new JPEG frame from your dashboard renderer
       const frame = this.renderer.renderFrame();
 
-      // Write the frame directly to ffmpeg's STDIN
       if (this.ffmpegProcess && this.ffmpegProcess.stdin.writable) {
         this.ffmpegProcess.stdin.write(frame, (err) => {
           if (err) {
@@ -93,12 +98,11 @@ class RtspStreamer {
         console.error('FFmpeg process STDIN not writable');
       }
 
-      // Log occasionally
+      // Log occasionally to avoid spamming logs
       if (Math.random() < 0.01) {
         console.log('Frame sent to ffmpeg successfully');
       }
 
-      // Schedule next frame update based on frame rate
       this.updateInterval = setTimeout(
         () => this.updateFrame(),
         1000 / (this.config.frameRate || 1)
