@@ -114,27 +114,30 @@ const imagePath = path.join(streamDir, 'dashboard.jpg');
 
 const streamOptions = {
   name: config.streamName,
-  streamUrl: `rtsp://${config.serverIp}:${config.rtspPort}/${config.streamName}`,
-  wsPort: 9999, // WebSocket port for RTSP clients (not exposed externally)
-  ffmpegOptions: {
-    '-f': 'image2',
-    '-r': config.frameRate.toString(),
-    '-i': imagePath,
-    '-c:v': 'libx264',
-    '-preset': 'ultrafast',
-    '-tune': 'zerolatency',
-    '-pix_fmt': 'yuv420p',
-    '-profile:v': 'baseline',
-    '-b:v': '2M',
-    '-bufsize': '2M',
-    '-maxrate': '2M',
-    '-g': (config.frameRate * 2).toString(),
-    '-f': 'rtsp',
-    '-rtsp_transport': 'tcp'
-  }
+  streamUrl: `rtsp://0.0.0.0:${config.rtspPort}/${config.streamName}`, // Internal bind address
+  wsPort: 9999,
+  ffmpegPath: '/usr/bin/ffmpeg',
+  ffmpegArgs: [
+    '-f', 'image2',
+    '-loop', '1',
+    '-r', config.frameRate.toString(),
+    '-i', imagePath,
+    '-c:v', 'libx264',
+    '-preset', 'ultrafast',
+    '-tune', 'zerolatency',
+    '-pix_fmt', 'yuv420p',
+    '-b:v', '2M',
+    '-bufsize', '2M',
+    '-maxrate', '2M',
+    '-g', (config.frameRate * 2).toString(),
+    '-f', 'rtsp',
+    '-rtsp_transport', 'tcp',
+    `rtsp://0.0.0.0:${config.rtspPort}/${config.streamName}`
+  ]
 };
+
 const rtspStream = new Stream(streamOptions);
-console.log(`RTSP stream started: ${streamOptions.streamUrl}`);
+console.log(`RTSP stream started: rtsp://${config.serverIp}:${config.rtspPort}/${config.streamName}`);
 
 // Update frame periodically
 function updateFrame() {
