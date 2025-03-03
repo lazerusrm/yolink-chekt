@@ -366,7 +366,7 @@ class RtspStreamer(threading.Thread):
     def start_ffmpeg(self):
         # Push mode: we push the stream to rtsp-simple-server, which runs locally.
         # Note: The rtsp-simple-server should be running in the container (see Dockerfile/entrypoint).
-        rtsp_url = f"rtsp://127.0.0.1:{self.config.get('rtsp_port')}/{self.config.get('stream_name')}?push=1"
+        rtsp_url = f"rtsp://127.0.0.1:{self.config.get('rtsp_port')}/{self.config.get('stream_name')}"
         cmd = [
             "ffmpeg",
             "-re",
