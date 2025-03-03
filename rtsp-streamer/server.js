@@ -158,7 +158,7 @@ setInterval(() => {
 // ONVIF Service
 let onvifService = null;
 if (config.enableOnvif) {
-  onvifService = new OnvifService(config);
+  onvifService = new OnvifService(config, server);
   onvifService.initialize(streamOptions.streamUrl);
 }
 
@@ -166,9 +166,7 @@ if (config.enableOnvif) {
 const app = express();
 const server = http.createServer(app);
 
-app.get('/', (req, res) => {
-  res.send('YoLink RTSP Streamer with ONVIF is running!');
-});
+app.get('/', (req, res) => res.send('YoLink RTSP Streamer with ONVIF is running!'));
 
 app.get('/status', (req, res) => {
   const streamUrl = streamOptions.streamUrl;

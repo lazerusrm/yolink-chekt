@@ -59,14 +59,14 @@ services:
       - WIDTH=${WIDTH:-1920}
       - HEIGHT=${HEIGHT:-1080}
       - CYCLE_INTERVAL=${CYCLE_INTERVAL:-10000}
-      - ONVIF_PORT=${ONVIF_PORT:-8555}
+      - ONVIF_PORT=${ONVIF_PORT:-3001}  # Changed to match HTTP port
       - ENABLE_ONVIF=${ENABLE_ONVIF:-true}
       - SERVER_IP=${SERVER_IP:-auto}
+      - RTSP_API_PORT=${RTSP_API_PORT:-3001}
     ports:
       - "${RTSP_PORT:-8554}:8554"
-      - "${ONVIF_PORT:-8555}:8555"
-      - "${RTSP_API_PORT:-3001}:3001"
-      - "1900:1900/udp"
+      - "${RTSP_API_PORT:-3001}:3001"  # Adjusted from 8555
+      - "1900:1900/udp"  # For WS-Discovery
     depends_on:
       - websocket-proxy
     networks:

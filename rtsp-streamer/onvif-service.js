@@ -4,8 +4,9 @@ const ip = require('ip');
 const uuid = require('uuid');
 
 class OnvifService {
-  constructor(config) {
+  constructor(config, server) {
     this.config = config;
+    this.server = server; // HTTP server from server.js
     this.rtspUrl = null;
     this.serverIp = config.serverIp || ip.address();
     this.onvifPort = config.onvifPort || 8555;
@@ -94,14 +95,7 @@ class OnvifService {
       </definitions>
     `;
 
-    const soapServer = soap.listen(null, {
-      path: '/onvif/device_service',
-      port: this.onvifPort,
-      services: service,
-      xml: wsdl
-    });
-
-    soapServer.on('error', (err) => console.error('SOAP server error:', err));
+    soap.listen(this.server, '/onvif/device_service', service, wsdl);
     console.log(`SOAP server running on http://${this.serverIp}:${this.onvifPort}/onvif/device_service`);
   }
 
@@ -143,7 +137,7 @@ class OnvifService {
       this.discoverySocket.close();
       console.log('WS-Discovery stopped');
     }
-    // SOAP server stop is handled by server shutdown in server.js
+    // SOAP server stops with the Express server
   }
 }
 

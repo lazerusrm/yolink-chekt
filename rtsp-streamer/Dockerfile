@@ -1,4 +1,4 @@
-# Build stage
+# Build stage (unchanged)
 FROM node:18-alpine AS builder
 WORKDIR /app
 RUN apk add --no-cache \
@@ -33,5 +33,5 @@ COPY rtsp-streamer/server.js ./server.js
 COPY rtsp-streamer/onvif-service.js ./onvif-service.js
 COPY rtsp-streamer/package.json ./package.json
 RUN mkdir -p /tmp/streams
-EXPOSE 3001 8554 9999 8555
+EXPOSE 3001 8554 9999  # Removed 8555 since SOAP uses 3001 now
 CMD ["node", "server.js"]
