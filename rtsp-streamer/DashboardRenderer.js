@@ -1,4 +1,3 @@
-cat > /tmp/DashboardRenderer.js << 'EOF'
 const { createCanvas } = require('canvas');
 
 class DashboardRenderer {
@@ -361,4 +360,3 @@ class DashboardRenderer {
 }
 
 module.exports = DashboardRenderer;
-EOF
