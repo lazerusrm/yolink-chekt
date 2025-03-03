@@ -1,265 +1,393 @@
-const fs = require('fs');
-const path = require('path');
-const { spawn, execSync } = require('child_process');
+const { createCanvas } = require('canvas');
 
-class RtspStreamer {
-  constructor(config, renderer) {
-    this.config = config;
-    this.renderer = renderer;
-    this.tempDir = '/tmp/streams';
-    this.frameFile = path.join(this.tempDir, 'current_frame.jpg');
-    this.inputListPath = path.join(this.tempDir, 'input.txt');
-    this.ffmpegProcess = null;
-    this.updateInterval = null;
-    this.isStopping = false;
-    this.retryCount = 0;
-    this.maxRetries = 5;
-    this.frameCount = 0;
+class DashboardRenderer {
+  constructor(config) {
+    // Ensure dimensions are even numbers (required for H.264 encoding)
+    const width = Math.floor((config.width || 1920) / 2) * 2;
+    const height = Math.floor((config.height || 1080) / 2) * 2;
 
-    // For RTSP server
-    this.rtspPort = this.config.rtspPort || 8554;
-    this.rtspUrl = `rtsp://${this.config.serverIp}:${this.rtspPort}/${this.config.streamName}`;
+    this.canvas = createCanvas(width, height);
+    this.ctx = this.canvas.getContext('2d');
+    this.sensorData = [];
+    this.alarmSensors = [];
+    this.currentPage = 0;
+    this.totalPages = 1;
+    this.lastRenderTime = Date.now();
 
-    // Flag to track initialization state
-    this.isInitialized = false;
+    console.log(`Initialized dashboard renderer with dimensions: ${width}x${height}`);
   }
 
-  initialize() {
-    if (this.isStopping || this.isInitialized) return;
+  updateSensors(sensors) {
+    if (!Array.isArray(sensors)) {
+      console.error('Invalid sensor data: not an array');
+      return;
+    }
 
+    this.sensorData = sensors;
+
+    // Filter for sensors in alarm state
+    this.alarmSensors = sensors.filter(s => {
+      if (!s) return false;
+
+      // Check different types of alarm states
+      if (['alarm', 'leak', 'motion', 'open'].includes(s.state)) return true;
+
+      // Check for COSmokeSensor unexpected state
+      if (s.type === 'COSmokeSensor' &&
+          s.state &&
+          typeof s.state === 'object' &&
+          (s.state.smokeAlarm || s.state.gasAlarm || s.state.unexpected)) {
+        return true;
+      }
+
+      // Check for low battery (level 1 or lower)
+      if (s.battery !== undefined && s.battery <= 1) return true;
+
+      return false;
+    });
+
+    // Calculate total pages based on sensors that need to be displayed
+    const sensorsPerPage = 12;
+    this.totalPages = Math.max(1, Math.ceil(this.sensorData.length / sensorsPerPage));
+
+    // Make sure current page is valid
+    if (this.currentPage >= this.totalPages) {
+      this.currentPage = 0;
+    }
+
+    // Log update info
+    console.log(`Updated sensors: ${this.sensorData.length}, alarms: ${this.alarmSensors.length}, pages: ${this.totalPages}`);
+  }
+
+  setPage(page) {
+    if (typeof page !== 'number') {
+      console.error('Invalid page number:', page);
+      return;
+    }
+
+    this.currentPage = Math.max(0, Math.min(page, this.totalPages - 1));
+    console.log(`Set page to ${this.currentPage + 1}/${this.totalPages}`);
+  }
+
+  renderFrame() {
+    const ctx = this.ctx;
+    const now = Date.now();
+    const frameTime = now - this.lastRenderTime;
+    this.lastRenderTime = now;
+
+    // Get canvas dimensions
+    const width = this.canvas.width;
+    const height = this.canvas.height;
+
+    // Clear canvas with dark background
+    ctx.fillStyle = '#1e1e1e';
+    ctx.fillRect(0, 0, width, height);
+
+    // For performance tracking
+    const startTime = Date.now();
+
+    if (this.alarmSensors.length > 0) {
+      this.renderAlarmView(ctx, width, height);
+    } else {
+      this.renderNormalView(ctx, width, height);
+    }
+
+    // Add footer with timestamp
+    this.renderFooter(ctx, width, height);
+
+    // Performance tracking
+    const renderTime = Date.now() - startTime;
+    if (renderTime > 50) { // Log only if rendering takes more than 50ms
+      console.log(`Frame rendered in ${renderTime}ms (frame interval: ${frameTime}ms)`);
+    }
+
+    // Use a consistent quality and format setting for JPEG output
     try {
-      this.setupTempDir()
-        .then(() => this.startFFmpegProcess())
-        .then(() => this.startFrameUpdates())
-        .catch(err => {
-          console.error('Error during initialization:', err);
-          this.handleStreamError();
-        });
+      // Create a JPEG with standard settings for better compatibility
+      return this.canvas.toBuffer('image/jpeg', {
+        quality: 0.85,
+        progressive: false,
+        chromaSubsampling: '4:2:0'
+      });
     } catch (err) {
-      console.error('Exception during initialization:', err);
-      this.handleStreamError();
+      console.error('Error generating frame buffer:', err);
+      // Return a fallback blank frame in case of error
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(0, 0, width, height);
+      ctx.font = '32px Arial';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText('Error rendering dashboard', 20, 50);
+
+      try {
+        return this.canvas.toBuffer('image/jpeg', { quality: 0.7 });
+      } catch (fallbackErr) {
+        console.error('Critical error generating fallback frame:', fallbackErr);
+        // Create a minimal valid JPEG buffer as absolute fallback
+        const emptyBuffer = Buffer.alloc(1024);
+        emptyBuffer.fill(0);
+        return emptyBuffer;
+      }
     }
   }
 
-  async setupTempDir() {
-    // Ensure the directory for temporary files exists
-    if (!fs.existsSync(this.tempDir)) {
-      fs.mkdirSync(this.tempDir, { recursive: true });
-      console.log(`Created directory for temporary files: ${this.tempDir}`);
-    }
+  renderAlarmView(ctx, width, height) {
+    // Red background for alarm state
+    ctx.fillStyle = '#ff0000';
+    ctx.fillRect(0, 0, width, height);
 
-    // Write an initial frame file
-    const initialFrame = this.renderer.renderFrame();
-    fs.writeFileSync(this.frameFile, initialFrame);
-    console.log(`Created initial frame file at ${this.frameFile}`);
+    // Header
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 36px Arial';
+    ctx.fillText('⚠️ ALARM SENSORS ⚠️', 20, 40);
 
-    return true;
-  }
+    // Calculate grid layout
+    const count = this.alarmSensors.length;
+    const columns = Math.min(3, Math.ceil(Math.sqrt(count)));
+    const rows = Math.ceil(count / columns);
+    const cellWidth = width / columns;
+    const cellHeight = Math.min(180, (height - 60) / rows);
 
-  async startFFmpegProcess() {
-    return new Promise((resolve, reject) => {
-      // Using a completely different approach with image2 demuxer
-      // This uses a single input file that we'll update between frames
-      const ffmpegArgs = [
-        // Input options
-        '-re',                                       // Read input at native framerate
-        '-loop', '1',                                // Loop the input (we'll replace the file)
-        '-framerate', String(this.config.frameRate || 1), // Input framerate
-        '-i', this.frameFile,                        // Input file that we'll update
+    // Render each alarm sensor
+    this.alarmSensors.forEach((sensor, index) => {
+      if (!sensor) return;
 
-        // Video encoding options - using more compatible settings
-        '-c:v', 'libx264',                           // H.264 encoder
-        '-preset', 'ultrafast',                      // Fastest encoding preset for low latency
-        '-tune', 'zerolatency',                      // Tune for low latency
-        '-profile:v', 'baseline',                    // Most compatible profile
-        '-level', '4.0',                             // Compatible level for 1080p
-        '-pix_fmt', 'yuv420p',                       // Required pixel format for H.264
-        '-vf', 'format=yuv420p',                     // Force yuv420p pixel format
-        '-r', String(this.config.frameRate || 1),    // Output framerate
-        '-g', '30',                                  // Keyframe interval
-        '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2', // Ensure dimensions are even
+      const x = (index % columns) * cellWidth;
+      const y = 60 + Math.floor(index / columns) * cellHeight;
 
-        // RTSP output options
-        '-f', 'rtsp',                                // Output format RTSP
-        '-rtsp_transport', 'tcp',                    // Use TCP for RTSP (more reliable)
-        this.rtspUrl                                 // Output URL
-      ];
+      // Sensor background
+      ctx.fillStyle = '#d70000';
+      ctx.fillRect(x + 10, y + 5, cellWidth - 20, cellHeight - 15);
 
-      console.log('Starting FFmpeg RTSP server with command:', 'ffmpeg', ffmpegArgs.join(' '));
+      // Sensor name and state
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 24px Arial';
 
-      this.ffmpegProcess = spawn('ffmpeg', ffmpegArgs, {
-        stdio: ['ignore', 'pipe', 'pipe']
-      });
+      // Truncate name if too long
+      const name = sensor.name || `Sensor ${index + 1}`;
+      const maxNameWidth = cellWidth - 40;
+      let displayName = name;
 
-      let startupOutput = '';
-      let errorOutput = '';
-      let initialized = false;
-
-      this.ffmpegProcess.stdout.on('data', (data) => {
-        const message = data.toString();
-        startupOutput += message;
-        console.log('FFmpeg stdout:', message);
-      });
-
-      this.ffmpegProcess.stderr.on('data', (data) => {
-        const message = data.toString();
-        errorOutput += message;
-
-        // Only log key messages to keep logs cleaner
-        if (message.includes('Error') || message.includes('error') || message.includes('Invalid') ||
-            message.includes('warning') || message.includes('Could not')) {
-          console.error('FFmpeg stderr:', message);
-        }
-
-        // Look for indicators of successful initialization
-        if (message.includes('fps=') || message.includes('frame=')) {
-          if (!initialized) {
-            initialized = true;
-            resolve();
+      ctx.font = 'bold 24px Arial';
+      if (ctx.measureText(name).width > maxNameWidth) {
+        // Truncate and add ellipsis
+        for (let i = name.length; i > 3; i--) {
+          const truncated = name.substring(0, i) + '...';
+          if (ctx.measureText(truncated).width <= maxNameWidth) {
+            displayName = truncated;
+            break;
           }
         }
-      });
+      }
 
-      this.ffmpegProcess.on('close', (code) => {
-        console.log(`FFmpeg process exited with code ${code}`);
-        if (!this.isStopping) {
-          if (code !== 0) {
-            // Provide more context when failing
-            console.error('FFmpeg process failed with error output:', errorOutput);
-            reject(new Error(`FFmpeg exited with code ${code}`));
-          } else if (!initialized) {
-            reject(new Error('FFmpeg process terminated before initialization completed'));
-          }
-          this.handleStreamError();
+      ctx.fillText(displayName, x + 20, y + 35);
+
+      // Sensor details
+      ctx.font = '20px Arial';
+      let yOffset = 70;
+
+      // Render state differently based on sensor type
+      if (sensor.type === 'COSmokeSensor' && typeof sensor.state === 'object') {
+        if (sensor.state.smokeAlarm) {
+          ctx.fillText(`State: SMOKE DETECTED!`, x + 20, y + yOffset);
+        } else if (sensor.state.gasAlarm) {
+          ctx.fillText(`State: GAS DETECTED!`, x + 20, y + yOffset);
+        } else if (sensor.state.unexpected) {
+          ctx.fillText(`State: ALERT!`, x + 20, y + yOffset);
+        } else {
+          ctx.fillText(`State: ${JSON.stringify(sensor.state)}`, x + 20, y + yOffset);
         }
-      });
+      } else {
+        ctx.fillText(`State: ${sensor.state}`, x + 20, y + yOffset);
+      }
 
-      // Set a timeout to resolve or reject if FFmpeg doesn't respond in time
-      setTimeout(() => {
-        if (!initialized) {
-          if (errorOutput.includes('Invalid data') || errorOutput.includes('Error')) {
-            reject(new Error(`FFmpeg initialization failed: ${errorOutput}`));
-          } else {
-            console.log('FFmpeg not initialized but continuing (this is normal for the first run)');
-            resolve();
-          }
-        }
-      }, 5000);
+      yOffset += 30;
 
-      console.log(`RTSP stream should be available at: ${this.rtspUrl}`);
+      // Show battery if available
+      if (sensor.battery !== undefined) {
+        const batteryText = sensor.battery <= 1 ?
+          `Battery: ${sensor.battery}% (LOW!)` :
+          `Battery: ${sensor.battery}%`;
+        ctx.fillText(batteryText, x + 20, y + yOffset);
+        yOffset += 30;
+      }
+
+      // Show signal if available
+      if (sensor.signal !== undefined && sensor.signal !== 'unknown') {
+        ctx.fillText(`Signal: ${sensor.signal}`, x + 20, y + yOffset);
+        yOffset += 30;
+      }
+
+      // Show temperature if available
+      if (sensor.temperature !== undefined && sensor.temperature !== 'unknown') {
+        ctx.fillText(`Temp: ${sensor.temperature}°${sensor.temperatureUnit || 'F'}`, x + 20, y + yOffset);
+        yOffset += 30;
+      }
+
+      // Show humidity if available
+      if (sensor.humidity !== undefined && sensor.humidity !== 'unknown') {
+        ctx.fillText(`Humidity: ${sensor.humidity}%`, x + 20, y + yOffset);
+      }
     });
   }
 
-  async startFrameUpdates() {
-    // Mark as initialized now that everything is ready
-    this.isInitialized = true;
+  renderNormalView(ctx, width, height) {
+    // Calculate visible sensors for current page
+    const sensorsPerPage = 12;
+    const startIdx = this.currentPage * sensorsPerPage;
+    const sensorsToShow = this.sensorData.slice(startIdx, startIdx + sensorsPerPage);
 
-    // Start sending frames
-    this.updateFrame();
-    return true;
-  }
+    // Calculate grid layout
+    const columns = 4;
+    const rows = 3;
+    const cellWidth = width / columns;
+    const cellHeight = height / rows;
 
-  updateFrame() {
-    if (this.isStopping || !this.isInitialized) return;
+    // Page indicator
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 24px Arial';
+    ctx.fillText(`YoLink Dashboard - Page ${this.currentPage + 1} of ${this.totalPages}`, 20, 40);
 
-    try {
-      // Render a new frame
-      const frame = this.renderer.renderFrame();
+    // Render each sensor
+    sensorsToShow.forEach((sensor, index) => {
+      if (!sensor) return;
 
-      // Write the frame to the file that FFmpeg is reading
-      // Use a unique temporary filename to avoid partial reads
-      const tempFileName = `${this.tempDir}/frame_tmp_${Date.now()}.jpg`;
+      const x = (index % columns) * cellWidth;
+      const y = 60 + Math.floor(index / columns) * (cellHeight - 20);
 
-      // Write to temp file first
-      fs.writeFileSync(tempFileName, frame);
+      // Determine background color based on state
+      let bgColor = '#333333'; // Default
 
-      // Then rename to the file FFmpeg is reading (atomic operation)
-      fs.renameSync(tempFileName, this.frameFile);
-
-      this.frameCount++;
-
-      // Log frame count occasionally for monitoring
-      if (this.frameCount % 10 === 0) {
-        console.log(`Updated frame file ${this.frameCount} times`);
+      // Alarm states
+      if (['alarm', 'leak', 'motion', 'open'].includes(sensor.state)) {
+        bgColor = '#ff0000';
+      }
+      // CO/Smoke sensor alerts
+      else if (sensor.type === 'COSmokeSensor' &&
+               sensor.state &&
+               typeof sensor.state === 'object' &&
+               (sensor.state.smokeAlarm || sensor.state.gasAlarm || sensor.state.unexpected)) {
+        bgColor = '#ff0000';
+      }
+      // Low battery warning
+      else if (sensor.battery !== undefined && sensor.battery <= 1) {
+        bgColor = '#ffcc00';
+      }
+      // Outlet/switch states
+      else if (sensor.state === 'closed') {
+        bgColor = '#006600'; // Dark green for closed/off
+      }
+      else if (sensor.state === 'open') {
+        bgColor = '#009900'; // Brighter green for open/on
       }
 
-      // Schedule next frame based on frame rate
-      const frameDelay = 1000 / (this.config.frameRate || 1);
-      this.updateInterval = setTimeout(() => this.updateFrame(), frameDelay);
-    } catch (err) {
-      console.error('Error updating frame:', err);
-      this.handleStreamError();
-    }
-  }
+      // Sensor cell background
+      ctx.fillStyle = bgColor;
+      ctx.fillRect(x + 10, y + 5, cellWidth - 20, cellHeight - 25);
 
-  handleStreamError() {
-    if (this.isStopping) return;
+      // Sensor name with truncation if needed
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 20px Arial';
 
-    this.retryCount++;
-    if (this.retryCount <= this.maxRetries) {
-      const delay = Math.min(10000, 1000 * Math.pow(2, this.retryCount - 1));
-      console.log(`Retry ${this.retryCount}/${this.maxRetries} in ${delay}ms...`);
+      const name = sensor.name || `Sensor ${startIdx + index + 1}`;
+      const maxNameWidth = cellWidth - 40;
+      let displayName = name;
 
-      // Stop everything cleanly before restarting
-      this.stop();
-
-      // Reset initialization flag
-      this.isInitialized = false;
-
-      // Attempt to restart after delay
-      setTimeout(() => this.initialize(), delay);
-    } else {
-      console.error(`Max retries (${this.maxRetries}) reached. Please check configuration and restart manually.`);
-      this.stop();
-    }
-  }
-
-  restartStream() {
-    console.log('Manually restarting RTSP stream...');
-    this.retryCount = 0;
-    this.frameCount = 0;
-    this.stop();
-
-    // Reset initialization flag
-    this.isInitialized = false;
-
-    setTimeout(() => this.initialize(), 2000);
-    return true;
-  }
-
-  stop() {
-    if (this.isStopping) return;
-
-    this.isStopping = true;
-    console.log('Stopping RTSP stream components...');
-
-    // Clear the frame update interval first
-    if (this.updateInterval) {
-      clearTimeout(this.updateInterval);
-      this.updateInterval = null;
-      console.log('Frame update interval cleared');
-    }
-
-    // Kill the FFmpeg process
-    if (this.ffmpegProcess) {
-      try {
-        this.ffmpegProcess.kill('SIGTERM');
-        console.log('FFmpeg process terminated');
-      } catch (err) {
-        console.error('Error stopping FFmpeg process:', err);
-        // Force kill if normal termination fails
-        try {
-          this.ffmpegProcess.kill('SIGKILL');
-        } catch (innerErr) {
-          console.error('Failed to force kill FFmpeg process:', innerErr);
+      if (ctx.measureText(name).width > maxNameWidth) {
+        // Truncate and add ellipsis
+        for (let i = name.length; i > 3; i--) {
+          const truncated = name.substring(0, i) + '...';
+          if (ctx.measureText(truncated).width <= maxNameWidth) {
+            displayName = truncated;
+            break;
+          }
         }
       }
-      this.ffmpegProcess = null;
-    }
 
-    this.isStopping = false;
-    console.log('RTSP stream stopped');
+      ctx.fillText(displayName, x + 20, y + 30);
+
+      // Sensor type
+      ctx.font = '16px Arial';
+      ctx.fillText(`Type: ${sensor.type || 'unknown'}`, x + 20, y + 55);
+
+      // Sensor state
+      let stateText = "unknown";
+
+      if (typeof sensor.state === 'object') {
+        if (sensor.type === 'COSmokeSensor') {
+          if (sensor.state.smokeAlarm) stateText = "SMOKE ALARM";
+          else if (sensor.state.gasAlarm) stateText = "GAS ALARM";
+          else if (sensor.state.unexpected) stateText = "ALERT";
+          else stateText = "normal";
+        } else if (sensor.state.lock) {
+          stateText = sensor.state.lock;
+        } else {
+          stateText = JSON.stringify(sensor.state).substring(0, 15);
+        }
+      } else if (sensor.state !== undefined) {
+        stateText = sensor.state.toString();
+      }
+
+      ctx.fillText(`State: ${stateText}`, x + 20, y + 80);
+
+      // Additional sensor information
+      let yOffset = 105;
+
+      // Show battery if available
+      if (sensor.battery !== undefined && sensor.battery !== "unknown") {
+        const batteryColor = sensor.battery <= 1 ? '#ff6666' : '#ffffff';
+        ctx.fillStyle = batteryColor;
+        ctx.fillText(`Battery: ${sensor.battery}%`, x + 20, y + yOffset);
+        ctx.fillStyle = '#ffffff';
+        yOffset += 25;
+      }
+
+      // Show signal if available
+      if (sensor.signal !== undefined && sensor.signal !== "unknown") {
+        ctx.fillText(`Signal: ${sensor.signal}`, x + 20, y + yOffset);
+        yOffset += 25;
+      }
+
+      // Show temperature if available
+      if (sensor.temperature !== undefined && sensor.temperature !== "unknown") {
+        ctx.fillText(`Temp: ${sensor.temperature}°${sensor.temperatureUnit || 'F'}`, x + 20, y + yOffset);
+        yOffset += 25;
+      }
+
+      // Show humidity if available
+      if (sensor.humidity !== undefined && sensor.humidity !== "unknown") {
+        ctx.fillText(`Humidity: ${sensor.humidity}%`, x + 20, y + yOffset);
+      }
+
+      // Show last seen if available
+      if (sensor.last_seen && sensor.last_seen !== "never") {
+        const lastSeenTime = sensor.last_seen.split(' ')[1] || sensor.last_seen;
+        ctx.font = '12px Arial';
+        ctx.fillText(`Last: ${lastSeenTime}`, x + 20, y + cellHeight - 35);
+      }
+    });
+  }
+
+  renderFooter(ctx, width, height) {
+    // Add footer with timestamp and system information
+    ctx.fillStyle = '#333333';
+    ctx.fillRect(0, height - 30, width, 30);
+
+    // Current time
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '14px Arial';
+    const timestamp = new Date().toLocaleString();
+    ctx.fillText(`Last Updated: ${timestamp}`, 10, height - 10);
+
+    // System information on the right
+    const alarmText = this.alarmSensors.length > 0 ?
+      `⚠️ ${this.alarmSensors.length} ALARM(S) ACTIVE` :
+      'System Normal';
+    ctx.fillText(alarmText, width - ctx.measureText(alarmText).width - 20, height - 10);
+
+    // Center - sensor stats
+    const sensorStats = `Active Sensors: ${this.sensorData.filter(s => s.last_seen && s.last_seen.includes('2025')).length}/${this.sensorData.length}`;
+    ctx.fillText(sensorStats, (width - ctx.measureText(sensorStats).width) / 2, height - 10);
   }
 }
 
-module.exports = RtspStreamer;
+module.exports = DashboardRenderer;

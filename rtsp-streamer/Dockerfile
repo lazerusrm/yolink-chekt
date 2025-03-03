@@ -40,5 +40,5 @@ COPY rtsp-streamer/apiRouter.js ./apiRouter.js
 COPY rtsp-streamer/onvif-service.js ./onvif-service.js
 COPY rtsp-streamer/package.json ./package.json
 RUN mkdir -p /tmp/streams
-EXPOSE 3001 8554 9999
+EXPOSE 3001 8554 8555 9999
 CMD ["node", "server.js"]
