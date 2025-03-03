@@ -1,14 +1,15 @@
-const Stream = require('node-rtsp-stream');
+cat > /tmp/rtspStreamer.js << 'EOF'
 const fs = require('fs');
 const path = require('path');
+const { spawn } = require('child_process');
 
 class RtspStreamer {
   constructor(config, renderer) {
     this.config = config;
     this.renderer = renderer;
-    this.stream = null;
     this.imagePath = path.join('/tmp/streams', 'dashboard.jpg');
     this.updateInterval = null;
+    this.ffmpegProcess = null;
     this.isStopping = false;
     this.retryCount = 0;
     this.maxRetries = 5;
@@ -30,47 +31,62 @@ class RtspStreamer {
       fs.writeFileSync(this.imagePath, initialFrame);
       console.log('Initial frame written to', this.imagePath);
 
-      // Set up stream options with simplified FFmpeg options
-      const streamOptions = {
-        name: this.config.streamName || 'yolink-dashboard',
-        streamUrl: `rtsp://${this.config.serverIp}:${this.config.rtspPort}/${this.config.streamName}`,
-        wsPort: this.config.wsPort || 9999,
-        ffmpegOptions: {
-          // Simplified FFmpeg options
-          '-f': 'image2',
-          '-re': '',
-          '-loop': '1',
-          '-r': String(this.config.frameRate || 1),
-          '-i': this.imagePath,
-          '-c:v': 'libx264',
-          '-tune': 'zerolatency',
-          '-preset': 'ultrafast',
-          '-pix_fmt': 'yuv420p',
-          '-f': 'rtsp',
-          '-rtsp_transport': 'tcp'
-        }
-      };
+      // Start ffmpeg directly
+      this.startFFmpeg();
 
-      // Log the command that will be executed
-      console.log("FFmpeg command options:", JSON.stringify(streamOptions.ffmpegOptions));
-
-      // Create the stream
-      try {
-        console.log(`Creating RTSP stream at ${streamOptions.streamUrl} with WebSocket port ${streamOptions.wsPort}`);
-        this.stream = new Stream(streamOptions);
-        console.log(`RTSP stream initialized successfully`);
-        this.retryCount = 0;
-
-        // Start updating frames
-        this.updateFrame();
-      } catch (streamError) {
-        console.error('Error creating RTSP stream:', streamError);
-        this.handleStreamError();
-      }
+      // Start updating frames
+      this.updateFrame();
     } catch (err) {
       console.error('Failed to initialize RTSP stream:', err);
       this.handleStreamError();
     }
+  }
+
+  startFFmpeg() {
+    const rtspUrl = `rtsp://${this.config.serverIp}:${this.config.rtspPort}/${this.config.streamName}`;
+
+    // Build ffmpeg command
+    const ffmpegArgs = [
+      '-re',                // Read input at native frame rate
+      '-f', 'image2',       // Force image format
+      '-loop', '1',         // Loop the input
+      '-r', this.config.frameRate.toString(), // Frame rate
+      '-i', this.imagePath, // Input file
+      '-c:v', 'libx264',    // Video codec
+      '-preset', 'ultrafast',
+      '-tune', 'zerolatency',
+      '-pix_fmt', 'yuv420p',
+      '-f', 'rtsp',         // Output format
+      '-rtsp_transport', 'tcp',
+      rtspUrl               // Output URL
+    ];
+
+    console.log('Starting FFmpeg with command: ffmpeg', ffmpegArgs.join(' '));
+
+    // Start FFmpeg process
+    this.ffmpegProcess = spawn('ffmpeg', ffmpegArgs);
+
+    // Handle FFmpeg output
+    this.ffmpegProcess.stdout.on('data', (data) => {
+      console.log(`FFmpeg stdout: ${data}`);
+    });
+
+    this.ffmpegProcess.stderr.on('data', (data) => {
+      // FFmpeg logs to stderr by default, so only log important messages
+      const message = data.toString();
+      if (message.includes('Error') || message.includes('error') || message.includes('warning')) {
+        console.error(`FFmpeg stderr: ${message}`);
+      }
+    });
+
+    this.ffmpegProcess.on('close', (code) => {
+      console.log(`FFmpeg process exited with code ${code}`);
+      if (!this.isStopping && code !== 0) {
+        this.handleStreamError();
+      }
+    });
+
+    console.log(`RTSP stream started at ${rtspUrl}`);
   }
 
   updateFrame() {
@@ -80,7 +96,7 @@ class RtspStreamer {
       const frame = this.renderer.renderFrame();
       fs.writeFileSync(this.imagePath, frame);
 
-      // Log frame updates occasionally
+      // Only log occasionally to avoid filling logs
       if (Math.random() < 0.01) {
         console.log('Frame updated successfully');
       }
@@ -117,14 +133,14 @@ class RtspStreamer {
   stop() {
     this.isStopping = true;
 
-    if (this.stream) {
+    if (this.ffmpegProcess) {
       try {
-        this.stream.stop();
-        console.log('RTSP stream stopped');
+        this.ffmpegProcess.kill('SIGTERM');
+        console.log('FFmpeg process terminated');
       } catch (err) {
-        console.error('Error stopping RTSP stream:', err);
+        console.error('Error stopping FFmpeg process:', err);
       }
-      this.stream = null;
+      this.ffmpegProcess = null;
     }
 
     if (this.updateInterval) {
@@ -137,3 +153,7 @@ class RtspStreamer {
 }
 
 module.exports = RtspStreamer;
+EOF
+
+docker cp /tmp/rtspStreamer.js yolink-rtsp-streamer:/app/
+docker restart yolink-rtsp-streamer
