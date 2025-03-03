@@ -17,8 +17,15 @@ RUN curl -L https://github.com/aler9/rtsp-simple-server/releases/download/v0.20.
     && mv rtsp-simple-server /usr/local/bin/rtsp-simple-server \
     && rm rtsp-simple-server.tar.gz
 
+# Create FIFO directory (used for RTSP streaming)
+RUN mkdir -p /tmp/streams
+
 # Set working directory
 WORKDIR /app
+
+# Copy the rtsp-simple-server configuration file
+# (This file should define a path like 'yolink-dashboard' with allowPublish enabled)
+COPY rtsp-simple-server.yml /app/rtsp-simple-server.yml
 
 # Copy requirements and install Python dependencies
 COPY requirements.txt .
@@ -27,11 +34,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of your application code
 COPY . .
 
-# Copy the entrypoint script
+# Copy the entrypoint script and ensure it's executable
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-# Expose the necessary ports
+# Expose the necessary ports:
 # 3001 for the Flask API; 8554 for RTSP; 8555 for ONVIF; 3702 for WS-Discovery.
 EXPOSE 3001 8554 8555 3702
 
