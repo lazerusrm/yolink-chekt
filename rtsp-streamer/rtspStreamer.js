@@ -1,8 +1,3 @@
-/**
- * RTSP Streamer for YoLink Dashboard
- * Handles creating and managing the RTSP stream
- */
-
 const Stream = require('node-rtsp-stream');
 const fs = require('fs');
 const path = require('path');
@@ -35,35 +30,36 @@ class RtspStreamer {
       fs.writeFileSync(this.imagePath, initialFrame);
       console.log('Initial frame written to', this.imagePath);
 
-      // Set up stream options
+      // Set up stream options with simplified FFmpeg options
       const streamOptions = {
         name: this.config.streamName || 'yolink-dashboard',
         streamUrl: `rtsp://${this.config.serverIp}:${this.config.rtspPort}/${this.config.streamName}`,
-        wsPort: this.config.wsPort || 9999, // Only specify wsPort for WebSocket
+        wsPort: this.config.wsPort || 9999,
         ffmpegOptions: {
-          '-re': '',                                     // Real-time input
-          '-f': 'image2',                                // Input format is image
-          '-loop': '1',                                  // Loop the image
-          '-framerate': String(this.config.frameRate || 1),  // Frame rate
-          '-i': this.imagePath,                          // Input file path
-          '-c:v': 'libx264',                             // Video codec
-          '-preset': 'ultrafast',                        // Encoding preset
-          '-tune': 'zerolatency',                        // Tune for low latency
-          '-pix_fmt': 'yuv420p',                         // Pixel format
-          '-b:v': '2M',                                  // Video bitrate
-          '-bufsize': '2M',                              // Buffer size
-          '-maxrate': '2M',                              // Maximum bitrate
-          '-g': String((this.config.frameRate || 1) * 2), // GOP size
-          '-f': 'rtsp',                                  // Output format
-          '-rtsp_transport': 'tcp'                       // RTSP transport protocol
+          // Simplified FFmpeg options
+          '-f': 'image2',
+          '-re': '',
+          '-loop': '1',
+          '-r': String(this.config.frameRate || 1),
+          '-i': this.imagePath,
+          '-c:v': 'libx264',
+          '-tune': 'zerolatency',
+          '-preset': 'ultrafast',
+          '-pix_fmt': 'yuv420p',
+          '-f': 'rtsp',
+          '-rtsp_transport': 'tcp'
         }
       };
 
-      // Create the stream with error handlers
+      // Log the command that will be executed
+      console.log("FFmpeg command options:", JSON.stringify(streamOptions.ffmpegOptions));
+
+      // Create the stream
       try {
+        console.log(`Creating RTSP stream at ${streamOptions.streamUrl} with WebSocket port ${streamOptions.wsPort}`);
         this.stream = new Stream(streamOptions);
-        console.log(`RTSP stream initialized at ${streamOptions.streamUrl}`);
-        this.retryCount = 0; // Reset retry count on success
+        console.log(`RTSP stream initialized successfully`);
+        this.retryCount = 0;
 
         // Start updating frames
         this.updateFrame();
@@ -83,8 +79,9 @@ class RtspStreamer {
     try {
       const frame = this.renderer.renderFrame();
       fs.writeFileSync(this.imagePath, frame);
-      // Use a less verbose log for frame updates to avoid log flooding
-      if (Math.random() < 0.05) { // Only log occasionally (about 5% of frames)
+
+      // Log frame updates occasionally
+      if (Math.random() < 0.01) {
         console.log('Frame updated successfully');
       }
 
@@ -100,19 +97,19 @@ class RtspStreamer {
 
     this.retryCount++;
     if (this.retryCount <= this.maxRetries) {
-      const delay = Math.min(10000, 1000 * Math.pow(2, this.retryCount - 1)); // Exponential backoff
+      const delay = Math.min(10000, 1000 * Math.pow(2, this.retryCount - 1));
       console.log(`Retry ${this.retryCount}/${this.maxRetries} in ${delay}ms...`);
       this.stop();
       setTimeout(() => this.initialize(), delay);
     } else {
-      console.error(`Max retries (${this.maxRetries}) reached. Please check configuration and restart manually.`);
+      console.error(`Max retries (${this.maxRetries}) reached. Please check configuration.`);
       this.stop();
     }
   }
 
   restartStream() {
     console.log('Restarting RTSP stream...');
-    this.retryCount = 0; // Reset retry count for manual restart
+    this.retryCount = 0;
     this.stop();
     setTimeout(() => this.initialize(), 2000);
   }
