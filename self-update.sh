@@ -12,85 +12,75 @@ MAPPINGS_FILE="$APP_DIR/mappings.yaml"
 MAPPINGS_BACKUP="$APP_DIR/mappings.yaml.bak"
 DEVICES_FILE="$APP_DIR/devices.yaml"
 DEVICES_BACKUP="$APP_DIR/devices.yaml.bak"
+ENV_FILE="$APP_DIR/.env"
+ENV_BACKUP="$APP_DIR/.env.bak"
 LOG_DIR="/var/log"
 LOG_FILE="$LOG_DIR/yolink-update.log"
 MAX_RETRIES=3
 RETRY_DELAY=5
-ENV_FILE="$APP_DIR/.env"
-ENV_BACKUP="$APP_DIR/.env.bak"
+TEMP_DIR="$APP_DIR/temp-update"
 
 # Ensure log directory exists
 mkdir -p "$LOG_DIR" || { echo "Failed to create log directory $LOG_DIR"; exit 1; }
 chmod 755 "$LOG_DIR"
 
 # Redirect output to log file, fallback to /tmp if /var/log fails
-if ! exec > >(tee -i "$LOG_FILE") 2>/dev/null; then
+if ! exec > >(tee -a "$LOG_FILE") 2>&1; then
     LOG_FILE="/tmp/yolink-update.log"
     echo "Warning: Could not write to $LOG_FILE, falling back to $LOG_FILE"
-    exec > >(tee -i "$LOG_FILE")
+    exec > >(tee -a "$LOG_FILE") 2>&1
 fi
-exec 2>&1
 
-# Timestamp for log entries
+# Timestamped log function
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
 }
 
-# Ensure script runs as root
+# Check for root privileges
 if [ "$EUID" -ne 0 ]; then
     log "Error: This script must be run as root."
     exit 1
 fi
 
-# Backup function
+# Backup a file if it exists
 backup_file() {
-    local FILE="$1"
-    local BACKUP="$2"
-    if [ -f "$FILE" ]; then
-        cp "$FILE" "$BACKUP" || { log "Error: Failed to backup $(basename "$FILE")"; exit 1; }
-        log "Backed up $(basename "$FILE")"
+    local src="$1"
+    local dest="$2"
+    if [ -f "$src" ]; then
+        cp "$src" "$dest" || { log "Error: Failed to backup $(basename "$src")"; exit 1; }
+        log "Backed up $(basename "$src") to $(basename "$dest")"
     else
-        log "Warning: $(basename "$FILE") does not exist, skipping backup"
+        log "Note: $(basename "$src") not found, skipping backup"
     fi
 }
 
-# Restore function
+# Restore a file if backup exists
 restore_file() {
-    local BACKUP="$1"
-    local FILE="$2"
-    if [ -f "$BACKUP" ]; then
-        mv "$BACKUP" "$FILE" || { log "Error: Failed to restore $(basename "$FILE")"; exit 1; }
-        log "Restored $(basename "$FILE")"
+    local src="$1"
+    local dest="$2"
+    if [ -f "$src" ]; then
+        mv "$src" "$dest" || { log "Error: Failed to restore $(basename "$dest")"; exit 1; }
+        log "Restored $(basename "$dest") from backup"
     else
-        log "Warning: Backup for $(basename "$FILE") not found, skipping restore"
+        log "Note: Backup $(basename "$src") not found, skipping restore"
     fi
 }
-
-# Navigate to app directory
-cd "$APP_DIR" || { log "Error: Failed to navigate to $APP_DIR"; exit 1; }
-log "Working in $APP_DIR"
-
-# Backup configuration files
-backup_file "$CONFIG_FILE" "$CONFIG_BACKUP"
-backup_file "$MAPPINGS_FILE" "$MAPPINGS_BACKUP"
-backup_file "$DEVICES_FILE" "$DEVICES_BACKUP"
-backup_file "$ENV_FILE" "$ENV_BACKUP"
 
 # Download with retry logic
 download_with_retry() {
     local url="$1"
     local output="$2"
     local attempt=1
-    while [ $attempt -le $MAX_RETRIES ]; do
-        log "Downloading latest code (Attempt $attempt/$MAX_RETRIES)..."
-        if curl -L "$url" -o "$output" 2>/tmp/curl_error; then
+    while [ "$attempt" -le "$MAX_RETRIES" ]; do
+        log "Downloading from $url (Attempt $attempt/$MAX_RETRIES)..."
+        if curl -L --fail "$url" -o "$output" 2>/tmp/curl_error; then
             log "Download successful"
             return 0
         else
             local curl_err=$(cat /tmp/curl_error)
             log "Download failed: $curl_err"
-            if [ $attempt -eq $MAX_RETRIES ]; then
-                log "Error: Repository download failed after $MAX_RETRIES attempts"
+            if [ "$attempt" -eq "$MAX_RETRIES" ]; then
+                log "Error: Failed to download repository after $MAX_RETRIES attempts"
                 exit 1
             fi
             sleep "$RETRY_DELAY"
@@ -99,21 +89,49 @@ download_with_retry() {
     done
 }
 
-# Backup rtsp-streamer directory if it exists
+# Start update process
+log "Starting update process in $APP_DIR"
+cd "$APP_DIR" || { log "Error: Cannot access $APP_DIR"; exit 1; }
+
+# Backup existing configuration files
+backup_file "$CONFIG_FILE" "$CONFIG_BACKUP"
+backup_file "$MAPPINGS_FILE" "$MAPPINGS_BACKUP"
+backup_file "$DEVICES_FILE" "$DEVICES_BACKUP"
+backup_file "$ENV_FILE" "$ENV_BACKUP"
+
+# Backup rtsp-streamer directory
 if [ -d "$APP_DIR/rtsp-streamer" ]; then
     log "Backing up rtsp-streamer directory"
-    mkdir -p "$APP_DIR/rtsp-streamer.bak"
-    cp -r "$APP_DIR/rtsp-streamer/"* "$APP_DIR/rtsp-streamer.bak/" || { log "Error: Failed to backup rtsp-streamer"; exit 1; }
+    rm -rf "$APP_DIR/rtsp-streamer.bak"  # Clear old backup
+    cp -r "$APP_DIR/rtsp-streamer" "$APP_DIR/rtsp-streamer.bak" || { log "Error: Failed to backup rtsp-streamer"; exit 1; }
 fi
 
-# Download and unzip
+# Download and extract repository
 download_with_retry "$REPO_URL" "$APP_DIR/repo.zip"
-log "Unzipping latest code..."
-unzip -o "$APP_DIR/repo.zip" -d "$APP_DIR" || { log "Error: Unzip failed"; exit 1; }
+log "Extracting repository..."
+rm -rf "$TEMP_DIR"  # Clear any old temp directory
+mkdir -p "$TEMP_DIR" || { log "Error: Failed to create temp directory"; exit 1; }
+unzip -o "$APP_DIR/repo.zip" -d "$TEMP_DIR" || { log "Error: Failed to unzip repository"; exit 1; }
 
-# Update files while preserving configs
+# Update files, preserving configs
 log "Updating application files..."
-rsync -a --exclude='config.yaml' --exclude='mappings.yaml' --exclude='devices.yaml' --exclude='.env' "$APP_DIR/yolink-chekt-main/" "$APP_DIR/" || { log "Error: Move extracted files failed"; exit 1; }
+rsync -a --exclude='config.yaml' --exclude='mappings.yaml' --exclude='devices.yaml' --exclude='.env' \
+    "$TEMP_DIR/yolink-chekt-main/"* "$APP_DIR/" || { log "Error: Failed to sync updated files"; exit 1; }
+
+# Ensure rtsp-streamer directory is updated
+if [ -d "$TEMP_DIR/yolink-chekt-main/rtsp-streamer" ]; then
+    log "Updating rtsp-streamer directory..."
+    rm -rf "$APP_DIR/rtsp-streamer"  # Clear old rtsp-streamer
+    cp -r "$TEMP_DIR/yolink-chekt-main/rtsp-streamer" "$APP_DIR/" || { log "Error: Failed to update rtsp-streamer"; exit 1; }
+else
+    log "Note: rtsp-streamer not found in repository, checking backup..."
+    if [ -d "$APP_DIR/rtsp-streamer.bak" ]; then
+        log "Restoring rtsp-streamer from backup"
+        cp -r "$APP_DIR/rtsp-streamer.bak" "$APP_DIR/rtsp-streamer" || { log "Error: Failed to restore rtsp-streamer"; exit 1; }
+    else
+        log "Warning: No rtsp-streamer in repo or backup; it will be missing"
+    fi
+fi
 
 # Restore configuration files
 restore_file "$CONFIG_BACKUP" "$CONFIG_FILE"
@@ -121,27 +139,20 @@ restore_file "$MAPPINGS_BACKUP" "$MAPPINGS_FILE"
 restore_file "$DEVICES_BACKUP" "$DEVICES_FILE"
 restore_file "$ENV_BACKUP" "$ENV_FILE"
 
-# Restore rtsp-streamer directory if backup exists and new version doesn't have it
-if [ -d "$APP_DIR/rtsp-streamer.bak" ] && [ ! -d "$APP_DIR/rtsp-streamer" ]; then
-    log "Restoring rtsp-streamer directory from backup"
-    mkdir -p "$APP_DIR/rtsp-streamer"
-    cp -r "$APP_DIR/rtsp-streamer.bak/"* "$APP_DIR/rtsp-streamer/" || { log "Error: Failed to restore rtsp-streamer"; exit 1; }
-fi
-
-# Clean up
-log "Cleaning up temporary files..."
-rm -rf "$APP_DIR/yolink-chekt-main" "$APP_DIR/repo.zip" "$APP_DIR/rtsp-streamer.bak" /tmp/curl_error || log "Warning: Some cleanup failed"
+# Clean up temporary files
+log "Cleaning up..."
+rm -rf "$TEMP_DIR" "$APP_DIR/repo.zip" "$APP_DIR/rtsp-streamer.bak" /tmp/curl_error || log "Warning: Some cleanup tasks failed"
 
 # Set permissions
 log "Setting permissions..."
-chmod -R u+rwX,go+rX "$APP_DIR" || { log "Error: Failed to set permissions"; exit 1; }
-chmod +x "$APP_DIR/self-update.sh" || { log "Error: Failed to set executable permission"; exit 1; }
+chmod -R u+rwX,go+rX "$APP_DIR" || { log "Error: Failed to set directory permissions"; exit 1; }
+chmod +x "$APP_DIR/self-update.sh" || { log "Error: Failed to set script permissions"; exit 1; }
 
-# Check and update .env file with RTSP configuration if not present
+# Update .env with RTSP config if missing
 if [ -f "$ENV_FILE" ]; then
-    log "Checking .env file for RTSP configuration..."
+    log "Checking .env for RTSP configuration..."
     if ! grep -q "RTSP_PORT" "$ENV_FILE"; then
-        log "Adding RTSP configuration to .env file"
+        log "Appending RTSP configuration to .env"
         cat >> "$ENV_FILE" <<EOT
 
 # RTSP Streamer Configuration
@@ -154,21 +165,21 @@ WIDTH=1920
 HEIGHT=1080
 CYCLE_INTERVAL=10000
 ENABLE_ONVIF=true
-DASHBOARD_URL=http://dashboard:3000
+DASHBOARD_URL=http://websocket-proxy:3000
 SERVER_IP=auto
 EOT
     fi
 fi
 
-# Rebuild Docker containers
-log "Rebuilding Docker containers..."
-docker compose down || { log "Error: Docker Compose down failed"; exit 1; }
-docker compose up --build -d || { log "Error: Docker Compose up failed"; exit 1; }
+# Rebuild and restart Docker containers
+log "Rebuilding and restarting Docker containers..."
+docker compose down || { log "Error: Failed to stop Docker containers"; exit 1; }
+docker compose up --build -d || { log "Error: Failed to start Docker containers"; exit 1; }
 
-# Verify container and config.html
+# Verify main container
 container_name=$(docker ps --filter "name=yolink_chekt" --format '{{.Names}}' | head -n 1)
 if [ -z "$container_name" ]; then
-    log "Error: Service container not found"
+    log "Error: Main yolink_chekt container not found"
     exit 1
 fi
 if docker exec "$container_name" test -f "/app/templates/config.html"; then
@@ -178,12 +189,12 @@ else
     exit 1
 fi
 
-# Verify RTSP streamer container is running
+# Verify rtsp-streamer container
 rtsp_container=$(docker ps --filter "name=yolink-rtsp-streamer" --format '{{.Names}}' | head -n 1)
 if [ -n "$rtsp_container" ]; then
     log "Verified: RTSP streamer container is running"
 else
-    log "Warning: RTSP streamer container not found. Check logs for details."
+    log "Warning: RTSP streamer container not running; check logs"
 fi
 
-log "Update applied successfully!"
+log "Update completed successfully!"
