@@ -2,7 +2,7 @@
 FROM node:18-alpine AS builder
 WORKDIR /app
 RUN apk add --no-cache build-base g++ cairo-dev jpeg-dev pango-dev giflib-dev pixman-dev pangomm-dev libjpeg-turbo-dev freetype-dev python3
-COPY package*.json ./
+COPY rtsp-streamer/package*.json ./
 RUN npm install
 
 # Runtime stage
