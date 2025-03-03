@@ -10,9 +10,15 @@ import threading
 import datetime
 import subprocess
 import io
+import logging
 
 from flask import Flask, request, jsonify, Response
 from PIL import Image, ImageDraw, ImageFont
+
+# ----------------------
+# Logging Configuration
+# ----------------------
+logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s: %(message)s')
 
 # ----------------------
 # Configuration
@@ -33,6 +39,15 @@ config = {
 }
 
 # ----------------------
+# Helper Functions
+# ----------------------
+def safe_float(val):
+    try:
+        return float(val)
+    except (ValueError, TypeError):
+        return None
+
+# ----------------------
 # Dashboard Renderer
 # ----------------------
 class DashboardRenderer:
@@ -51,7 +66,8 @@ class DashboardRenderer:
             self.font_medium = ImageFont.truetype("arial.ttf", 24)
             self.font_small = ImageFont.truetype("arial.ttf", 16)
             self.font_xsmall = ImageFont.truetype("arial.ttf", 12)
-        except:
+        except Exception as e:
+            logging.warning("Could not load TrueType fonts, using default fonts.")
             self.font_large = ImageFont.load_default()
             self.font_medium = ImageFont.load_default()
             self.font_small = ImageFont.load_default()
@@ -59,7 +75,7 @@ class DashboardRenderer:
 
     def update_sensors(self, sensors):
         if not isinstance(sensors, list):
-            print("Invalid sensor data: not a list")
+            logging.error("Invalid sensor data: not a list")
             return
         self.sensor_data = sensors
         self.alarm_sensors = []
@@ -76,21 +92,22 @@ class DashboardRenderer:
                 if state.get("smokeAlarm") or state.get("gasAlarm") or state.get("unexpected"):
                     self.alarm_sensors.append(s)
                     continue
-            # Low battery check
-            if s.get("battery") is not None and s.get("battery") <= 1:
+            # Low battery check with safe conversion
+            battery_val = safe_float(s.get("battery"))
+            if battery_val is not None and battery_val <= 1:
                 self.alarm_sensors.append(s)
         sensors_per_page = 12
         self.total_pages = max(1, (len(self.sensor_data) + sensors_per_page - 1) // sensors_per_page)
         if self.current_page >= self.total_pages:
             self.current_page = 0
-        print(f"Updated sensors: {len(self.sensor_data)}, alarms: {len(self.alarm_sensors)}, pages: {self.total_pages}")
+        logging.info(f"Updated sensors: {len(self.sensor_data)}, alarms: {len(self.alarm_sensors)}, pages: {self.total_pages}")
 
     def set_page(self, page):
         if not isinstance(page, int):
-            print("Invalid page number")
+            logging.error("Invalid page number")
             return
         self.current_page = max(0, min(page, self.total_pages - 1))
-        print(f"Set page to {self.current_page+1}/{self.total_pages}")
+        logging.info(f"Set page to {self.current_page+1}/{self.total_pages}")
 
     def render_frame(self):
         now = time.time()
@@ -105,12 +122,11 @@ class DashboardRenderer:
             self.render_alarm_view(draw)
         else:
             self.render_normal_view(draw)
-
         self.render_footer(draw)
 
         render_time = time.time() - start_time
         if render_time > 0.05:
-            print(f"Frame rendered in {render_time*1000:.1f}ms (frame interval: {frame_interval*1000:.1f}ms)")
+            logging.info(f"Frame rendered in {render_time*1000:.1f}ms (interval: {frame_interval*1000:.1f}ms)")
 
         buf = io.BytesIO()
         image.save(buf, format="JPEG", quality=75)
@@ -130,9 +146,9 @@ class DashboardRenderer:
             y = 60 + (i // columns) * cell_height
             draw.rectangle([x+10, y+5, x+cell_width-10, y+cell_height-10], fill="#d70000")
             name = sensor.get("name", f"Sensor {i+1}")
-            # Simple truncation if needed
+            max_width = cell_width - 40
             display_name = name
-            while draw.textsize(display_name, font=self.font_medium)[0] > cell_width - 40 and len(display_name) > 3:
+            while draw.textsize(display_name, font=self.font_medium)[0] > max_width and len(display_name) > 3:
                 display_name = display_name[:-1]
             if display_name != name:
                 display_name += "..."
@@ -154,7 +170,9 @@ class DashboardRenderer:
             y_offset += 20
             if sensor.get("battery") is not None:
                 battery = sensor.get("battery")
-                battery_text = f"Battery: {battery}%{' (LOW!)' if battery <= 1 else ''}"
+                battery_val = safe_float(battery)
+                low_text = " (LOW!)" if battery_val is not None and battery_val <= 1 else ""
+                battery_text = f"Battery: {battery}%{low_text}"
                 draw.text((x+20, y+y_offset), battery_text, font=self.font_small, fill="#ffffff")
                 y_offset += 20
             if sensor.get("signal") is not None:
@@ -181,22 +199,26 @@ class DashboardRenderer:
             row = i // columns
             x = col * cell_width
             y = 60 + row * (cell_height - 20)
+            # Determine cell background based on sensor state
             bg_color = "#333333"
             state = sensor.get("state")
             if state in ["alarm", "leak", "motion", "open"]:
                 bg_color = "#ff0000"
             elif sensor.get("type") == "COSmokeSensor" and isinstance(state, dict) and (state.get("smokeAlarm") or state.get("gasAlarm") or state.get("unexpected")):
                 bg_color = "#ff0000"
-            elif sensor.get("battery") is not None and sensor.get("battery") <= 1:
-                bg_color = "#ffcc00"
+            elif sensor.get("battery") is not None:
+                battery_val = safe_float(sensor.get("battery"))
+                if battery_val is not None and battery_val <= 1:
+                    bg_color = "#ffcc00"
             elif state == "closed":
                 bg_color = "#006600"
             elif state == "open":
                 bg_color = "#009900"
             draw.rectangle([x+10, y+5, x+cell_width-10, y+cell_height-25], fill=bg_color)
             name = sensor.get("name", f"Sensor {start_idx+i+1}")
+            max_width = cell_width - 40
             display_name = name
-            while draw.textsize(display_name, font=self.font_medium)[0] > cell_width - 40 and len(display_name) > 3:
+            while draw.textsize(display_name, font=self.font_medium)[0] > max_width and len(display_name) > 3:
                 display_name = display_name[:-1]
             if display_name != name:
                 display_name += "..."
@@ -220,7 +242,11 @@ class DashboardRenderer:
             draw.text((x+20, y+60), f"State: {state_text}", font=self.font_small, fill="#ffffff")
             y_offset = 85
             if sensor.get("battery") is not None:
-                draw.text((x+20, y+y_offset), f"Battery: {sensor.get('battery')}%", font=self.font_small, fill="#ffffff")
+                battery = sensor.get("battery")
+                battery_val = safe_float(battery)
+                low_text = " (LOW!)" if battery_val is not None and battery_val <= 1 else ""
+                battery_text = f"Battery: {battery}%{low_text}"
+                draw.text((x+20, y+y_offset), battery_text, font=self.font_small, fill="#ffffff")
                 y_offset += 20
             if sensor.get("signal") is not None:
                 draw.text((x+20, y+y_offset), f"Signal: {sensor.get('signal')}", font=self.font_small, fill="#ffffff")
@@ -264,7 +290,7 @@ class WebSocketClient(threading.Thread):
         while True:
             try:
                 self.ws = websocket.create_connection(self.url)
-                print(f"Connected to WebSocket: {self.url}")
+                logging.info(f"Connected to WebSocket: {self.url}")
                 while True:
                     msg = self.ws.recv()
                     try:
@@ -273,9 +299,9 @@ class WebSocketClient(threading.Thread):
                             sensors = data.get("sensors", [])
                             self.renderer.update_sensors(sensors)
                     except Exception as e:
-                        print("Error parsing WebSocket message:", e)
+                        logging.error(f"Error parsing WebSocket message: {e}")
             except Exception as e:
-                print("WebSocket error:", e)
+                logging.error(f"WebSocket error: {e}")
                 time.sleep(2)
 
     def close(self):
@@ -299,7 +325,7 @@ class RtspStreamer(threading.Thread):
             try:
                 os.mkfifo(self.pipe_path)
             except Exception as e:
-                print("Error creating FIFO pipe:", e)
+                logging.error(f"Error creating FIFO pipe: {e}")
 
     def run(self):
         self.start_ffmpeg()
@@ -310,7 +336,7 @@ class RtspStreamer(threading.Thread):
                 with open(self.pipe_path, "wb") as fifo:
                     fifo.write(frame)
             except Exception as e:
-                print("Error writing frame to pipe:", e)
+                logging.error(f"Error writing frame to pipe: {e}")
             time.sleep(frame_interval)
 
     def start_ffmpeg(self):
@@ -325,8 +351,11 @@ class RtspStreamer(threading.Thread):
             "-rtsp_transport", "tcp",
             rtsp_url
         ]
-        print("Starting FFmpeg with command:", " ".join(cmd))
-        self.ffmpeg_process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        logging.info("Starting FFmpeg with command: " + " ".join(cmd))
+        try:
+            self.ffmpeg_process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        except Exception as e:
+            logging.error(f"Failed to start FFmpeg: {e}")
 
     def restart_stream(self):
         if self.ffmpeg_process:
@@ -357,15 +386,18 @@ class OnvifService(threading.Thread):
         self.daemon = True
 
     def run(self):
-        # Start WS-Discovery in a separate thread
         threading.Thread(target=self.ws_discovery, daemon=True).start()
-        print(f"ONVIF service initialized: onvif://{self.server_ip}:{self.onvif_port}")
+        logging.info(f"ONVIF service initialized: onvif://{self.server_ip}:{self.onvif_port}")
 
     def ws_discovery(self):
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.bind(("", 3702))
+        try:
+            sock.bind(("", 3702))
+        except Exception as e:
+            logging.error(f"WS-Discovery bind error: {e}")
+            return
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-        print("WS-Discovery listening on UDP 3702")
+        logging.info("WS-Discovery listening on UDP 3702")
         while True:
             try:
                 data, addr = sock.recvfrom(4096)
@@ -390,10 +422,10 @@ class OnvifService(threading.Thread):
 """
                     sock.sendto(response.encode(), addr)
             except Exception as e:
-                print("WS-Discovery error:", e)
+                logging.error(f"WS-Discovery error: {e}")
 
     def stop(self):
-        pass  # For this simple version, nothing persistent to stop
+        pass  # Nothing persistent to stop in this simple implementation
 
 # ----------------------
 # Flask API Endpoints
@@ -428,7 +460,7 @@ def status():
         },
         "system": {
             "uptime": time.time() - os.getpid(),  # Placeholder value
-            "memory": {}  # Could include memory details here
+            "memory": {}  # Optionally add memory details here
         },
         "lastUpdate": datetime.datetime.now().isoformat()
     })
@@ -439,6 +471,7 @@ def snapshot():
         frame = renderer.render_frame()
         return Response(frame, mimetype="image/jpeg")
     except Exception as e:
+        logging.error(f"Snapshot error: {e}")
         return "Failed to generate snapshot", 500
 
 @app.route('/restart-stream', methods=["POST"])
@@ -451,6 +484,7 @@ def restart_stream():
             "timestamp": datetime.datetime.now().isoformat()
         })
     except Exception as e:
+        logging.error(f"Restart stream error: {e}")
         return jsonify({
             "success": False,
             "message": "Failed to restart stream",
@@ -551,7 +585,7 @@ def start_background_services():
     return ws_client
 
 def shutdown(signum, frame):
-    print("Shutdown signal received, stopping services...")
+    logging.info("Shutdown signal received, stopping services...")
     streamer.stop()
     sys.exit(0)
 
