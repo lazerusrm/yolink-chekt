@@ -71,21 +71,50 @@ class RtspStreamer {
 
   async startFFmpegProcess() {
     return new Promise((resolve, reject) => {
-      // More resilient FFmpeg configuration
+      // Determine appropriate H.264 level based on resolution
+      let h264Level = '5.1'; // Use a higher level to accommodate the 1080p resolution
+
+      // If we have a very high resolution, consider downscaling
+      const inputWidth = this.config.width || 1920;
+      const inputHeight = this.config.height || 1080;
+
+      // Calculate output dimensions if needed
+      let outputWidth = inputWidth;
+      let outputHeight = inputHeight;
+
+      // Scale params - only add if we're downscaling
+      let scaleParams = [];
+
+      // For 1080p, we need to use a higher profile level
+      if (inputWidth >= 1920 || inputHeight >= 1080) {
+        // Using High profile instead of Baseline for better compatibility with 1080p
+        // and explicitly setting a higher H.264 level
+        h264Level = '5.1';
+      }
+
+      // More resilient FFmpeg configuration with high profile
       const ffmpegArgs = [
         '-f', 'mjpeg',                              // Input format is MJPEG
         '-framerate', String(this.config.frameRate || 1), // Input framerate
         '-use_wallclock_as_timestamps', '1',        // Use system clock for timestamps
         '-i', this.pipePath,                        // Input from FIFO
+
+        // Video encoding settings adjusted for higher resolution
         '-c:v', 'libx264',                          // H.264 encoder
         '-preset', 'ultrafast',                     // Fastest encoding preset for low latency
         '-tune', 'zerolatency',                     // Tune for low latency
-        '-profile:v', 'baseline',                   // Most compatible profile
-        '-level', '3.0',                            // Compatibility level
+
+        // Changed from 'baseline' to 'high' for better support of 1080p
+        '-profile:v', 'high',
+        '-level', h264Level,                        // Higher level for 1080p
+
         '-pix_fmt', 'yuv420p',                      // Required pixel format for H.264
         '-r', String(this.config.frameRate || 1),   // Output framerate
         '-g', '30',                                 // Keyframe interval
-        '-bufsize', '1000k',                        // Encoder buffer size
+        '-maxrate', '4M',                           // Maximum bitrate
+        '-bufsize', '8M',                           // Encoder buffer size (increased)
+
+        // Output settings
         '-f', 'rtsp',                               // Output format RTSP
         '-rtsp_transport', 'tcp',                   // Use TCP for RTSP (more reliable)
         '-muxdelay', '0.1',                         // Low muxing delay
