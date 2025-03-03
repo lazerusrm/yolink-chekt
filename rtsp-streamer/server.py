@@ -65,7 +65,7 @@ class DashboardRenderer:
         self.current_page = 0
         self.total_pages = 1
         self.last_render_time = time.time()
-        # Try to load a TrueType font; fall back to default if not available
+        # Use DejaVu fonts installed in the container
         try:
             self.font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 48)
             self.font_medium = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 32)
@@ -138,7 +138,6 @@ class DashboardRenderer:
         return buf.getvalue()
 
     def render_alarm_view(self, draw):
-        # Fill background red
         draw.rectangle([0, 0, self.width, self.height], fill="#ff0000")
         draw.text((20, 10), "⚠️ ALARM SENSORS ⚠️", font=self.font_large, fill="#ffffff")
         count = len(self.alarm_sensors)
@@ -153,7 +152,6 @@ class DashboardRenderer:
             name = sensor.get("name", f"Sensor {i+1}")
             max_width = cell_width - 40
             display_name = name
-            # Use our helper to get text width
             while get_text_width(draw, display_name, self.font_medium) > max_width and len(display_name) > 3:
                 display_name = display_name[:-1]
             if display_name != name:
@@ -205,7 +203,6 @@ class DashboardRenderer:
             row = i // columns
             x = col * cell_width
             y = 60 + row * (cell_height - 20)
-            # Determine cell background based on sensor state
             bg_color = "#333333"
             state = sensor.get("state")
             if state in ["alarm", "leak", "motion", "open"]:
@@ -315,7 +312,7 @@ class WebSocketClient(threading.Thread):
             self.ws.close()
 
 # ----------------------
-# RTSP Streamer (uses FFmpeg to read frames from a FIFO pipe)
+# RTSP Streamer (pushes encoded frames to rtsp-simple-server)
 # ----------------------
 class RtspStreamer(threading.Thread):
     def __init__(self, config, renderer):
@@ -339,7 +336,6 @@ class RtspStreamer(threading.Thread):
     def run(self):
         self.start_ffmpeg()
         frame_interval = 1.0 / self.config.get("frame_rate", 1)
-        # Open the FIFO pipe once for writing; this provides a continuous stream.
         try:
             fifo = open(self.pipe_path, "wb")
             logging.info(f"Opened FIFO {self.pipe_path} for writing")
@@ -358,7 +354,9 @@ class RtspStreamer(threading.Thread):
             time.sleep(frame_interval)
 
     def start_ffmpeg(self):
-        rtsp_url = f"rtsp://0.0.0.0:{self.config.get('rtsp_port')}/{self.config.get('stream_name')}"
+        # Push mode: we push the stream to rtsp-simple-server, which runs locally.
+        # Note: The rtsp-simple-server should be running in the container (see Dockerfile/entrypoint).
+        rtsp_url = f"rtsp://127.0.0.1:{self.config.get('rtsp_port')}/{self.config.get('stream_name')}?push=1"
         cmd = [
             "ffmpeg",
             "-re",
@@ -367,7 +365,6 @@ class RtspStreamer(threading.Thread):
             "-c:v", "libx264",
             "-f", "rtsp",
             "-rtsp_transport", "tcp",
-            "-rtsp_flags", "listen",
             rtsp_url
         ]
         logging.info("Starting FFmpeg with command: " + " ".join(cmd))
@@ -444,7 +441,7 @@ class OnvifService(threading.Thread):
                 logging.error(f"WS-Discovery error: {e}")
 
     def stop(self):
-        pass  # Nothing persistent to stop in this simple implementation
+        pass
 
 # ----------------------
 # Flask API Endpoints

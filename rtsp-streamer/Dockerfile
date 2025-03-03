@@ -1,7 +1,7 @@
 # Use an official Python slim image
 FROM python:3.9-slim
 
-# Install FFmpeg, fonts, and debug tools (procps for ps, net-tools for netstat, curl and vim)
+# Install dependencies: FFmpeg, fonts, and debug tools
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     fonts-dejavu \
@@ -11,18 +11,29 @@ RUN apt-get update && apt-get install -y \
     vim \
  && rm -rf /var/lib/apt/lists/*
 
+# Download rtsp-simple-server (mediaMTX)
+RUN curl -L https://github.com/aler9/rtsp-simple-server/releases/download/v0.20.1/rtsp-simple-server_v0.20.1_linux_amd64.tar.gz -o rtsp-simple-server.tar.gz \
+    && tar -xzvf rtsp-simple-server.tar.gz \
+    && mv rtsp-simple-server /usr/local/bin/rtsp-simple-server \
+    && rm rtsp-simple-server.tar.gz
+
 # Set working directory
 WORKDIR /app
 
-# Copy the requirements file and install Python dependencies
+# Copy requirements and install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of your RTSP streamer code
+# Copy the rest of your application code
 COPY . .
 
-# Expose the necessary ports (HTTP API, RTSP, WebSocket, WS-Discovery)
-EXPOSE 3001 8554 9999 3702
+# Copy the entrypoint script
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-# Start the RTSP streamer server (adjust the filename if necessary)
-CMD ["python", "server.py"]
+# Expose the necessary ports
+# 3001 for the Flask API; 8554 for RTSP; 8555 for ONVIF; 3702 for WS-Discovery.
+EXPOSE 3001 8554 8555 3702
+
+# Set the entrypoint
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
