@@ -1,14 +1,11 @@
-const fs = require('fs');
-const path = require('path');
 const { spawn } = require('child_process');
 
 class RtspStreamer {
   constructor(config, renderer) {
     this.config = config;
     this.renderer = renderer;
-    this.imagePath = path.join('/tmp/streams', 'dashboard.jpg');
-    this.updateInterval = null;
     this.ffmpegProcess = null;
+    this.updateInterval = null;
     this.isStopping = false;
     this.retryCount = 0;
     this.maxRetries = 5;
@@ -22,22 +19,10 @@ class RtspStreamer {
     if (this.isStopping) return;
 
     try {
-      // Create the stream directory if it doesn't exist
-      const streamDir = path.dirname(this.imagePath);
-      if (!fs.existsSync(streamDir)) {
-        fs.mkdirSync(streamDir, { recursive: true });
-        console.log(`Created stream directory: ${streamDir}`);
-      }
-
-      // Write an initial frame to ensure the file exists
-      const initialFrame = this.renderer.renderFrame();
-      fs.writeFileSync(this.imagePath, initialFrame);
-      console.log('Initial frame written to', this.imagePath);
-
-      // Start simple RTSP server (using ffserver approach)
+      // Start ffmpeg with pipe input (instead of a static file)
       this.startRTSPServer();
 
-      // Start updating frames
+      // Begin updating frames by writing them to ffmpeg's STDIN
       this.updateFrame();
     } catch (err) {
       console.error('Failed to initialize RTSP stream:', err);
@@ -46,12 +31,12 @@ class RtspStreamer {
   }
 
   startRTSPServer() {
-    // First, start ffmpeg to generate an RTSP stream using TCP
+    // Use image2pipe input so that ffmpeg reads consecutive JPEG images from STDIN.
     const ffmpegArgs = [
       '-re',
-      '-loop', '1',
+      '-f', 'image2pipe',
       '-framerate', String(this.config.frameRate || 1),
-      '-i', this.imagePath,
+      '-i', 'pipe:0',
       '-c:v', 'libx264',
       '-profile:v', 'baseline',
       '-pix_fmt', 'yuv420p',
@@ -74,7 +59,6 @@ class RtspStreamer {
 
     this.ffmpegProcess.stderr.on('data', (data) => {
       const message = data.toString();
-      // Filter out repetitive messages
       if (message.includes('Error') || message.includes('error') || message.includes('warning')) {
         console.error('FFmpeg stderr:', message);
       }
@@ -94,15 +78,31 @@ class RtspStreamer {
     if (this.isStopping) return;
 
     try {
+      // Render a new JPEG frame from your dashboard renderer
       const frame = this.renderer.renderFrame();
-      fs.writeFileSync(this.imagePath, frame);
 
-      // Only log occasionally to avoid filling logs
-      if (Math.random() < 0.01) {
-        console.log('Frame updated successfully');
+      // Write the frame directly to ffmpeg's STDIN
+      if (this.ffmpegProcess && this.ffmpegProcess.stdin.writable) {
+        this.ffmpegProcess.stdin.write(frame, (err) => {
+          if (err) {
+            console.error('Error writing frame to ffmpeg stdin:', err);
+            this.handleStreamError();
+          }
+        });
+      } else {
+        console.error('FFmpeg process STDIN not writable');
       }
 
-      this.updateInterval = setTimeout(() => this.updateFrame(), 1000 / (this.config.frameRate || 1));
+      // Log occasionally
+      if (Math.random() < 0.01) {
+        console.log('Frame sent to ffmpeg successfully');
+      }
+
+      // Schedule next frame update based on frame rate
+      this.updateInterval = setTimeout(
+        () => this.updateFrame(),
+        1000 / (this.config.frameRate || 1)
+      );
     } catch (err) {
       console.error('Error updating frame:', err);
       this.handleStreamError();
