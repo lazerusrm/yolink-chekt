@@ -19,19 +19,26 @@ class RtspStreamer {
     if (this.isStopping) return;
 
     try {
-      // Start ffmpeg with pipe input (removing -re)
+      // Start FFmpeg with MJPEG input to force JPEG recognition
       this.startRTSPServer();
 
-      // Immediately write an initial frame so FFmpeg can read the header info
+      // Immediately write an initial frame
       const initialFrame = this.renderer.renderFrame();
       if (this.ffmpegProcess && this.ffmpegProcess.stdin.writable) {
-        this.ffmpegProcess.stdin.write(initialFrame);
+        // Optional: log first two bytes to confirm JPEG header (should be 0xFF, 0xD8)
+        console.log('Initial frame header bytes:', initialFrame[0].toString(16), initialFrame[1].toString(16));
+        this.ffmpegProcess.stdin.write(initialFrame, (err) => {
+          if (err) {
+            console.error('Error writing initial frame:', err);
+            this.handleStreamError();
+          } else {
+            // Start frame updates after a brief pause to ensure FFmpeg parses the header
+            setTimeout(() => this.updateFrame(), 200);
+          }
+        });
       } else {
         throw new Error('FFmpeg stdin is not writable during initialization.');
       }
-
-      // Start the frame update loop
-      this.updateFrame();
     } catch (err) {
       console.error('Failed to initialize RTSP stream:', err);
       this.handleStreamError();
@@ -39,9 +46,9 @@ class RtspStreamer {
   }
 
   startRTSPServer() {
-    // Removed the -re flag for pipe input
+    // Use -f mjpeg to indicate input is a stream of JPEG images
     const ffmpegArgs = [
-      '-f', 'image2pipe',
+      '-f', 'mjpeg',
       '-framerate', String(this.config.frameRate || 1),
       '-i', 'pipe:0',
       '-c:v', 'libx264',
@@ -86,7 +93,6 @@ class RtspStreamer {
 
     try {
       const frame = this.renderer.renderFrame();
-
       if (this.ffmpegProcess && this.ffmpegProcess.stdin.writable) {
         this.ffmpegProcess.stdin.write(frame, (err) => {
           if (err) {
@@ -98,7 +104,7 @@ class RtspStreamer {
         console.error('FFmpeg process STDIN not writable');
       }
 
-      // Log occasionally to avoid spamming logs
+      // Log occasionally
       if (Math.random() < 0.01) {
         console.log('Frame sent to ffmpeg successfully');
       }
