@@ -29,10 +29,10 @@ config = {
     "dashboard_url": os.environ.get("DASHBOARD_URL", "http://websocket-proxy:3000"),
     "rtsp_port": int(os.environ.get("RTSP_PORT", 8554)),
     "stream_name": os.environ.get("STREAM_NAME", "yolink-dashboard"),
-    "frame_rate": int(os.environ.get("FRAME_RATE", 6)),  # Target 6 FPS
+    "frame_rate": int(os.environ.get("FRAME_RATE", 6)),
     "width": int(os.environ.get("WIDTH", 1920)),
     "height": int(os.environ.get("HEIGHT", 1080)),
-    "cycle_interval": int(os.environ.get("CYCLE_INTERVAL", 10000)),  # in ms
+    "cycle_interval": int(os.environ.get("CYCLE_INTERVAL", 10000)),
     "http_port": int(os.environ.get("RTSP_API_PORT", 3001)),
     "ws_port": int(os.environ.get("WS_PORT", 9999)),
     "enable_onvif": os.environ.get("ENABLE_ONVIF", "true").lower() != "false",
@@ -50,12 +50,10 @@ def safe_float(val):
         return None
 
 def get_text_width(draw, text, font):
-    """Return the width of text using draw.textbbox."""
     bbox = draw.textbbox((0, 0), text, font=font)
     return bbox[2] - bbox[0]
 
 def format_smoke_state(state):
-    """Format smoke/CO sensor state dictionary."""
     if not isinstance(state, dict):
         return str(state)
     if state.get("smokeAlarm", False):
@@ -67,7 +65,6 @@ def format_smoke_state(state):
     return "normal"
 
 def map_battery_value(raw_value):
-    """Map YoLink battery levels (0-4) to percentages."""
     if not isinstance(raw_value, int) or raw_value < 0 or raw_value > 4:
         return None
     return {0: 0, 1: 25, 2: 50, 3: 75, 4: 100}[raw_value]
@@ -91,13 +88,12 @@ class DashboardRenderer:
             self.font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 36)
             self.font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 18)
         except OSError as e:
-            logging.warning(f"Could not load DejaVu fonts, using default fonts: {e}")
+            logging.warning(f"Could not load DejaVu fonts, using default: {e}")
             self.font_large = ImageFont.load_default()
             self.font_small = ImageFont.load_default()
         self.previous_states = {}
 
     def update_sensors(self, sensors):
-        """Update sensor data and determine which sensors are in alarm state."""
         if not isinstance(sensors, list):
             logging.error("Invalid sensor data: not a list")
             return
@@ -144,7 +140,7 @@ class DashboardRenderer:
             elif sensor_type in ["Outlet", "MultiOutlet"]:
                 logging.debug(f"Rendering Outlet/MultiOutlet: {s}")
 
-        sensors_per_page = 12
+        sensors_per_page = 20
         self.total_pages = max(1, (len(self.sensor_data) + sensors_per_page - 1) // sensors_per_page)
         if self.current_page >= self.total_pages:
             self.current_page = 0
@@ -177,15 +173,19 @@ class DashboardRenderer:
         draw.rectangle([(0, 0), (draw.im.size[0], 50)], fill="#333333")
         draw.text((10, 10), "SENSORS", font=self.font_large, fill="#ffffff")
 
-        sensors_per_page = 12
+        if not self.sensor_data:
+            draw.text((10, 60), "No sensor data available", font=self.font_small, fill="#ffffff")
+            return
+
+        sensors_per_page = 20
         start_idx = self.current_page * sensors_per_page
         end_idx = min(start_idx + sensors_per_page, len(self.sensor_data))
         sensors_to_show = self.sensor_data[start_idx:end_idx]
 
         for i, sensor in enumerate(sensors_to_show):
-            x = 10 + (i % 4) * 200
-            y = 60 + (i // 4) * 150
-            draw.rectangle([(x, y), (x + 190, y + 140)], outline="#ffffff")
+            x = 10 + (i % 5) * 380
+            y = 60 + (i // 5) * 260
+            draw.rectangle([(x, y), (x + 370, y + 250)], outline="#ffffff")
             draw.text((x + 10, y + 10), sensor.get("name", "Unknown"), font=self.font_small, fill="#ffffff")
 
             sensor_type = sensor.get("type")
@@ -231,7 +231,7 @@ class DashboardRenderer:
                         draw.text((x + 10, y + y_offset), f"Power: {powers}W", font=self.font_small, fill="#ffffff")
                     elif isinstance(powers, list):
                         for i, power in enumerate(powers[:2]):
-                            draw.text((x + 10, y + y_offset + (i * 20)), f"Outlet {i + 1} Power: {power}W",
+                            draw.text((x + 10, y + y_offset + (i * 20)), f"Outlet {i + 1}: {power}W",
                                       font=self.font_small, fill="#ffffff")
                     y_offset += len(powers) * 20 if isinstance(powers, list) else 20
                 if "watt" in sensor or "watts" in sensor:
@@ -251,10 +251,15 @@ class DashboardRenderer:
         draw.rectangle([(0, 0), (draw.im.size[0], 50)], fill="#ff0000")
         draw.text((10, 10), "ALARM SENSORS", font=self.font_large, fill="#ffffff")
 
-        for i, sensor in enumerate(self.alarm_sensors[:12]):
-            x = 10 + (i % 4) * 200
-            y = 60 + (i // 4) * 150
-            draw.rectangle([(x, y), (x + 190, y + 140)], outline="#ffffff")
+        if not self.alarm_sensors:
+            draw.text((10, 60), "No alarm sensors active", font=self.font_small, fill="#ffffff")
+            return
+
+        sensors_per_page = 20
+        for i, sensor in enumerate(self.alarm_sensors[:sensors_per_page]):
+            x = 10 + (i % 5) * 380
+            y = 60 + (i // 5) * 260
+            draw.rectangle([(x, y), (x + 370, y + 250)], outline="#ffffff")
             draw.text((x + 10, y + 10), sensor.get("name", "Unknown"), font=self.font_small, fill="#ffffff")
 
             sensor_type = sensor.get("type")
@@ -300,7 +305,7 @@ class DashboardRenderer:
                         draw.text((x + 10, y + y_offset), f"Power: {powers}W", font=self.font_small, fill="#ffffff")
                     elif isinstance(powers, list):
                         for i, power in enumerate(powers[:2]):
-                            draw.text((x + 10, y + y_offset + (i * 20)), f"Outlet {i + 1} Power: {power}W",
+                            draw.text((x + 10, y + y_offset + (i * 20)), f"Outlet {i + 1}: {power}W",
                                       font=self.font_small, fill="#ffffff")
                     y_offset += len(powers) * 20 if isinstance(powers, list) else 20
                 if "watt" in sensor or "watts" in sensor:
@@ -317,7 +322,6 @@ class DashboardRenderer:
                     y_offset += 20
 
     def set_page(self, page_num):
-        """Set the current page for pagination."""
         if 0 <= page_num < self.total_pages:
             self.current_page = page_num
             logging.info(f"Set page to {page_num + 1}/{self.total_pages}")
@@ -338,6 +342,7 @@ class WebSocketClient(threading.Thread):
     def run(self):
         while True:
             try:
+                logging.info(f"Attempting to connect to WebSocket: {self.url}")
                 self.ws = websocket.create_connection(self.url)
                 logging.info(f"Connected to WebSocket: {self.url}")
                 while True:
@@ -350,14 +355,16 @@ class WebSocketClient(threading.Thread):
                                 sensors = data.get("sensors", [])
                                 logging.info(f"Received {len(sensors)} sensors via WebSocket")
                                 self.renderer.update_sensors(sensors)
+                            else:
+                                logging.debug(f"Ignored message type: {data.get('type')}")
                         except json.JSONDecodeError as e:
                             logging.error(f"Invalid JSON in WebSocket message: {e}. Raw message: {msg}")
                             continue
                     except Exception as e:
                         logging.error(f"Error processing WebSocket message: {e}")
-                        continue
+                        break
             except Exception as e:
-                logging.error(f"WebSocket error: {e}")
+                logging.error(f"WebSocket connection failed: {e}")
                 time.sleep(2)
 
     def close(self):
@@ -390,7 +397,7 @@ class RtspStreamer(threading.Thread):
             logging.info(f"Created FIFO at {self.pipe_path}")
 
     def run(self):
-        frame_interval = 1.0 / self.config.get("frame_rate", 6)  # ~166ms for 6 FPS
+        frame_interval = 1.0 / self.config.get("frame_rate", 6)
         while self.running:
             self.start_ffmpeg()
             try:
@@ -658,7 +665,7 @@ def sensors():
 
 @app.route('/page/<int:page_num>', methods=["POST"])
 def set_page(page_num):
-    page_num -= 1  # Convert to 0-based index
+    page_num -= 1
     if page_num < 0 or page_num >= renderer.total_pages:
         return jsonify({
             "error": "Invalid page number",
