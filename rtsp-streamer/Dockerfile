@@ -1,6 +1,6 @@
 FROM python:3.9-slim
 
-# Install dependencies
+# Install dependencies, including file
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     fonts-dejavu \
@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y \
     net-tools \
     curl \
     vim \
+    file \
  && rm -rf /var/lib/apt/lists/*
 
 # Download MediaMTX v1.11.3
