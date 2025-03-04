@@ -43,7 +43,15 @@ config = {
 # ----------------------
 # Helper Functions
 # ----------------------
+def safe_int(val):
+    """Convert value to int safely, returning None if conversion fails."""
+    try:
+        return int(val)
+    except (ValueError, TypeError):
+        return None
+
 def safe_float(val):
+    """Convert value to float safely, returning None if conversion fails."""
     try:
         return float(val)
     except (ValueError, TypeError):
@@ -65,7 +73,8 @@ def format_smoke_state(state):
     return "normal"
 
 def map_battery_value(raw_value):
-    if not isinstance(raw_value, int) or raw_value < 0 or raw_value > 4:
+    raw_value = safe_int(raw_value)
+    if raw_value is None or raw_value < 0 or raw_value > 4:
         return None
     return {0: 0, 1: 25, 2: 50, 3: 75, 4: 100}[raw_value]
 
@@ -107,11 +116,11 @@ class DashboardRenderer:
                 continue
             sensor_type = s.get("type")
             state = s.get("state")
-            signal = s.get("signal")
-            battery = s.get("battery")
+            signal = safe_int(s.get("signal"))  # Convert signal to int safely
+            battery = safe_int(s.get("battery"))  # Convert battery to int safely
             logging.debug(f"Processing sensor: {s.get('name', 'Unknown')} (Type: {sensor_type}, State: {state})")
 
-            if battery is not None and isinstance(battery, int):
+            if battery is not None:
                 battery = map_battery_value(battery)
 
             if sensor_type == "MotionSensor":
