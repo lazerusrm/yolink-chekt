@@ -27,7 +27,7 @@ config = {
     "dashboard_url": os.environ.get("DASHBOARD_URL", "http://websocket-proxy:3000"),
     "rtsp_port": int(os.environ.get("RTSP_PORT", 8554)),
     "stream_name": os.environ.get("STREAM_NAME", "yolink-dashboard"),
-    "frame_rate": int(os.environ.get("FRAME_RATE", 6)),  # Target 1 FPS (update to 6 if needed)
+    "frame_rate": int(os.environ.get("FRAME_RATE", 6)),  # Target 1 FPS
     "width": int(os.environ.get("WIDTH", 1920)),
     "height": int(os.environ.get("HEIGHT", 1080)),
     "cycle_interval": int(os.environ.get("CYCLE_INTERVAL", 10000)),  # in ms
@@ -260,17 +260,23 @@ class WebSocketClient(threading.Thread):
                 self.ws = websocket.create_connection(self.url)
                 logging.info(f"Connected to WebSocket: {self.url}")
                 while True:
-                    msg = self.ws.recv()
                     try:
-                        data = json.loads(msg)
-                        if data.get("type") == "sensors-update":
-                            sensors = data.get("sensors", [])
-                            self.renderer.update_sensors(sensors)
+                        msg = self.ws.recv()
+                        logging.debug(f"Received WebSocket message: {msg}")  # Log raw message for debugging
+                        try:
+                            data = json.loads(msg)
+                            if data.get("type") == "sensors-update":
+                                sensors = data.get("sensors", [])
+                                self.renderer.update_sensors(sensors)
+                        except json.JSONDecodeError as e:
+                            logging.error(f"Invalid JSON in WebSocket message: {e}. Raw message: {msg}")
+                            continue  # Skip this message and wait for the next one
                     except Exception as e:
-                        logging.error(f"Error parsing WebSocket message: {e}")
+                        logging.error(f"Error processing WebSocket message: {e}")
+                        continue  # Skip the error and continue listening
             except Exception as e:
                 logging.error(f"WebSocket error: {e}")
-                time.sleep(2)
+                time.sleep(2)  # Wait before reconnecting
 
     def close(self):
         if self.ws:
@@ -337,7 +343,7 @@ class RtspStreamer(threading.Thread):
             "ffmpeg",
             "-re",                     # Read input at native frame rate
             "-f", "image2pipe",        # Input format
-            "-framerate", str(self.config.get("frame_rate", 6)),  # Match config frame rate
+            "-framerate", str(self.config.get("frame_rate", 1)),  # Match config frame rate
             "-i", self.pipe_path,      # Input from FIFO pipe
             "-c:v", "libx264",         # Video codec
             "-r", str(self.config.get("frame_rate", 6)),  # Output frame rate
