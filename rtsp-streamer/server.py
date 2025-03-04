@@ -27,7 +27,7 @@ config = {
     "dashboard_url": os.environ.get("DASHBOARD_URL", "http://websocket-proxy:3000"),
     "rtsp_port": int(os.environ.get("RTSP_PORT", 8554)),
     "stream_name": os.environ.get("STREAM_NAME", "yolink-dashboard"),
-    "frame_rate": int(os.environ.get("FRAME_RATE", 6)),  # Target 1 FPS
+    "frame_rate": int(os.environ.get("FRAME_RATE", 6)),  # Target 6 FPS
     "width": int(os.environ.get("WIDTH", 1920)),
     "height": int(os.environ.get("HEIGHT", 1080)),
     "cycle_interval": int(os.environ.get("CYCLE_INTERVAL", 10000)),  # in ms
@@ -79,6 +79,7 @@ class DashboardRenderer:
             return
         self.sensor_data = sensors
         self.alarm_sensors = []
+        logging.info(f"Received {len(sensors)} sensors via WebSocket")  # Log sensor count
 
         for s in sensors:
             if not s:
@@ -106,15 +107,13 @@ class DashboardRenderer:
 
             # Temperature/Humidity Sensors
             elif sensor_type == "THSensor":
-                # Assuming "alarm_state" is a boolean or specific value in the MQTT payload
-                alarm_state = s.get("alarm_state", False)  # Adjust based on actual payload structure
-                if (alarm_state or
-                        (battery in [0, 1]) or
-                        (signal is not None and signal < -119)):
+                alarms = s.get("alarms", {}).get("state", {})
+                if any(alarms.values()) or (battery in [0, 1]) or (signal is not None and signal < -119):
                     self.alarm_sensors.append(s)
+                logging.debug(f"THSensor {s.get('name', 'Unknown')}: Alarms={alarms}, Battery={battery}, Signal={signal}")
 
             # Outlets and other devices: no alarms, just display
-            # No action needed here; they won't be added to alarm_sensors
+            # No action needed here; they won’t be added to alarm_sensors
 
         # Pagination logic
         sensors_per_page = 12
@@ -152,33 +151,41 @@ class DashboardRenderer:
 
             sensor_type = sensor.get("type")
             state = sensor.get("state", "N/A")
-            draw.text((x + 10, y + 30), f"State: {state}", font=self.font_small, fill="#ffffff")
+            if sensor_type == "THSensor" and isinstance(state, dict):
+                state_text = format_smoke_state(state)
+            else:
+                state_text = state
+            draw.text((x + 10, y + 30), f"State: {state_text}", font=self.font_small, fill="#ffffff")
             y_offset = 50
 
             if sensor_type in ["MotionSensor", "ContactSensor"]:
                 if "battery" in sensor and sensor["battery"] is not None:
-                    battery_text = f"Battery: {sensor['battery']}%"
-                    draw.text((x + 10, y + y_offset), battery_text, font=self.font_small, fill="#ffffff")
-                    y_offset += 20
+                    battery_value = map_battery_value(sensor["battery"])
+                    if battery_value is not None:
+                        battery_text = f"Battery: {battery_value}%"
+                        draw.text((x + 10, y + y_offset), battery_text, font=self.font_small, fill="#ffffff")
+                        y_offset += 20
                 if "signal" in sensor:
-                    draw.text((x + 10, y + y_offset), f"Signal: {sensor['signal']}", font=self.font_small,
-                              fill="#ffffff")
+                    draw.text((x + 10, y + y_offset), f"Signal: {sensor['signal']}", font=self.font_small, fill="#ffffff")
                     y_offset += 20
 
             elif sensor_type == "THSensor":
-                if "temperature" in sensor and sensor["temperature"] not in [None, "unknown"]:
+                logging.debug(f"Rendering THSensor: {sensor}")  # Add debugging
+                if sensor.get("temperature", "unknown") != "unknown":
                     draw.text((x + 10, y + y_offset),
                               f"Temp: {sensor['temperature']}°{sensor.get('temperatureUnit', 'F')}",
                               font=self.font_small, fill="#ffffff")
                     y_offset += 20
-                if "humidity" in sensor and sensor["humidity"] not in [None, "unknown"]:
+                if sensor.get("humidity", "unknown") != "unknown":
                     draw.text((x + 10, y + y_offset), f"Humidity: {sensor['humidity']}%", font=self.font_small,
                               fill="#ffffff")
                     y_offset += 20
                 if "battery" in sensor and sensor["battery"] is not None:
-                    battery_text = f"Battery: {sensor['battery']}%"
-                    draw.text((x + 10, y + y_offset), battery_text, font=self.font_small, fill="#ffffff")
-                    y_offset += 20
+                    battery_value = map_battery_value(sensor["battery"])
+                    if battery_value is not None:
+                        battery_text = f"Battery: {battery_value}%"
+                        draw.text((x + 10, y + y_offset), battery_text, font=self.font_small, fill="#ffffff")
+                        y_offset += 20
                 if "signal" in sensor:
                     draw.text((x + 10, y + y_offset), f"Signal: {sensor['signal']}", font=self.font_small,
                               fill="#ffffff")
@@ -209,37 +216,63 @@ class DashboardRenderer:
 
             sensor_type = sensor.get("type")
             state = sensor.get("state", "N/A")
-            draw.text((x + 10, y + 30), f"State: {state}", font=self.font_small, fill="#ffffff")
+            if sensor_type == "THSensor" and isinstance(state, dict):
+                state_text = format_smoke_state(state)
+            else:
+                state_text = state
+            draw.text((x + 10, y + 30), f"State: {state_text}", font=self.font_small, fill="#ffffff")
             y_offset = 50
 
             if sensor_type in ["MotionSensor", "ContactSensor"]:
                 if "battery" in sensor and sensor["battery"] is not None:
-                    battery_text = f"Battery: {sensor['battery']}%"
-                    draw.text((x + 10, y + y_offset), battery_text, font=self.font_small, fill="#ffffff")
-                    y_offset += 20
+                    battery_value = map_battery_value(sensor["battery"])
+                    if battery_value is not None:
+                        battery_text = f"Battery: {battery_value}%"
+                        draw.text((x + 10, y + y_offset), battery_text, font=self.font_small, fill="#ffffff")
+                        y_offset += 20
                 if "signal" in sensor:
                     draw.text((x + 10, y + y_offset), f"Signal: {sensor['signal']}", font=self.font_small,
                               fill="#ffffff")
                     y_offset += 20
 
             elif sensor_type == "THSensor":
-                if "temperature" in sensor and sensor["temperature"] not in [None, "unknown"]:
+                if sensor.get("temperature", "unknown") != "unknown":
                     draw.text((x + 10, y + y_offset),
                               f"Temp: {sensor['temperature']}°{sensor.get('temperatureUnit', 'F')}",
                               font=self.font_small, fill="#ffffff")
                     y_offset += 20
-                if "humidity" in sensor and sensor["humidity"] not in [None, "unknown"]:
+                if sensor.get("humidity", "unknown") != "unknown":
                     draw.text((x + 10, y + y_offset), f"Humidity: {sensor['humidity']}%", font=self.font_small,
                               fill="#ffffff")
                     y_offset += 20
                 if "battery" in sensor and sensor["battery"] is not None:
-                    battery_text = f"Battery: {sensor['battery']}%"
-                    draw.text((x + 10, y + y_offset), battery_text, font=self.font_small, fill="#ffffff")
-                    y_offset += 20
+                    battery_value = map_battery_value(sensor["battery"])
+                    if battery_value is not None:
+                        battery_text = f"Battery: {battery_value}%"
+                        draw.text((x + 10, y + y_offset), battery_text, font=self.font_small, fill="#ffffff")
+                        y_offset += 20
                 if "signal" in sensor:
                     draw.text((x + 10, y + y_offset), f"Signal: {sensor['signal']}", font=self.font_small,
                               fill="#ffffff")
                     y_offset += 20
+
+def map_battery_value(raw_value):
+    """Map YoLink battery levels (0-4) to percentages."""
+    if not isinstance(raw_value, int) or raw_value < 0 or raw_value > 4:
+        return None
+    return {0: 0, 1: 25, 2: 50, 3: 75, 4: 100}[raw_value]
+
+def format_smoke_state(state):
+    """Format smoke/CO sensor state dictionary."""
+    if not isinstance(state, dict):
+        return str(state)
+    if state.get("smokeAlarm", False):
+        return "SMOKE ALARM"
+    if state.get("gasAlarm", False):
+        return "GAS ALARM"
+    if state.get("unexpected", False):
+        return "ALERT"
+    return "normal"
 
 # ----------------------
 # WebSocket Client
@@ -267,6 +300,7 @@ class WebSocketClient(threading.Thread):
                             data = json.loads(msg)
                             if data.get("type") == "sensors-update":
                                 sensors = data.get("sensors", [])
+                                logging.info(f"Received {len(sensors)} sensors via WebSocket")
                                 self.renderer.update_sensors(sensors)
                         except json.JSONDecodeError as e:
                             logging.error(f"Invalid JSON in WebSocket message: {e}. Raw message: {msg}")
@@ -283,7 +317,7 @@ class WebSocketClient(threading.Thread):
             self.ws.close()
 
 # ----------------------
-# RTSP Streamer (Updated for 1 FPS)
+# RTSP Streamer (Updated for 6 FPS)
 # ----------------------
 class RtspStreamer(threading.Thread):
     def __init__(self, config, renderer):
@@ -307,7 +341,7 @@ class RtspStreamer(threading.Thread):
                 logging.error(f"Error creating FIFO pipe: {e}")
 
     def run(self):
-        frame_interval = 1.0 / self.config.get("frame_rate", 1)  # e.g., 1 second for 1 FPS
+        frame_interval = 1.0 / self.config.get("frame_rate", 6)  # Updated to 6 FPS (~166ms)
         while self.running:
             self.start_ffmpeg()
             time.sleep(10)  # Wait for FFmpeg to initialize and connect to MediaMTX
@@ -343,11 +377,11 @@ class RtspStreamer(threading.Thread):
             "ffmpeg",
             "-re",                     # Read input at native frame rate
             "-f", "image2pipe",        # Input format
-            "-framerate", str(self.config.get("frame_rate", 1)),  # Match config frame rate
+            "-framerate", str(self.config.get("frame_rate", 6)),  # Updated to 6 FPS
             "-i", self.pipe_path,      # Input from FIFO pipe
             "-c:v", "libx264",         # Video codec
-            "-r", str(self.config.get("frame_rate", 6)),  # Output frame rate
-            "-g", "3",                 # GOP size for low latency
+            "-r", str(self.config.get("frame_rate", 6)),  # Updated to 6 FPS
+            "-g", "3",                 # GOP size for low latency (1 second at 6 FPS)
             "-preset", "ultrafast",    # Fast encoding
             "-tune", "zerolatency",    # Minimize latency
             "-b:v", "4000k",           # Bitrate
@@ -640,7 +674,7 @@ def start_background_services():
         onvif_service.start()
     def cycle_pages():
         while True:
-            if not renderer.alarm_sensors and renderer.total_pages > 1:
+            if renderer.total_pages > 1:  # Cycle regardless of alarms
                 renderer.set_page((renderer.current_page + 1) % renderer.total_pages)
             time.sleep(config.get("cycle_interval") / 1000.0)
     threading.Thread(target=cycle_pages, daemon=True).start()
@@ -659,3 +693,21 @@ if __name__ == "__main__":
     signal.signal(signal.SIGTERM, shutdown)
     ws_client = start_background_services()
     app.run(host="0.0.0.0", port=config.get("http_port"))
+
+def format_smoke_state(state):
+    """Format smoke/CO sensor state dictionary."""
+    if not isinstance(state, dict):
+        return str(state)
+    if state.get("smokeAlarm", False):
+        return "SMOKE ALARM"
+    if state.get("gasAlarm", False):
+        return "GAS ALARM"
+    if state.get("unexpected", False):
+        return "ALERT"
+    return "normal"
+
+def map_battery_value(raw_value):
+    """Map YoLink battery levels (0-4) to percentages."""
+    if not isinstance(raw_value, int) or raw_value < 0 or raw_value > 4:
+        return None
+    return {0: 0, 1: 25, 2: 50, 3: 75, 4: 100}[raw_value]

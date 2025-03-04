@@ -23,10 +23,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
 client = None
 connected = False
 
+def map_battery_value(raw_value):
+    """Map YoLink battery levels (0-4) to percentages."""
+    if not isinstance(raw_value, int) or raw_value < 0 or raw_value > 4:
+        return None
+    return {0: 0, 1: 25, 2: 50, 3: 75, 4: 100}[raw_value]
 
 def should_trigger_event(current_state, previous_state, device_type=None):
     """
@@ -48,7 +52,6 @@ def should_trigger_event(current_state, previous_state, device_type=None):
 
     return False
 
-
 def on_connect(client, userdata, flags, rc):
     global connected
     if rc == 0:
@@ -65,7 +68,6 @@ def on_connect(client, userdata, flags, rc):
             time.sleep(5)
             run_mqtt_client()
 
-
 def on_disconnect(client, userdata, rc):
     global connected
     if rc != 0:
@@ -73,7 +75,6 @@ def on_disconnect(client, userdata, rc):
         logger.warning(f"YoLink MQTT disconnected with code {rc}. Reconnecting...")
         time.sleep(5)
         run_mqtt_client()
-
 
 def on_message(client, userdata, msg):
     logger.info(f"Received message on topic {msg.topic}")
@@ -101,7 +102,8 @@ def on_message(client, userdata, msg):
                 "humidity": "unknown",
                 "chekt_zone": "N/A",
                 "door_prop_alarm": False,
-                "previous_state": "unknown"
+                "previous_state": "unknown",
+                "temperatureUnit": "F"  # Default unit
             }
 
         logger.debug(f"MQTT payload for {device_id}: {json.dumps(payload, indent=2)}")
@@ -109,23 +111,40 @@ def on_message(client, userdata, msg):
 
         data = payload.get("data", {})
         previous_state = device.get("state", "unknown")  # Current state before update becomes previous_state
+
+        # Update state
         if "state" in data:
             device["state"] = data["state"]
+
+        # Update battery with mapping
         if "battery" in data:
-            device["battery"] = data["battery"]
+            device["battery"] = map_battery_value(data["battery"])
+
+        # Update signal, checking both direct and nested (loraInfo)
         if "signal" in data:
             device["signal"] = data["signal"]
         elif "loraInfo" in data and "signal" in data["loraInfo"]:
             device["signal"] = data["loraInfo"]["signal"]
-        if "temperature" in data:
-            device["temperature"] = data["temperature"]
-        if "humidity" in data:
-            device["humidity"] = data["humidity"]
+
+        # Update temperature and humidity, preserving existing values if not present
+        device["temperature"] = data.get("temperature", device.get("temperature", "unknown"))
+        device["humidity"] = data.get("humidity", device.get("humidity", "unknown"))
+        device["temperatureUnit"] = data.get("temperatureUnit", device.get("temperatureUnit", "F"))
+
+        # Update alarms for THSensors
         if "alarm" in data:
             device["alarms"]["state"] = data["alarm"]
+
+        # Update device type from payload if present
         if "type" in payload:
             device["type"] = payload["type"]
+
+        # Update last_seen timestamp
         device["last_seen"] = time.strftime("%Y-%m-%d %H:%M:%S")
+
+        # Debug THSensor payloads
+        if payload.get("event", "").startswith("THSensor"):
+            logger.debug(f"THSensor payload: {json.dumps(payload, indent=2)}")
 
         save_device_data(device_id, device)
 
@@ -137,17 +156,13 @@ def on_message(client, userdata, msg):
         logger.debug(
             f"Device type: {device.get('type', 'unknown')}, State: {device['state']}, Previous State: {previous_state}")
 
-        # If this is a DoorSensor and door prop alarm is enabled, process it specially:
+        # If this is a DoorSensor and door prop alarm is enabled, process it specially
         if device.get("type", "").lower() == "doorsensor" and mapping.get("door_prop_alarm", False):
-            # Check if we have a closed -> open transition OR if the payload includes alertType "openRemind"
             if data.get("alertType") == "openRemind":
-                # Use the payload's stateChangedAt if available, otherwise use the payload's time
                 current_time = data.get("stateChangedAt") or data.get("time") or int(time.time() * 1000)
                 last_trigger = get_last_door_prop_alarm(device_id)
                 if last_trigger is None or (int(current_time) - int(last_trigger)) >= 30000:
-                    # Update the last trigger time
                     set_last_door_prop_alarm(device_id, current_time)
-                    # Trigger the CHEKT event with the fixed description "Door opened"
                     logger.info(
                         f"Door prop alarm triggered for device {device_id} on zone {mapping.get('chekt_zone')} at {current_time}")
                     trigger_chekt_event(device_id, mapping.get("chekt_zone"))
@@ -166,20 +181,24 @@ def on_message(client, userdata, msg):
                         f"Triggering CHEKT alert for device {device_id} with state {device['state']} (from {previous_state})")
                     trigger_alert(device_id, device["state"], device.get("type", "unknown"))
                 elif receiver_type == "SIA":
-                    # SIA logic here if needed.
+                    # SIA logic here if needed
                     pass
 
-        # Finally, publish an update for this device.
+        # Finally, publish an update for this device
         publish_update(device_id, {
             "state": device["state"],
-            "alarms": device.get("alarms", {})
+            "alarms": device.get("alarms", {}),
+            "battery": device.get("battery"),
+            "signal": device.get("signal"),
+            "temperature": device.get("temperature"),
+            "humidity": device.get("humidity"),
+            "type": device.get("type")
         })
 
     except json.JSONDecodeError as e:
         logger.error(f"Invalid JSON in MQTT payload: {str(e)}")
     except Exception as e:
         logger.error(f"Error processing message for device {device_id}: {str(e)}")
-
 
 def run_mqtt_client():
     global client, connected
@@ -208,7 +227,6 @@ def run_mqtt_client():
         connected = False
         time.sleep(5)
         run_mqtt_client()
-
 
 if __name__ == "__main__":
     run_mqtt_client()
