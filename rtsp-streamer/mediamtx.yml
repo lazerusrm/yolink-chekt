@@ -3,6 +3,5 @@ rtspAddress: ":8554"
 paths:
   yolink-dashboard:
     source: publisher
-readTimeout: 30s          # Time to wait for incoming data
-writeTimeout: 30s         # Time to wait for outgoing data
-rtspKeepalivePeriod: 30s  # Keepalive interval for RTSP sessions
+readTimeout: 30s
+writeTimeout: 30s
