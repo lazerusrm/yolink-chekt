@@ -31,8 +31,8 @@ for prefix, uri in NAMESPACES.items():
     ET.register_namespace(prefix, uri)
 
 
-def create_onvif_routes(app: Flask, config: Dict[str, Any], onvif_service=None) -> None:
-    """
+    def create_onvif_routes(app: Flask, config: Dict[str, Any], onvif_service=None, renderer=None) -> None:
+        """
     Configure ONVIF API routes for the YoLink Dashboard RTSP Server.
 
     Args:
