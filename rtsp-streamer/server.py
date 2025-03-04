@@ -319,6 +319,9 @@ class RtspStreamer(threading.Thread):
         self.daemon = True
         self.pipe_path = "/tmp/streams/dashboard_pipe"
         self.running = True
+        self.restart_attempts = 0
+        self.max_restarts = 5  # Limit retries to prevent infinite loops
+        # Create directory and FIFO pipe if they don't exist
         if not os.path.exists("/tmp/streams"):
             os.makedirs("/tmp/streams")
         if not os.path.exists(self.pipe_path):
@@ -329,10 +332,10 @@ class RtspStreamer(threading.Thread):
                 logging.error(f"Error creating FIFO pipe: {e}")
 
     def run(self):
-        frame_interval = 1.0 / self.config.get("frame_rate", 1)  # 1 second for 1 FPS
+        frame_interval = 1.0 / self.config.get("frame_rate", 6)  # e.g., 1 second for 1 FPS
         while self.running:
             self.start_ffmpeg()
-            time.sleep(10)  # Increased delay to ensure FFmpeg connects to MediaMTX
+            time.sleep(10)  # Wait for FFmpeg to initialize and connect to MediaMTX
             try:
                 with open(self.pipe_path, "wb") as fifo:
                     logging.info(f"Opened FIFO {self.pipe_path} for writing")
@@ -350,8 +353,8 @@ class RtspStreamer(threading.Thread):
                         time.sleep(frame_interval)
             except Exception as e:
                 logging.error(f"Failed to open FIFO: {e}")
-                time.sleep(2)
-            if self.running:
+                time.sleep(2)  # Brief delay before retrying
+            if self.running and self.restart_attempts < self.max_restarts:
                 self.restart_stream()
                 time.sleep(1)
 
@@ -359,22 +362,22 @@ class RtspStreamer(threading.Thread):
         rtsp_url = f"rtsp://127.0.0.1:{self.config.get('rtsp_port')}/{self.config.get('stream_name')}"
         cmd = [
             "ffmpeg",
-            "-re",
-            "-f", "image2pipe",
-            "-framerate", "6",
-            "-i", self.pipe_path,
-            "-c:v", "libx264",
-            "-r", "6",
-            "-g", "3",
-            "-preset", "ultrafast",
-            "-tune", "zerolatency",
-            "-b:v", "4000k",
-            "-bufsize", "4000k",
-            "-maxrate", "4500k",
-            "-pix_fmt", "yuv420p",
-            "-threads", "2",
-            "-f", "rtsp",
-            "-rtsp_transport", "tcp",
+            "-re",                     # Read input at native frame rate
+            "-f", "image2pipe",        # Input format
+            "-framerate", str(self.config.get("frame_rate", 6)),  # Match config frame rate
+            "-i", self.pipe_path,      # Input from FIFO pipe
+            "-c:v", "libx264",         # Video codec
+            "-r", str(self.config.get("frame_rate", 1)),  # Output frame rate
+            "-g", "3",                 # GOP size for low latency
+            "-preset", "ultrafast",    # Fast encoding
+            "-tune", "zerolatency",    # Minimize latency
+            "-b:v", "4000k",           # Bitrate
+            "-bufsize", "4000k",       # Buffer size
+            "-maxrate", "4500k",       # Maximum bitrate
+            "-pix_fmt", "yuv420p",     # Pixel format
+            "-threads", "2",           # Use 2 threads
+            "-f", "rtsp",              # Output format
+            "-rtsp_transport", "tcp",  # Use TCP for reliability
             rtsp_url
         ]
         logging.info(f"Starting FFmpeg: {' '.join(cmd)}")
@@ -386,12 +389,26 @@ class RtspStreamer(threading.Thread):
                 universal_newlines=True,
                 bufsize=1
             )
-            threading.Thread(target=self.log_ffmpeg_output, daemon=True).start()
+            # Start monitoring FFmpeg in a separate thread
+            threading.Thread(target=self.monitor_ffmpeg, daemon=True).start()
+            self.restart_attempts = 0  # Reset restart counter on successful start
         except Exception as e:
             logging.error(f"Failed to start FFmpeg: {e}")
+            self.restart_stream()
+
+    def monitor_ffmpeg(self):
+        """Monitor FFmpeg process and restart if it exits unexpectedly."""
+        while self.running:
+            if self.ffmpeg_process and self.ffmpeg_process.poll() is not None:
+                exit_code = self.ffmpeg_process.poll()
+                logging.error(f"FFmpeg process exited with code {exit_code}")
+                if self.running and self.restart_attempts < self.max_restarts:
+                    self.restart_stream()
+                break
+            time.sleep(1)  # Check every second
 
     def log_ffmpeg_output(self):
-        """Log FFmpeg stdout and stderr."""
+        """Log FFmpeg stdout and stderr for debugging."""
         if not self.ffmpeg_process:
             return
         while self.ffmpeg_process.poll() is None:
@@ -404,18 +421,34 @@ class RtspStreamer(threading.Thread):
         logging.info(f"FFmpeg process ended with return code {self.ffmpeg_process.returncode}")
 
     def restart_stream(self):
+        """Restart FFmpeg process if it fails."""
+        self.restart_attempts += 1
+        if self.restart_attempts >= self.max_restarts:
+            logging.error(f"Max restart attempts ({self.max_restarts}) reached, giving up.")
+            self.running = False
+            return
         if self.ffmpeg_process:
             self.ffmpeg_process.terminate()
-            self.ffmpeg_process.wait()
+            try:
+                self.ffmpeg_process.wait(timeout=5)  # Wait up to 5 seconds for termination
+            except subprocess.TimeoutExpired:
+                self.ffmpeg_process.kill()  # Force kill if it doesn't terminate
+                logging.warning("FFmpeg process killed after termination timeout")
             self.ffmpeg_process = None
         if self.running:
+            logging.info(f"Restarting FFmpeg (attempt {self.restart_attempts}/{self.max_restarts})")
             self.start_ffmpeg()
 
     def stop(self):
+        """Gracefully stop the streamer and FFmpeg process."""
         self.running = False
         if self.ffmpeg_process:
             self.ffmpeg_process.terminate()
-            self.ffmpeg_process.wait()
+            try:
+                self.ffmpeg_process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self.ffmpeg_process.kill()
+                logging.warning("FFmpeg process killed during shutdown")
 
 # ----------------------
 # ONVIF Service
