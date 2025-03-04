@@ -359,18 +359,19 @@ class RtspStreamer(threading.Thread):
         rtsp_url = f"rtsp://127.0.0.1:{self.config.get('rtsp_port')}/{self.config.get('stream_name')}"
         cmd = [
             "ffmpeg",
-            "-re",                # Real-time input
-            "-f", "image2pipe",   # Input format
-            "-i", self.pipe_path, # FIFO input
-            "-c:v", "libx264",    # Video codec
-            "-r", "1",            # Output 1 FPS
+            "-re",  # Read input at native frame rate
+            "-f", "image2pipe",  # Input format for FIFO pipe
+            "-i", self.pipe_path,  # Path to your FIFO pipe
+            "-c:v", "libx264",  # H.264 codec
+            "-r", "6",  # Output frame rate: 1 FPS
+            "-g", "3",  # Keyframe every frame (GOP size = 1)
             "-preset", "ultrafast",  # Fast encoding
-            "-tune", "zerolatency",  # Reduce latency
-            "-bufsize", "100k",   # Small buffer for low frame rate
-            "-maxrate", "500k",   # Limit bitrate for stability
-            "-f", "rtsp",         # Output format
-            "-rtsp_transport", "tcp",  # Force TCP
-            rtsp_url
+            "-tune", "zerolatency",  # Minimize latency
+            "-bufsize", "100k",  # Small buffer for low bitrate
+            "-maxrate", "600k",  # Cap bitrate
+            "-f", "rtsp",  # Output format
+            "-rtsp_transport", "tcp",  # Use TCP for reliability
+            rtsp_url  # Your RTSP destination (e.g., rtsp://localhost:8554/yolink-dashboard)
         ]
         logging.info(f"Starting FFmpeg: {' '.join(cmd)}")
         try:

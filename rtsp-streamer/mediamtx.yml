@@ -3,5 +3,5 @@ rtspAddress: ":8554"
 paths:
   yolink-dashboard:
     source: publisher
-readTimeout: 30s
-writeTimeout: 30s
+readTimeout: 60s
+writeTimeout: 60s
