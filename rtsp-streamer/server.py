@@ -54,6 +54,24 @@ def get_text_width(draw, text, font):
     bbox = draw.textbbox((0, 0), text, font=font)
     return bbox[2] - bbox[0]
 
+def format_smoke_state(state):
+    """Format smoke/CO sensor state dictionary."""
+    if not isinstance(state, dict):
+        return str(state)
+    if state.get("smokeAlarm", False):
+        return "SMOKE ALARM"
+    if state.get("gasAlarm", False):
+        return "GAS ALARM"
+    if state.get("unexpected", False):
+        return "ALERT"
+    return "normal"
+
+
+def map_battery_value(raw_value):
+    """Map YoLink battery levels (0-4) to percentages."""
+    if not isinstance(raw_value, int) or raw_value < 0 or raw_value > 4:
+        return None
+    return {0: 0, 1: 25, 2: 50, 3: 75, 4: 100}[raw_value]
 
 # ----------------------
 # Dashboard Renderer
@@ -772,23 +790,3 @@ if __name__ == "__main__":
     signal.signal(signal.SIGTERM, shutdown)
     ws_client = start_background_services()
     app.run(host="0.0.0.0", port=config.get("http_port"))
-
-
-def format_smoke_state(state):
-    """Format smoke/CO sensor state dictionary."""
-    if not isinstance(state, dict):
-        return str(state)
-    if state.get("smokeAlarm", False):
-        return "SMOKE ALARM"
-    if state.get("gasAlarm", False):
-        return "GAS ALARM"
-    if state.get("unexpected", False):
-        return "ALERT"
-    return "normal"
-
-
-def map_battery_value(raw_value):
-    """Map YoLink battery levels (0-4) to percentages."""
-    if not isinstance(raw_value, int) or raw_value < 0 or raw_value > 4:
-        return None
-    return {0: 0, 1: 25, 2: 50, 3: 75, 4: 100}[raw_value]
