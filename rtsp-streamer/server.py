@@ -20,7 +20,7 @@ import websocket
 # ----------------------
 # Logging Configuration
 # ----------------------
-logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s: %(message)s')
+logging.basicConfig(level=logging.DEBUG, format='[%(asctime)s] %(levelname)s: %(message)s')
 
 # ----------------------
 # Configuration
@@ -113,61 +113,80 @@ class DashboardRenderer:
 
         for s in sensors:
             if not s:
+                logging.warning("Skipping empty sensor data")
                 continue
+
+            # Extract key fields
             sensor_type = s.get("type")
             state = s.get("state")
             signal = safe_int(s.get("signal"))
             battery = safe_int(s.get("battery"))
-            # Log every sensor's details for debugging
-            logging.debug(
-                f"Processing sensor: {s.get('name', 'Unknown')} (Type: {sensor_type}, State: {state}, Signal: {signal}, Battery: {battery})")
-
-            if battery is not None:
-                battery = map_battery_value(battery)
+            name = s.get("name", "Unknown")
+            device_id = s.get("deviceId", "UnknownID")
 
             # Normalize state to string, strip whitespace, and convert to lowercase
             state_str = str(state).strip().lower() if state is not None else ""
+            logging.debug(
+                f"Sensor: {name} | Type: {sensor_type} | Raw State: {state} | Normalized State: {state_str} | Signal: {signal} | Battery: {battery}")
+
+            # Map battery value if present
+            mapped_battery = map_battery_value(battery) if battery is not None else None
+
+            # Alarm logic
+            is_alarm = False
+            alarm_reason = []
 
             if sensor_type == "ContactSensor":
                 if state_str == "open":
-                    self.alarm_sensors.append(s)
-                    logging.debug(f"ContactSensor {s.get('name')} alarmed: State={state_str}")
-                elif signal is not None and signal < -119:
-                    self.alarm_sensors.append(s)
-                    logging.debug(f"ContactSensor {s.get('name')} alarmed: Signal={signal}")
-                elif battery is not None and battery <= 25:
-                    self.alarm_sensors.append(s)
-                    logging.debug(f"ContactSensor {s.get('name')} alarmed: Battery={battery}")
-                self.previous_states[s.get("deviceId")] = state_str
+                    is_alarm = True
+                    alarm_reason.append("State is 'open'")
+                if signal is not None and signal < -119:
+                    is_alarm = True
+                    alarm_reason.append(f"Signal {signal} < -119")
+                if mapped_battery is not None and mapped_battery <= 25:
+                    is_alarm = True
+                    alarm_reason.append(f"Battery {mapped_battery}% <= 25%")
+                self.previous_states[device_id] = state_str
 
             elif sensor_type == "MotionSensor":
                 if state_str == "motion":
-                    self.alarm_sensors.append(s)
-                    logging.debug(f"MotionSensor {s.get('name')} alarmed: State={state_str}")
-                elif signal is not None and signal < -119:
-                    self.alarm_sensors.append(s)
-                    logging.debug(f"MotionSensor {s.get('name')} alarmed: Signal={signal}")
-                elif battery is not None and battery <= 25:
-                    self.alarm_sensors.append(s)
-                    logging.debug(f"MotionSensor {s.get('name')} alarmed: Battery={battery}")
+                    is_alarm = True
+                    alarm_reason.append("State is 'motion'")
+                if signal is not None and signal < -119:
+                    is_alarm = True
+                    alarm_reason.append(f"Signal {signal} < -119")
+                if mapped_battery is not None and mapped_battery <= 25:
+                    is_alarm = True
+                    alarm_reason.append(f"Battery {mapped_battery}% <= 25%")
 
             elif sensor_type == "THSensor":
                 alarms = s.get("alarms", {}).get("state", {})
                 if any(alarms.values()):
-                    self.alarm_sensors.append(s)
-                    logging.debug(f"THSensor {s.get('name', 'Unknown')} alarmed: Alarms={alarms}")
-                elif battery is not None and battery <= 25:
-                    self.alarm_sensors.append(s)
-                    logging.debug(f"THSensor {s.get('name', 'Unknown')} alarmed: Battery={battery}")
-                elif signal is not None and signal < -119:
-                    self.alarm_sensors.append(s)
-                    logging.debug(f"THSensor {s.get('name', 'Unknown')} alarmed: Signal={signal}")
+                    is_alarm = True
+                    alarm_reason.append(f"Alarm state active: {alarms}")
+                if mapped_battery is not None and mapped_battery <= 25:
+                    is_alarm = True
+                    alarm_reason.append(f"Battery {mapped_battery}% <= 25%")
+                if signal is not None and signal < -119:
+                    is_alarm = True
+                    alarm_reason.append(f"Signal {signal} < -119")
 
             elif sensor_type in ["Outlet", "MultiOutlet"]:
-                logging.debug(f"Outlet/MultiOutlet {s.get('name')} processed: State={state_str}")
+                # Outlets don't trigger alarms in this context, just log for reference
+                logging.debug(f"Outlet/MultiOutlet {name} processed: State={state_str}")
 
-        logging.info(f"Sensors in alarm: {[s.get('name') for s in self.alarm_sensors]}")
+            # Add to alarm list if applicable
+            if is_alarm:
+                self.alarm_sensors.append(s)
+                logging.debug(f"Added to alarms: {name} | Reasons: {', '.join(alarm_reason)}")
+            else:
+                logging.debug(f"Not alarmed: {name} | No conditions met")
 
+        # Log the final alarm sensors list
+        alarm_names = [s.get("name", "Unknown") for s in self.alarm_sensors]
+        logging.info(f"Sensors in alarm: {alarm_names} (Total: {len(self.alarm_sensors)})")
+
+        # Update pagination
         sensors_per_page = 20
         self.total_pages = max(1, (len(self.sensor_data) + sensors_per_page - 1) // sensors_per_page)
         if self.current_page >= self.total_pages:
@@ -175,6 +194,7 @@ class DashboardRenderer:
         logging.info(
             f"Updated: {len(self.sensor_data)} sensors, {len(self.alarm_sensors)} alarms, {self.total_pages} pages")
 
+        # Trigger alarm view if new alarms detected
         if self.alarm_sensors and not self.new_alarm_triggered:
             self.new_alarm_triggered = True
             self.alarm_display_timer = time.time()
