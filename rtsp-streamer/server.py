@@ -27,7 +27,7 @@ config = {
     "dashboard_url": os.environ.get("DASHBOARD_URL", "http://websocket-proxy:3000"),
     "rtsp_port": int(os.environ.get("RTSP_PORT", 8554)),
     "stream_name": os.environ.get("STREAM_NAME", "yolink-dashboard"),
-    "frame_rate": int(os.environ.get("FRAME_RATE", 1)),  # Target 1 FPS (update to 6 if needed)
+    "frame_rate": int(os.environ.get("FRAME_RATE", 6)),  # Target 1 FPS (update to 6 if needed)
     "width": int(os.environ.get("WIDTH", 1920)),
     "height": int(os.environ.get("HEIGHT", 1080)),
     "cycle_interval": int(os.environ.get("CYCLE_INTERVAL", 10000)),  # in ms
@@ -337,10 +337,10 @@ class RtspStreamer(threading.Thread):
             "ffmpeg",
             "-re",                     # Read input at native frame rate
             "-f", "image2pipe",        # Input format
-            "-framerate", str(self.config.get("frame_rate", 1)),  # Match config frame rate
+            "-framerate", str(self.config.get("frame_rate", 6)),  # Match config frame rate
             "-i", self.pipe_path,      # Input from FIFO pipe
             "-c:v", "libx264",         # Video codec
-            "-r", str(self.config.get("frame_rate", 1)),  # Output frame rate
+            "-r", str(self.config.get("frame_rate", 6)),  # Output frame rate
             "-g", "3",                 # GOP size for low latency
             "-preset", "ultrafast",    # Fast encoding
             "-tune", "zerolatency",    # Minimize latency
