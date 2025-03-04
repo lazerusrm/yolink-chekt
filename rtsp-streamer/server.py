@@ -11,6 +11,7 @@ import datetime
 import subprocess
 import io
 import logging
+import stat
 
 from flask import Flask, request, jsonify, Response
 from PIL import Image, ImageDraw, ImageFont
@@ -400,6 +401,8 @@ class WebSocketClient(threading.Thread):
 # ----------------------
 # RTSP Streamer (Updated for 6 FPS with stability fixes)
 # ----------------------
+import stat  # Add this to your imports at the top
+
 class RtspStreamer(threading.Thread):
     def __init__(self, config, renderer):
         super().__init__()
@@ -415,8 +418,8 @@ class RtspStreamer(threading.Thread):
         # Create directory and FIFO pipe with robust handling
         if not os.path.exists("/tmp/streams"):
             os.makedirs("/tmp/streams")
-        if os.path.exists(self.pipe_path) and not os.path.isfifo(self.pipe_path):
-            os.remove(self.pipe_path)  # Remove if it’s not a FIFO
+        if os.path.exists(self.pipe_path) and not stat.S_ISFIFO(os.stat(self.pipe_path).st_mode):
+            os.remove(self.pipe_path)  # Remove if not a FIFO
             os.mkfifo(self.pipe_path)
             logging.info(f"Recreated FIFO at {self.pipe_path}")
         elif not os.path.exists(self.pipe_path):
@@ -463,26 +466,26 @@ class RtspStreamer(threading.Thread):
             "ffmpeg",
             "-re",  # Read input at native frame rate
             "-f", "image2pipe",  # Input format
-            "-framerate", str(self.config.get("frame_rate", 6)),  # Updated to 6 FPS
+            "-framerate", str(self.config.get("frame_rate", 6)),  # Set to 6 FPS
             "-i", self.pipe_path,  # Input from FIFO pipe
             "-c:v", "libx264",  # Video codec
-            "-r", str(self.config.get("frame_rate", 6)),  # Updated to 6 FPS
-            "-g", "3",  # GOP size for low latency (1 second at 6 FPS)
+            "-r", str(self.config.get("frame_rate", 6)),  # Output 6 FPS
+            "-g", "12",  # GOP size (2 seconds at 6 FPS, adjust if lower latency needed)
             "-preset", "ultrafast",  # Fast encoding
             "-tune", "zerolatency",  # Minimize latency
             "-b:v", "4000k",  # Bitrate
-            "-bufsize", "8000k",  # Increased buffer size to handle network jitter
+            "-bufsize", "8000k",  # Increased buffer size
             "-maxrate", "4500k",  # Maximum bitrate
             "-pix_fmt", "yuv420p",  # Pixel format
             "-threads", "2",  # Use 2 threads
-            "-s", f"{self.config['width']}x{self.config['height']}",  # Match resolution
-            "-timeout", "60000000",  # 60 seconds timeout for input (in microseconds)
-            "-reconnect", "1",  # Enable reconnection on network error
-            "-reconnect_at_eof", "1",  # Reconnect at end of file or stream
+            "-s", f"{self.config['width']}x{self.config['height']}",  # Resolution
+            "-timeout", "60000000",  # 60 seconds timeout (microseconds)
+            "-reconnect", "1",  # Enable reconnection
+            "-reconnect_at_eof", "1",  # Reconnect at EOF
             "-reconnect_streamed", "1",  # Reconnect for streamed content
-            "-reconnect_delay_max", "10",  # Max delay between reconnection attempts (seconds)
+            "-reconnect_delay_max", "10",  # Max delay between reconnects (seconds)
             "-f", "rtsp",  # Output format
-            "-rtsp_transport", "tcp",  # Use TCP for reliability
+            "-rtsp_transport", "tcp",  # Use TCP
             rtsp_url
         ]
         logging.info(f"Starting FFmpeg: {' '.join(cmd)}")
@@ -494,9 +497,8 @@ class RtspStreamer(threading.Thread):
                 universal_newlines=True,
                 bufsize=1
             )
-            # Start monitoring FFmpeg in a separate thread
             threading.Thread(target=self.monitor_ffmpeg, daemon=True).start()
-            self.restart_attempts = 0  # Reset restart counter on successful start
+            self.restart_attempts = 0
         except Exception as e:
             logging.error(f"Failed to start FFmpeg: {e}")
             self.restart_stream()
@@ -570,6 +572,7 @@ class OnvifService(threading.Thread):
 
     def run(self):
         threading.Thread(target=self.ws_discovery, daemon=True).start()
+        rame_interval = 1.0 / self.config.get("frame_rate", 6)
         logging.info(f"ONVIF service initialized: onvif://{self.server_ip}:{self.onvif_port}")
 
     def ws_discovery(self):
