@@ -359,29 +359,32 @@ class RtspStreamer(threading.Thread):
         rtsp_url = f"rtsp://127.0.0.1:{self.config.get('rtsp_port')}/{self.config.get('stream_name')}"
         cmd = [
             "ffmpeg",
-            "-re",  # Read input at native frame rate
-            "-f", "image2pipe",  # Input format for FIFO pipe
-            "-i", self.pipe_path,  # Path to your FIFO pipe
-            "-c:v", "libx264",  # H.264 codec
-            "-r", "6",  # Output frame rate: 1 FPS
-            "-g", "3",  # Keyframe every frame (GOP size = 1)
-            "-preset", "ultrafast",  # Fast encoding
-            "-tune", "zerolatency",  # Minimize latency
-            "-bufsize", "100k",  # Small buffer for low bitrate
-            "-maxrate", "600k",  # Cap bitrate
-            "-f", "rtsp",  # Output format
-            "-rtsp_transport", "tcp",  # Use TCP for reliability
-            rtsp_url  # Your RTSP destination (e.g., rtsp://localhost:8554/yolink-dashboard)
+            "-re",
+            "-f", "image2pipe",
+            "-framerate", "6",
+            "-i", self.pipe_path,
+            "-c:v", "libx264",
+            "-r", "6",
+            "-g", "3",
+            "-preset", "ultrafast",
+            "-tune", "zerolatency",
+            "-b:v", "4000k",
+            "-bufsize", "4000k",
+            "-maxrate", "4500k",
+            "-pix_fmt", "yuv420p",
+            "-threads", "2",
+            "-f", "rtsp",
+            "-rtsp_transport", "tcp",
+            rtsp_url
         ]
         logging.info(f"Starting FFmpeg: {' '.join(cmd)}")
         try:
             self.ffmpeg_process = subprocess.Popen(
                 cmd,
-                stdin=subprocess.PIPE,  # Not used but ensures pipe compatibility
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 universal_newlines=True,
-                bufsize=1  # Line-buffered
+                bufsize=1
             )
             threading.Thread(target=self.log_ffmpeg_output, daemon=True).start()
         except Exception as e:
