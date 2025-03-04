@@ -47,7 +47,7 @@ echo "$(date '+%Y-%m-%d %H:%M:%S') - Starting MediaMTX RTSP server"
 mkdir -p /var/log/mediamtx
 
 # Start MediaMTX with output redirection
-mediamtx --config /opt/mediamtx.yml > /var/log/mediamtx/stdout.log 2> /var/log/mediamtx/stderr.log &
+mediamtx /opt/mediamtx.yml > /var/log/mediamtx/stdout.log 2> /var/log/mediamtx/stderr.log &
 MEDIAMTX_PID=$!
 
 # Wait for MediaMTX to initialize
