@@ -332,7 +332,7 @@ class RtspStreamer(threading.Thread):
         frame_interval = 1.0 / self.config.get("frame_rate", 1)  # 1 second for 1 FPS
         while self.running:
             self.start_ffmpeg()
-            time.sleep(3)  # Increased delay to ensure FFmpeg connects to MediaMTX
+            time.sleep(10)  # Increased delay to ensure FFmpeg connects to MediaMTX
             try:
                 with open(self.pipe_path, "wb") as fifo:
                     logging.info(f"Opened FIFO {self.pipe_path} for writing")
