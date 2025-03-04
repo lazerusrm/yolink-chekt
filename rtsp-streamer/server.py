@@ -123,28 +123,43 @@ class DashboardRenderer:
             if battery is not None:
                 battery = map_battery_value(battery)
 
+            # MotionSensor: Alarm if state is "motion"
             if sensor_type == "MotionSensor":
-                if (state == "motion" or
-                        (signal is not None and signal < -119) or
-                        (battery is not None and battery <= 25)):
+                if state == "motion":
                     self.alarm_sensors.append(s)
-                    logging.debug(f"MotionSensor {s.get('name')} alarmed: State={state}, Battery={battery}, Signal={signal}")
+                    logging.debug(f"MotionSensor {s.get('name')} alarmed: State={state}")
+                elif signal is not None and signal < -119:
+                    self.alarm_sensors.append(s)
+                    logging.debug(f"MotionSensor {s.get('name')} alarmed: Signal={signal}")
+                elif battery is not None and battery <= 25:
+                    self.alarm_sensors.append(s)
+                    logging.debug(f"MotionSensor {s.get('name')} alarmed: Battery={battery}")
 
+            # ContactSensor: Alarm if state is "open"
             elif sensor_type == "ContactSensor":
-                previous_state = self.previous_states.get(s.get("deviceId"), "closed")
-                if (state == "open" or
-                        (previous_state == "closed" and state == "open") or
-                        (signal is not None and signal < -119) or
-                        (battery is not None and battery <= 25)):
+                if state == "open":
                     self.alarm_sensors.append(s)
-                    logging.debug(f"ContactSensor {s.get('name')} alarmed: State={state}, Prev={previous_state}, Battery={battery}, Signal={signal}")
+                    logging.debug(f"ContactSensor {s.get('name')} alarmed: State={state}")
+                elif signal is not None and signal < -119:
+                    self.alarm_sensors.append(s)
+                    logging.debug(f"ContactSensor {s.get('name')} alarmed: Signal={signal}")
+                elif battery is not None and battery <= 25:
+                    self.alarm_sensors.append(s)
+                    logging.debug(f"ContactSensor {s.get('name')} alarmed: Battery={battery}")
                 self.previous_states[s.get("deviceId")] = state
 
+            # THSensor: Alarm if any alarm state is active or battery/signal issues
             elif sensor_type == "THSensor":
                 alarms = s.get("alarms", {}).get("state", {})
-                if any(alarms.values()) or (battery is not None and battery <= 25) or (signal is not None and signal < -119):
+                if any(alarms.values()):
                     self.alarm_sensors.append(s)
-                    logging.debug(f"THSensor {s.get('name', 'Unknown')}: Alarms={alarms}, Battery={battery}, Signal={signal}")
+                    logging.debug(f"THSensor {s.get('name', 'Unknown')} alarmed: Alarms={alarms}")
+                elif battery is not None and battery <= 25:
+                    self.alarm_sensors.append(s)
+                    logging.debug(f"THSensor {s.get('name', 'Unknown')} alarmed: Battery={battery}")
+                elif signal is not None and signal < -119:
+                    self.alarm_sensors.append(s)
+                    logging.debug(f"THSensor {s.get('name', 'Unknown')} alarmed: Signal={signal}")
 
             elif sensor_type in ["Outlet", "MultiOutlet"]:
                 logging.debug(f"Rendering Outlet/MultiOutlet: {s}")
@@ -153,11 +168,107 @@ class DashboardRenderer:
         self.total_pages = max(1, (len(self.sensor_data) + sensors_per_page - 1) // sensors_per_page)
         if self.current_page >= self.total_pages:
             self.current_page = 0
-        logging.info(f"Updated: {len(self.sensor_data)} sensors, {len(self.alarm_sensors)} alarms, {self.total_pages} pages")
+        logging.info(
+            f"Updated: {len(self.sensor_data)} sensors, {len(self.alarm_sensors)} alarms, {self.total_pages} pages")
 
         if self.alarm_sensors and not self.new_alarm_triggered:
             self.new_alarm_triggered = True
             self.alarm_display_timer = time.time()
+
+    def render_alarm_view(self, draw):
+        # Draw red banner at the top
+        draw.rectangle([(0, 0), (draw.im.size[0], 50)], fill="#ff0000")
+
+        # Left-aligned "SENSORS IN ALARM" title
+        draw.text((10, 10), "SENSORS IN ALARM", font=self.font_large, fill="#ffffff")
+
+        # Right-aligned alarm count
+        alarm_count_text = f"{len(self.alarm_sensors)} in alarm"
+        text_width = get_text_width(draw, alarm_count_text, self.font_large)
+        draw.text((draw.im.size[0] - text_width - 10, 10), alarm_count_text, font=self.font_large, fill="#ffffff")
+
+        if not self.alarm_sensors:
+            draw.text((10, 60), "No sensors in alarm", font=self.font_small, fill="#ffffff")
+            return
+
+        sensors_per_page = 20
+        for i, sensor in enumerate(self.alarm_sensors[:sensors_per_page]):
+            x = 10 + (i % 5) * 380
+            y = 60 + (i // 5) * 260
+            draw.rectangle([(x, y), (x + 370, y + 250)], outline="#ffffff")
+            draw.text((x + 10, y + 10), sensor.get("name", "Unknown"), font=self.font_small, fill="#ffffff")
+
+            sensor_type = sensor.get("type")
+            state = sensor.get("state", "N/A")
+            if sensor_type == "THSensor" and isinstance(state, dict):
+                state_text = format_smoke_state(state)
+            else:
+                state_text = state
+            draw.text((x + 10, y + 30), f"State: {state_text}", font=self.font_small, fill="#ffffff")
+            y_offset = 50
+
+            if sensor_type in ["MotionSensor", "ContactSensor"]:
+                if "battery" in sensor and sensor["battery"] is not None:
+                    battery_value = map_battery_value(safe_int(sensor["battery"]))
+                    if battery_value is not None:
+                        draw.text((x + 10, y + y_offset), f"Battery: {battery_value}%", font=self.font_small,
+                                  fill="#ffffff")
+                        y_offset += 20
+                if "signal" in sensor:
+                    signal_value = safe_int(sensor["signal"])
+                    if signal_value is not None:
+                        draw.text((x + 10, y + y_offset), f"Signal: {signal_value}", font=self.font_small,
+                                  fill="#ffffff")
+                        y_offset += 20
+
+            elif sensor_type == "THSensor":
+                if sensor.get("temperature", "unknown") != "unknown":
+                    draw.text((x + 10, y + y_offset),
+                              f"Temp: {sensor['temperature']}°{sensor.get('temperatureUnit', 'F')}",
+                              font=self.font_small, fill="#ffffff")
+                    y_offset += 20
+                if sensor.get("humidity", "unknown") != "unknown":
+                    draw.text((x + 10, y + y_offset), f"Humidity: {sensor['humidity']}%", font=self.font_small,
+                              fill="#ffffff")
+                    y_offset += 20
+                if "battery" in sensor and sensor["battery"] is not None:
+                    battery_value = map_battery_value(safe_int(sensor["battery"]))
+                    if battery_value is not None:
+                        draw.text((x + 10, y + y_offset), f"Battery: {battery_value}%", font=self.font_small,
+                                  fill="#ffffff")
+                        y_offset += 20
+                if "signal" in sensor:
+                    signal_value = safe_int(sensor["signal"])
+                    if signal_value is not None:
+                        draw.text((x + 10, y + y_offset), f"Signal: {signal_value}", font=self.font_small,
+                                  fill="#ffffff")
+                        y_offset += 20
+
+            elif sensor_type in ["Outlet", "MultiOutlet"]:
+                if "power" in sensor or "powers" in sensor:
+                    powers = sensor.get("power", sensor.get("powers", []))
+                    if isinstance(powers, (int, float)):
+                        draw.text((x + 10, y + y_offset), f"Power: {powers}W", font=self.font_small, fill="#ffffff")
+                    elif isinstance(powers, list):
+                        for i, power in enumerate(powers[:2]):
+                            draw.text((x + 10, y + y_offset + (i * 20)), f"Outlet {i + 1}: {power}W",
+                                      font=self.font_small, fill="#ffffff")
+                    y_offset += len(powers) * 20 if isinstance(powers, list) else 20
+                if "watt" in sensor or "watts" in sensor:
+                    watts = sensor.get("watt", sensor.get("watts", []))
+                    if isinstance(watts, (int, float)):
+                        draw.text((x + 10, y + y_offset), f"Watt: {watts}W", font=self.font_small, fill="#ffffff")
+                    elif isinstance(watts, list):
+                        for i, watt in enumerate(watts[:2]):
+                            draw.text((x + 10, y + y_offset + (i * 20)), f"Outlet {i + 1} Watt: {watt}W",
+                                      font=self.font_small, fill="#ffffff")
+                    y_offset += len(watts) * 20 if isinstance(watts, list) else 20
+                if "signal" in sensor:
+                    signal_value = safe_int(sensor["signal"])
+                    if signal_value is not None:
+                        draw.text((x + 10, y + y_offset), f"Signal: {signal_value}", font=self.font_small,
+                                  fill="#ffffff")
+                        y_offset += 20
 
     def render_frame(self, width, height):
         current_time = time.time()
