@@ -69,6 +69,7 @@ class DashboardRenderer:
         self.alarm_sensors = []
         self.current_page = 0
         self.total_pages = 1
+        self.last_update_time = time.time()  # Track last update for forcing refreshes
         try:
             # Use DejaVu Sans, which is commonly available in Debian-based images
             self.font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 36)
@@ -80,13 +81,14 @@ class DashboardRenderer:
         self.previous_states = {}  # To track previous states for contact sensors
 
     def update_sensors(self, sensors):
-        """Update sensor data and determine which sensors are in alarm state."""
+        """Update sensor data and determine which sensors are in alarm state, triggering a frame refresh."""
         if not isinstance(sensors, list):
             logging.error("Invalid sensor data: not a list")
             return
 
         self.sensor_data = sensors
         self.alarm_sensors = []
+        self.last_update_time = time.time()  # Update timestamp for frame refresh
         logging.info(f"Received {len(sensors)} sensors via WebSocket")  # Log sensor count
 
         for s in sensors:
@@ -133,8 +135,9 @@ class DashboardRenderer:
                     logging.debug(
                         f"THSensor {s.get('name', 'Unknown')}: Alarms={alarms}, Battery={battery}, Signal={signal}")
 
-            # Outlets and other devices: no alarms, just display
-            # No action needed here; they won’t be added to alarm_sensors
+            # Outlets and Multi-Outlets (no alarms, just display)
+            elif sensor_type in ["Outlet", "MultiOutlet"]:
+                logging.debug(f"Rendering Outlet/MultiOutlet: {s}")  # Debug multi-outlet data
 
         # Pagination logic
         sensors_per_page = 12
@@ -154,14 +157,18 @@ class DashboardRenderer:
         image = Image.new("RGB", (width, height), "#000000")
         draw = ImageDraw.Draw(image)
 
+        # Always render latest data, cycling between alarm and normal views
         if self.alarm_sensors and (current_time - self.alarm_display_timer < self.alarm_display_duration):
             self.render_alarm_view(draw)  # Show alarm view for 30 seconds
+            logging.debug("Rendering alarm view")
         elif current_time - self.alarm_display_timer < self.alarm_display_duration + self.normal_display_duration:
             self.render_normal_view(draw)  # Show normal view for 30 seconds
+            logging.debug("Rendering normal view")
         else:
             self.alarm_display_timer = 0  # Reset timer
             self.new_alarm_triggered = False  # Reset flag
             self.render_normal_view(draw)  # Default to normal view
+            logging.debug("Rendering default normal view")
 
         return image
 
@@ -224,17 +231,30 @@ class DashboardRenderer:
                               fill="#ffffff")
                     y_offset += 20
 
-            elif sensor_type == "Outlet":
-                if "power" in sensor:
-                    draw.text((x + 10, y + y_offset), f"Power: {sensor['power']}", font=self.font_small, fill="#ffffff")
-                    y_offset += 20
-                if "watt" in sensor:
-                    draw.text((x + 10, y + y_offset), f"Watt: {sensor['watt']}", font=self.font_small, fill="#ffffff")
-                    y_offset += 20
+            elif sensor_type in ["Outlet", "MultiOutlet"]:
+                if "power" in sensor or "powers" in sensor:  # Handle single or multiple power values
+                    powers = sensor.get("power", sensor.get("powers", []))
+                    if isinstance(powers, (int, float)):
+                        draw.text((x + 10, y + y_offset), f"Power: {powers}W", font=self.font_small, fill="#ffffff")
+                    elif isinstance(powers, list):
+                        for i, power in enumerate(powers[:2]):  # Limit to 2 for space
+                            draw.text((x + 10, y + y_offset + (i * 20)), f"Outlet {i + 1} Power: {power}W",
+                                      font=self.font_small, fill="#ffffff")
+                    y_offset += len(powers) * 20 if isinstance(powers, list) else 20
+                if "watt" in sensor or "watts" in sensor:  # Handle single or multiple watt values
+                    watts = sensor.get("watt", sensor.get("watts", []))
+                    if isinstance(watts, (int, float)):
+                        draw.text((x + 10, y + y_offset), f"Watt: {watts}W", font=self.font_small, fill="#ffffff")
+                    elif isinstance(watts, list):
+                        for i, watt in enumerate(watts[:2]):  # Limit to 2 for space
+                            draw.text((x + 10, y + y_offset + (i * 20)), f"Outlet {i + 1} Watt: {watt}W",
+                                      font=self.font_small, fill="#ffffff")
+                    y_offset += len(watts) * 20 if isinstance(watts, list) else 20
                 if "signal" in sensor:
                     draw.text((x + 10, y + y_offset), f"Signal: {sensor['signal']}", font=self.font_small,
                               fill="#ffffff")
                     y_offset += 20
+                logging.debug(f"Rendering Outlet/MultiOutlet: {sensor}")  # Add debugging
 
     def render_alarm_view(self, draw):
         """Render the alarm view with relevant fields for alarmed sensors."""
@@ -289,25 +309,30 @@ class DashboardRenderer:
                               fill="#ffffff")
                     y_offset += 20
 
-
-def map_battery_value(raw_value):
-    """Map YoLink battery levels (0-4) to percentages."""
-    if not isinstance(raw_value, int) or raw_value < 0 or raw_value > 4:
-        return None
-    return {0: 0, 1: 25, 2: 50, 3: 75, 4: 100}[raw_value]
-
-
-def format_smoke_state(state):
-    """Format smoke/CO sensor state dictionary."""
-    if not isinstance(state, dict):
-        return str(state)
-    if state.get("smokeAlarm", False):
-        return "SMOKE ALARM"
-    if state.get("gasAlarm", False):
-        return "GAS ALARM"
-    if state.get("unexpected", False):
-        return "ALERT"
-    return "normal"
+            elif sensor_type in ["Outlet", "MultiOutlet"]:
+                if "power" in sensor or "powers" in sensor:  # Handle single or multiple power values
+                    powers = sensor.get("power", sensor.get("powers", []))
+                    if isinstance(powers, (int, float)):
+                        draw.text((x + 10, y + y_offset), f"Power: {powers}W", font=self.font_small, fill="#ffffff")
+                    elif isinstance(powers, list):
+                        for i, power in enumerate(powers[:2]):  # Limit to 2 for space
+                            draw.text((x + 10, y + y_offset + (i * 20)), f"Outlet {i + 1} Power: {power}W",
+                                      font=self.font_small, fill="#ffffff")
+                    y_offset += len(powers) * 20 if isinstance(powers, list) else 20
+                if "watt" in sensor or "watts" in sensor:  # Handle single or multiple watt values
+                    watts = sensor.get("watt", sensor.get("watts", []))
+                    if isinstance(watts, (int, float)):
+                        draw.text((x + 10, y + y_offset), f"Watt: {watts}W", font=self.font_small, fill="#ffffff")
+                    elif isinstance(watts, list):
+                        for i, watt in enumerate(watts[:2]):  # Limit to 2 for space
+                            draw.text((x + 10, y + y_offset + (i * 20)), f"Outlet {i + 1} Watt: {watt}W",
+                                      font=self.font_small, fill="#ffffff")
+                    y_offset += len(watts) * 20 if isinstance(watts, list) else 20
+                if "signal" in sensor:
+                    draw.text((x + 10, y + y_offset), f"Signal: {sensor['signal']}", font=self.font_small,
+                              fill="#ffffff")
+                    y_offset += 20
+                logging.debug(f"Rendering Outlet/MultiOutlet: {sensor}")  # Add debugging
 
 
 # ----------------------
@@ -355,7 +380,7 @@ class WebSocketClient(threading.Thread):
 
 
 # ----------------------
-# RTSP Streamer (Updated for 6 FPS)
+# RTSP Streamer (Updated for 6 FPS with stability fixes)
 # ----------------------
 class RtspStreamer(threading.Thread):
     def __init__(self, config, renderer):
@@ -367,7 +392,8 @@ class RtspStreamer(threading.Thread):
         self.pipe_path = "/tmp/streams/dashboard_pipe"
         self.running = True
         self.restart_attempts = 0
-        self.max_restarts = 5  # Limit retries to prevent infinite loops
+        self.max_restarts = 10  # Increase retries to handle intermittent failures
+        self.retry_delay = 5  # Delay between retries in seconds
         # Create directory and FIFO pipe if they don't exist
         if not os.path.exists("/tmp/streams"):
             os.makedirs("/tmp/streams")
@@ -382,7 +408,6 @@ class RtspStreamer(threading.Thread):
         frame_interval = 1.0 / self.config.get("frame_rate", 6)  # Updated to 6 FPS (~166ms)
         while self.running:
             self.start_ffmpeg()
-            time.sleep(10)  # Wait for FFmpeg to initialize and connect to MediaMTX
             try:
                 with open(self.pipe_path, "wb") as fifo:
                     logging.info(f"Opened FIFO {self.pipe_path} for writing")
@@ -403,11 +428,15 @@ class RtspStreamer(threading.Thread):
                             logging.error(f"Error writing to FIFO: {e}")
                         time.sleep(frame_interval)
             except Exception as e:
-                logging.error(f"Failed to open FIFO: {e}")
-                time.sleep(2)  # Brief delay before retrying
+                logging.error(f"Failed to open FIFO or maintain stream: {e}")
             if self.running and self.restart_attempts < self.max_restarts:
+                logging.info(
+                    f"Waiting {self.retry_delay} seconds before retrying FFmpeg (attempt {self.restart_attempts + 1}/{self.max_restarts})")
+                time.sleep(self.retry_delay)
                 self.restart_stream()
-                time.sleep(1)
+            else:
+                logging.error(f"Max restart attempts ({self.max_restarts}) reached, giving up.")
+                self.running = False
 
     def start_ffmpeg(self):
         rtsp_url = f"rtsp://127.0.0.1:{self.config.get('rtsp_port')}/{self.config.get('stream_name')}"
@@ -423,11 +452,17 @@ class RtspStreamer(threading.Thread):
             "-preset", "ultrafast",  # Fast encoding
             "-tune", "zerolatency",  # Minimize latency
             "-b:v", "4000k",  # Bitrate
-            "-bufsize", "4000k",  # Buffer size
+            "-bufsize", "8000k",  # Increased buffer size to handle network jitter
             "-maxrate", "4500k",  # Maximum bitrate
             "-pix_fmt", "yuv420p",  # Pixel format
             "-threads", "2",  # Use 2 threads
             "-s", f"{self.config['width']}x{self.config['height']}",  # Match resolution
+            "-timeout", "60000000",  # 60 seconds timeout for input (in microseconds)
+            "-stimeout", "60000000",  # 60 seconds socket timeout (in microseconds)
+            "-reconnect", "1",  # Enable reconnection on network error
+            "-reconnect_at_eof", "1",  # Reconnect at end of file or stream
+            "-reconnect_streamed", "1",  # Reconnect for streamed content
+            "-reconnect_delay_max", "10",  # Max delay between reconnection attempts (seconds)
             "-f", "rtsp",  # Output format
             "-rtsp_transport", "tcp",  # Use TCP for reliability
             rtsp_url
@@ -449,31 +484,25 @@ class RtspStreamer(threading.Thread):
             self.restart_stream()
 
     def monitor_ffmpeg(self):
-        """Monitor FFmpeg process and restart if it exits unexpectedly."""
+        """Monitor FFmpeg process and restart if it exits unexpectedly, with detailed logging."""
+        if not self.ffmpeg_process:
+            return
         while self.running:
-            if self.ffmpeg_process and self.ffmpeg_process.poll() is not None:
+            if self.ffmpeg_process.poll() is not None:
                 exit_code = self.ffmpeg_process.poll()
                 logging.error(f"FFmpeg process exited with code {exit_code}")
+                stdout, stderr = self.ffmpeg_process.communicate()
+                if stdout:
+                    logging.info(f"FFmpeg stdout: {stdout}")
+                if stderr:
+                    logging.error(f"FFmpeg stderr: {stderr}")
                 if self.running and self.restart_attempts < self.max_restarts:
                     self.restart_stream()
                 break
             time.sleep(1)  # Check every second
 
-    def log_ffmpeg_output(self):
-        """Log FFmpeg stdout and stderr for debugging."""
-        if not self.ffmpeg_process:
-            return
-        while self.ffmpeg_process.poll() is None:
-            stdout_line = self.ffmpeg_process.stdout.readline().strip()
-            stderr_line = self.ffmpeg_process.stderr.readline().strip()
-            if stdout_line:
-                logging.info(f"FFmpeg stdout: {stdout_line}")
-            if stderr_line:
-                logging.info(f"FFmpeg stderr: {stderr_line}")
-        logging.info(f"FFmpeg process ended with return code {self.ffmpeg_process.returncode}")
-
     def restart_stream(self):
-        """Restart FFmpeg process if it fails."""
+        """Restart FFmpeg process if it fails, with increased retry attempts and delay."""
         self.restart_attempts += 1
         if self.restart_attempts >= self.max_restarts:
             logging.error(f"Max restart attempts ({self.max_restarts}) reached, giving up.")
@@ -487,9 +516,8 @@ class RtspStreamer(threading.Thread):
                 self.ffmpeg_process.kill()  # Force kill if it doesn't terminate
                 logging.warning("FFmpeg process killed after termination timeout")
             self.ffmpeg_process = None
-        if self.running:
-            logging.info(f"Restarting FFmpeg (attempt {self.restart_attempts}/{self.max_restarts})")
-            self.start_ffmpeg()
+        logging.info(f"Restarting FFmpeg (attempt {self.restart_attempts}/{self.max_restarts})")
+        self.start_ffmpeg()
 
     def stop(self):
         """Gracefully stop the streamer and FFmpeg process."""
