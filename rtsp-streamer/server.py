@@ -102,19 +102,42 @@ class DashboardRenderer:
             self.font_small = ImageFont.load_default()
         self.previous_states = {}
 
+    from datetime import datetime, timedelta
+
     def update_sensors(self, sensors):
         if not isinstance(sensors, list):
             logging.error("Invalid sensor data: not a list")
             return
-        self.sensor_data = sensors
+        self.sensor_data = []
         self.alarm_sensors = []
         self.last_update_time = time.time()
         logging.info(f"Received {len(sensors)} sensors via WebSocket")
+
+        # Define the cutoff date (60 days ago from today)
+        cutoff_date = datetime.now() - timedelta(days=60)
 
         for s in sensors:
             if not s:
                 logging.warning("Skipping empty sensor data")
                 continue
+
+            # Extract last_seen and filter out old or never-seen sensors
+            last_seen = s.get("last_seen")
+            if last_seen == "never":
+                logging.debug(f"Filtered out {s.get('name', 'Unknown')} | Last seen: never")
+                continue
+            try:
+                last_seen_date = datetime.strptime(last_seen, "%Y-%m-%d %H:%M:%S")
+                if last_seen_date < cutoff_date:
+                    logging.debug(
+                        f"Filtered out {s.get('name', 'Unknown')} | Last seen: {last_seen} (older than 60 days)")
+                    continue
+            except (ValueError, TypeError) as e:
+                logging.warning(f"Invalid last_seen format for {s.get('name', 'Unknown')}: {last_seen}, error: {e}")
+                continue  # Skip if date parsing fails
+
+            # If we reach here, the sensor is within the last 60 days
+            self.sensor_data.append(s)
 
             # Extract key fields
             sensor_type = s.get("type")
@@ -127,7 +150,7 @@ class DashboardRenderer:
             # Normalize state to string, strip whitespace, and convert to lowercase if it’s not a dict
             state_str = str(state).strip().lower() if state is not None and not isinstance(state, dict) else ""
             logging.debug(
-                f"Sensor: {name} | Type: {sensor_type} | Raw State: {state} | Normalized State: {state_str if not isinstance(state, dict) else state} | Signal: {signal} | Battery: {battery}")
+                f"Sensor: {name} | Type: {sensor_type} | Raw State: {state} | Normalized State: {state_str if not isinstance(state, dict) else state} | Signal: {signal} | Battery: {battery} | Last Seen: {last_seen}")
 
             # Map battery value if present
             mapped_battery = map_battery_value(battery) if battery is not None else None
@@ -136,7 +159,7 @@ class DashboardRenderer:
             is_alarm = False
             alarm_reason = []
 
-            if sensor_type == "DoorSensor":  # Updated from "ContactSensor"
+            if sensor_type == "DoorSensor":
                 if state_str == "open":
                     is_alarm = True
                     alarm_reason.append("State is 'open'")
@@ -159,12 +182,10 @@ class DashboardRenderer:
                     is_alarm = True
                     alarm_reason.append(f"Battery {mapped_battery}% <= 25%")
 
-            elif sensor_type in ["THSensor", "COSmokeSensor"]:  # Added COSmokeSensor
-                # Handle dictionary-based state for THSensor and COSmokeSensor
+            elif sensor_type in ["THSensor", "COSmokeSensor"]:
                 if isinstance(state, dict):
-                    alarms = state  # Use the state dict directly as the alarms dict
-                    if any(alarms.get(key, False) for key in
-                           ["smokeAlarm", "gasAlarm", "unexpected", "highTempAlarm"]):  # Check relevant alarm flags
+                    alarms = state
+                    if any(alarms.get(key, False) for key in ["smokeAlarm", "gasAlarm", "unexpected", "highTempAlarm"]):
                         is_alarm = True
                         alarm_reason.append(f"Alarm state active: {alarms}")
                 if mapped_battery is not None and mapped_battery <= 25:
