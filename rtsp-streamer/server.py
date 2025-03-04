@@ -27,7 +27,7 @@ config = {
     "dashboard_url": os.environ.get("DASHBOARD_URL", "http://websocket-proxy:3000"),
     "rtsp_port": int(os.environ.get("RTSP_PORT", 8554)),
     "stream_name": os.environ.get("STREAM_NAME", "yolink-dashboard"),
-    "frame_rate": int(os.environ.get("FRAME_RATE", 1)),  # Target 1 FPS
+    "frame_rate": int(os.environ.get("FRAME_RATE", 1)),  # Target 1 FPS (update to 6 if needed)
     "width": int(os.environ.get("WIDTH", 1920)),
     "height": int(os.environ.get("HEIGHT", 1080)),
     "cycle_interval": int(os.environ.get("CYCLE_INTERVAL", 10000)),  # in ms
@@ -309,9 +309,13 @@ class RtspStreamer(threading.Thread):
                 with open(self.pipe_path, "wb") as fifo:
                     logging.info(f"Opened FIFO {self.pipe_path} for writing")
                     while self.running:
-                        frame = self.renderer.render_frame()
+                        # Pass width and height from config to render_frame
+                        frame = self.renderer.render_frame(self.config["width"], self.config["height"])
                         try:
-                            fifo.write(frame)
+                            # Convert PIL Image to JPEG bytes for FIFO
+                            buf = io.BytesIO()
+                            frame.save(buf, format="JPEG", quality=75)
+                            fifo.write(buf.getvalue())
                             fifo.flush()
                             logging.debug("Wrote frame to FIFO")
                         except BrokenPipeError as e:
@@ -345,6 +349,7 @@ class RtspStreamer(threading.Thread):
             "-maxrate", "4500k",       # Maximum bitrate
             "-pix_fmt", "yuv420p",     # Pixel format
             "-threads", "2",           # Use 2 threads
+            "-s", f"{self.config['width']}x{self.config['height']}",  # Match resolution
             "-f", "rtsp",              # Output format
             "-rtsp_transport", "tcp",  # Use TCP for reliability
             rtsp_url
