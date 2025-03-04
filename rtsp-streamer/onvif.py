@@ -33,14 +33,16 @@ for prefix, uri in NAMESPACES.items():
 
     def create_onvif_routes(app: Flask, config: Dict[str, Any], onvif_service=None, renderer=None) -> None:
         """
-    Configure ONVIF API routes for the YoLink Dashboard RTSP Server.
+        Configure ONVIF API routes for the YoLink Dashboard RTSP Server.
 
-    Args:
-        app: Flask application
-        config: Application configuration
-        onvif_service: Optional OnvifService instance for authentication
-    """
-    app.config['renderer'] = renderer
+        Args:
+            app: Flask application
+            config: Application configuration
+            onvif_service: Optional OnvifService instance for authentication
+            renderer: DashboardRenderer instance
+        """
+        app.config['renderer'] = renderer
+    
     @app.route('/onvif/device_service', methods=["POST"])
     def onvif_device_service():
         """
