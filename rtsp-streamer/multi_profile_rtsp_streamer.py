@@ -11,7 +11,7 @@ import threading
 import subprocess
 from typing import Dict, Any, Optional, List
 
-from .rtsp_streamer import RtspStreamer
+from rtsp_streamer import RtspStreamer
 
 logger = logging.getLogger(__name__)
 

@@ -9,8 +9,8 @@ from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime, timedelta
 from PIL import Image, ImageDraw, ImageFont
 
-from .data import safe_int, safe_float, map_battery_value, format_smoke_state
-from .image import load_fonts
+from data import safe_int, safe_float, map_battery_value, format_smoke_state
+from image import load_fonts
 
 logger = logging.getLogger(__name__)
 
