@@ -38,6 +38,7 @@ config = {
     "server_ip": os.environ.get("SERVER_IP", socket.gethostbyname(socket.gethostname()))
 }
 
+
 # ----------------------
 # Helper Functions
 # ----------------------
@@ -47,16 +48,22 @@ def safe_float(val):
     except (ValueError, TypeError):
         return None
 
+
 def get_text_width(draw, text, font):
     """Return the width of text using draw.textbbox."""
     bbox = draw.textbbox((0, 0), text, font=font)
     return bbox[2] - bbox[0]
+
 
 # ----------------------
 # Dashboard Renderer
 # ----------------------
 class DashboardRenderer:
     def __init__(self, config):
+        self.alarm_display_timer = 0  # When alarm view started
+        self.alarm_display_duration = 30  # 30 seconds
+        self.normal_display_duration = 30  # 30 seconds
+        self.new_alarm_triggered = False  # Flag for new alarms
         self.config = config
         self.sensor_data = []
         self.alarm_sensors = []
@@ -77,6 +84,7 @@ class DashboardRenderer:
         if not isinstance(sensors, list):
             logging.error("Invalid sensor data: not a list")
             return
+
         self.sensor_data = sensors
         self.alarm_sensors = []
         logging.info(f"Received {len(sensors)} sensors via WebSocket")  # Log sensor count
@@ -84,33 +92,46 @@ class DashboardRenderer:
         for s in sensors:
             if not s:
                 continue
+
             sensor_type = s.get("type")
             state = s.get("state")
             signal = s.get("signal")
             battery = s.get("battery")
+            logging.debug(f"Processing sensor: {s.get('name', 'Unknown')} (Type: {sensor_type}, State: {state})")
+
+            # Map battery value to percentage if it's an integer
+            if battery is not None and isinstance(battery, int):
+                battery = map_battery_value(battery)
 
             # Motion Sensors
             if sensor_type == "MotionSensor":
                 if (state == "motion" or
                         (signal is not None and signal < -119) or
-                        (battery in [0, 1])):
+                        (battery is not None and battery <= 25)):  # Use 25% as low battery threshold
                     self.alarm_sensors.append(s)
+                    logging.debug(
+                        f"MotionSensor {s.get('name')} added to alarms: State={state}, Battery={battery}, Signal={signal}")
 
-            # Contact Sensors
+            # Contact Sensors (trigger alarm on "open" state or low signal/battery)
             elif sensor_type == "ContactSensor":
                 previous_state = self.previous_states.get(s.get("deviceId"), "closed")
-                if ((state == "open" or (previous_state == "closed" and state == "open")) or
+                if (state == "open" or  # Immediate alarm for open state
+                        (previous_state == "closed" and state == "open") or  # State change from closed to open
                         (signal is not None and signal < -119) or
-                        (battery in [0, 1])):
+                        (battery is not None and battery <= 25)):  # Low battery threshold
                     self.alarm_sensors.append(s)
+                    logging.debug(
+                        f"ContactSensor {s.get('name')} added to alarms: State={state}, Previous={previous_state}, Battery={battery}, Signal={signal}")
                 self.previous_states[s.get("deviceId")] = state
 
             # Temperature/Humidity Sensors
             elif sensor_type == "THSensor":
                 alarms = s.get("alarms", {}).get("state", {})
-                if any(alarms.values()) or (battery in [0, 1]) or (signal is not None and signal < -119):
+                if any(alarms.values()) or (battery is not None and battery <= 25) or (
+                        signal is not None and signal < -119):
                     self.alarm_sensors.append(s)
-                logging.debug(f"THSensor {s.get('name', 'Unknown')}: Alarms={alarms}, Battery={battery}, Signal={signal}")
+                    logging.debug(
+                        f"THSensor {s.get('name', 'Unknown')}: Alarms={alarms}, Battery={battery}, Signal={signal}")
 
             # Outlets and other devices: no alarms, just display
             # No action needed here; they won’t be added to alarm_sensors
@@ -123,14 +144,25 @@ class DashboardRenderer:
         logging.info(
             f"Updated sensors: {len(self.sensor_data)}, alarms: {len(self.alarm_sensors)}, pages: {self.total_pages}")
 
+        # Check for new alarms and reset timer if applicable
+        if self.alarm_sensors and not self.new_alarm_triggered:
+            self.new_alarm_triggered = True
+            self.alarm_display_timer = time.time()  # Start or restart timer for alarm view
+
     def render_frame(self, width, height):
-        """Render the dashboard frame, showing alarms if present, otherwise normal view."""
+        current_time = time.time()
         image = Image.new("RGB", (width, height), "#000000")
         draw = ImageDraw.Draw(image)
-        if self.alarm_sensors:
-            self.render_alarm_view(draw)
+
+        if self.alarm_sensors and (current_time - self.alarm_display_timer < self.alarm_display_duration):
+            self.render_alarm_view(draw)  # Show alarm view for 30 seconds
+        elif current_time - self.alarm_display_timer < self.alarm_display_duration + self.normal_display_duration:
+            self.render_normal_view(draw)  # Show normal view for 30 seconds
         else:
-            self.render_normal_view(draw)
+            self.alarm_display_timer = 0  # Reset timer
+            self.new_alarm_triggered = False  # Reset flag
+            self.render_normal_view(draw)  # Default to normal view
+
         return image
 
     def render_normal_view(self, draw):
@@ -166,7 +198,8 @@ class DashboardRenderer:
                         draw.text((x + 10, y + y_offset), battery_text, font=self.font_small, fill="#ffffff")
                         y_offset += 20
                 if "signal" in sensor:
-                    draw.text((x + 10, y + y_offset), f"Signal: {sensor['signal']}", font=self.font_small, fill="#ffffff")
+                    draw.text((x + 10, y + y_offset), f"Signal: {sensor['signal']}", font=self.font_small,
+                              fill="#ffffff")
                     y_offset += 20
 
             elif sensor_type == "THSensor":
@@ -256,11 +289,13 @@ class DashboardRenderer:
                               fill="#ffffff")
                     y_offset += 20
 
+
 def map_battery_value(raw_value):
     """Map YoLink battery levels (0-4) to percentages."""
     if not isinstance(raw_value, int) or raw_value < 0 or raw_value > 4:
         return None
     return {0: 0, 1: 25, 2: 50, 3: 75, 4: 100}[raw_value]
+
 
 def format_smoke_state(state):
     """Format smoke/CO sensor state dictionary."""
@@ -274,10 +309,12 @@ def format_smoke_state(state):
         return "ALERT"
     return "normal"
 
+
 # ----------------------
 # WebSocket Client
 # ----------------------
 import websocket
+
 
 class WebSocketClient(threading.Thread):
     def __init__(self, url, renderer):
@@ -315,6 +352,7 @@ class WebSocketClient(threading.Thread):
     def close(self):
         if self.ws:
             self.ws.close()
+
 
 # ----------------------
 # RTSP Streamer (Updated for 6 FPS)
@@ -375,22 +413,22 @@ class RtspStreamer(threading.Thread):
         rtsp_url = f"rtsp://127.0.0.1:{self.config.get('rtsp_port')}/{self.config.get('stream_name')}"
         cmd = [
             "ffmpeg",
-            "-re",                     # Read input at native frame rate
-            "-f", "image2pipe",        # Input format
+            "-re",  # Read input at native frame rate
+            "-f", "image2pipe",  # Input format
             "-framerate", str(self.config.get("frame_rate", 6)),  # Updated to 6 FPS
-            "-i", self.pipe_path,      # Input from FIFO pipe
-            "-c:v", "libx264",         # Video codec
+            "-i", self.pipe_path,  # Input from FIFO pipe
+            "-c:v", "libx264",  # Video codec
             "-r", str(self.config.get("frame_rate", 6)),  # Updated to 6 FPS
-            "-g", "3",                 # GOP size for low latency (1 second at 6 FPS)
-            "-preset", "ultrafast",    # Fast encoding
-            "-tune", "zerolatency",    # Minimize latency
-            "-b:v", "4000k",           # Bitrate
-            "-bufsize", "4000k",       # Buffer size
-            "-maxrate", "4500k",       # Maximum bitrate
-            "-pix_fmt", "yuv420p",     # Pixel format
-            "-threads", "2",           # Use 2 threads
+            "-g", "3",  # GOP size for low latency (1 second at 6 FPS)
+            "-preset", "ultrafast",  # Fast encoding
+            "-tune", "zerolatency",  # Minimize latency
+            "-b:v", "4000k",  # Bitrate
+            "-bufsize", "4000k",  # Buffer size
+            "-maxrate", "4500k",  # Maximum bitrate
+            "-pix_fmt", "yuv420p",  # Pixel format
+            "-threads", "2",  # Use 2 threads
             "-s", f"{self.config['width']}x{self.config['height']}",  # Match resolution
-            "-f", "rtsp",              # Output format
+            "-f", "rtsp",  # Output format
             "-rtsp_transport", "tcp",  # Use TCP for reliability
             rtsp_url
         ]
@@ -464,6 +502,7 @@ class RtspStreamer(threading.Thread):
                 self.ffmpeg_process.kill()
                 logging.warning("FFmpeg process killed during shutdown")
 
+
 # ----------------------
 # ONVIF Service
 # ----------------------
@@ -525,6 +564,7 @@ class OnvifService(threading.Thread):
     def stop(self):
         pass
 
+
 # ----------------------
 # Flask API Endpoints
 # ----------------------
@@ -532,9 +572,11 @@ app = Flask(__name__)
 renderer = DashboardRenderer(config)
 streamer = RtspStreamer(config, renderer)
 
+
 @app.route('/')
 def index():
     return "YoLink RTSP Streamer with ONVIF is running!"
+
 
 @app.route('/status')
 def status():
@@ -563,6 +605,7 @@ def status():
         "lastUpdate": datetime.datetime.now().isoformat()
     })
 
+
 @app.route('/snapshot')
 def snapshot():
     try:
@@ -574,6 +617,7 @@ def snapshot():
     except Exception as e:
         logging.error(f"Snapshot error: {e}")
         return "Failed to generate snapshot", 500
+
 
 @app.route('/restart-stream', methods=["POST"])
 def restart_stream():
@@ -591,6 +635,7 @@ def restart_stream():
             "message": "Failed to restart stream",
             "error": str(e)
         }), 500
+
 
 @app.route('/sensors')
 def sensors():
@@ -611,6 +656,7 @@ def sensors():
         "sensors": sensors_list
     })
 
+
 @app.route('/page/<int:page_num>', methods=["POST"])
 def set_page(page_num):
     if page_num < 1 or page_num > renderer.total_pages:
@@ -624,6 +670,7 @@ def set_page(page_num):
         "current_page": page_num,
         "totalPages": renderer.total_pages
     })
+
 
 @app.route('/onvif/device_service', methods=["POST"])
 def onvif_device_service():
@@ -661,29 +708,34 @@ def onvif_device_service():
     else:
         return "Unsupported SOAP Action", 400
 
+
 # ----------------------
 # Start Background Services
 # ----------------------
 def start_background_services():
-    ws_url = f"ws://{config['dashboard_url'].replace('http://','').replace('https://','')}/ws"
+    ws_url = f"ws://{config['dashboard_url'].replace('http://', '').replace('https://', '')}/ws"
     ws_client = WebSocketClient(ws_url, renderer)
     ws_client.start()
     streamer.start()
     if config.get("enable_onvif"):
         onvif_service = OnvifService(config, config.get("server_ip"))
         onvif_service.start()
+
     def cycle_pages():
         while True:
             if renderer.total_pages > 1:  # Cycle regardless of alarms
                 renderer.set_page((renderer.current_page + 1) % renderer.total_pages)
             time.sleep(config.get("cycle_interval") / 1000.0)
+
     threading.Thread(target=cycle_pages, daemon=True).start()
     return ws_client
+
 
 def shutdown(signum, frame):
     logging.info("Shutdown signal received, stopping services...")
     streamer.stop()
     sys.exit(0)
+
 
 # ----------------------
 # Main Entry Point
@@ -693,6 +745,7 @@ if __name__ == "__main__":
     signal.signal(signal.SIGTERM, shutdown)
     ws_client = start_background_services()
     app.run(host="0.0.0.0", port=config.get("http_port"))
+
 
 def format_smoke_state(state):
     """Format smoke/CO sensor state dictionary."""
@@ -705,6 +758,7 @@ def format_smoke_state(state):
     if state.get("unexpected", False):
         return "ALERT"
     return "normal"
+
 
 def map_battery_value(raw_value):
     """Map YoLink battery levels (0-4) to percentages."""
