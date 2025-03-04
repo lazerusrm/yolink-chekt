@@ -2,6 +2,7 @@
 WebSocket client for receiving YoLink sensor data updates.
 """
 import json
+import random
 import time
 import logging
 import threading
@@ -38,6 +39,7 @@ class WebSocketClient(threading.Thread):
         """
         Thread main function. Connects to WebSocket server and processes messages.
         """
+        time.sleep(self.reconnect_delay * (0.5 + random.random()))
         while self.should_reconnect:
             try:
                 logger.info(f"Attempting to connect to WebSocket: {self.url}")

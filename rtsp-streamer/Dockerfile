@@ -1,6 +1,7 @@
+# Use Python 3.9 as base image
 FROM python:3.9-slim
 
-# Install basic dependencies, including xz-utils for tar.xz extraction
+# Install basic dependencies, including xz-utils for tar.xz extraction and fonts for PIL
 RUN apt-get update && apt-get install -y \
     fonts-dejavu \
     procps \
@@ -26,15 +27,42 @@ RUN curl -L https://github.com/bluenviron/mediamtx/releases/download/v1.11.3/med
     && mv mediamtx /usr/local/bin/mediamtx \
     && rm mediamtx.tar.gz
 
-# Create FIFO directory
+# Create FIFO directory for RTSP streaming
 RUN mkdir -p /tmp/streams
 
+# Set working directory
 WORKDIR /app
+
+# Copy configuration and requirements
 COPY mediamtx.yml /opt/mediamtx.yml
 COPY requirements.txt .
+
+# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy the entire rtsp-streamer directory (including package structure)
 COPY . .
+
+# Ensure scripts are executable
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
-EXPOSE 3001 8554 8555 3702
+
+# Expose ports for RTSP, API, ONVIF, and WebSocket
+EXPOSE 3001 8554 8555 3702/udp
+
+# Set environment variables (can be overridden by docker-compose)
+ENV DASHBOARD_URL=http://websocket-proxy:3000
+ENV RTSP_PORT=8554
+ENV STREAM_NAME=yolink-dashboard
+ENV FRAME_RATE=1
+ENV WIDTH=1920
+ENV HEIGHT=1080
+ENV CYCLE_INTERVAL=10000
+ENV ENABLE_ONVIF=true
+ENV ONVIF_PORT=8555
+ENV SERVER_IP=10.250.250.2
+ENV RTSP_API_PORT=3001
+ENV WS_PORT=9999
+
+# Run the entrypoint script, which starts both MediaMTX and the YoLink RTSP server
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]

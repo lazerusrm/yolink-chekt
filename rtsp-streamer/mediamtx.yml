@@ -1,7 +1,19 @@
 logLevel: info
 rtspAddress: ":8554"
+readTimeout: 120s
+writeTimeout: 120s
+
+# Main profile - full resolution
 paths:
   yolink-dashboard:
     source: publisher
-readTimeout: 120s
-writeTimeout: 120s
+
+  # Add paths for additional resolution profiles
+  yolink-dashboard_main:
+    source: publisher
+
+  yolink-dashboard_low:
+    source: publisher
+
+  yolink-dashboard_mobile:
+    source: publisher

@@ -190,11 +190,15 @@ class RtspStreamer(threading.Thread):
                 logger.error(f"FFmpeg process exited with code {exit_code}")
 
                 # Collect any remaining output
-                stdout, stderr = self.ffmpeg_process.communicate()
-                if stdout:
-                    logger.info(f"FFmpeg stdout: {stdout}")
+                stdout, stderr = process.communicate(timeout=5)
                 if stderr:
-                    logger.error(f"FFmpeg stderr: {stderr}")
+                    # Parse stderr for specific error conditions
+                    if "Connection refused" in stderr:
+                        logger.error("RTSP server connection refused. Is MediaMTX running?")
+                    elif "Invalid data" in stderr:
+                        logger.error("FFmpeg received invalid data from the FIFO pipe")
+                    else:
+                        logger.error(f"FFmpeg error: {stderr}")
 
                 # Restart if we're still running and under max attempts
                 if self.running and self.restart_attempts < self.max_restarts:

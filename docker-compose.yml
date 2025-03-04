@@ -54,7 +54,7 @@ services:
       - DASHBOARD_URL=http://websocket-proxy:3000
       - RTSP_PORT=8554
       - STREAM_NAME=yolink-dashboard
-      - FRAME_RATE=1
+      - FRAME_RATE=6
       - WIDTH=1920
       - HEIGHT=1080
       - CYCLE_INTERVAL=10000
@@ -63,6 +63,14 @@ services:
       - SERVER_IP=10.250.250.2
       - RTSP_API_PORT=3001
       - WS_PORT=9999
+      - ENABLE_LOW_RES_PROFILE=true
+      - ENABLE_MOBILE_PROFILE=false
+      - LOW_RES_WIDTH=960
+      - LOW_RES_HEIGHT=540
+      - LOW_RES_FPS=6
+      - LOW_RES_BITRATE=256
+      - LOW_RES_SENSORS_PER_PAGE=6
+      - SENSORS_PER_PAGE=20
     ports:
       - "8554:8554"
       - "3001:3001"
