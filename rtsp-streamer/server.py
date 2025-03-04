@@ -58,206 +58,183 @@ def get_text_width(draw, text, font):
 class DashboardRenderer:
     def __init__(self, config):
         self.config = config
-        self.width = config.get("width", 1920)
-        self.height = config.get("height", 1080)
         self.sensor_data = []
         self.alarm_sensors = []
         self.current_page = 0
         self.total_pages = 1
-        self.last_render_time = time.time()
-        try:
-            self.font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 48)
-            self.font_medium = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 32)
-            self.font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 24)
-            self.font_xsmall = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 16)
-        except Exception as e:
-            logging.warning("Could not load DejaVu fonts, using default fonts.")
-            self.font_large = ImageFont.load_default()
-            self.font_medium = ImageFont.load_default()
-            self.font_small = ImageFont.load_default()
-            self.font_xsmall = ImageFont.load_default()
+        self.font_large = ImageFont.truetype("arial.ttf", 36)  # Example font
+        self.font_small = ImageFont.truetype("arial.ttf", 18)
+        self.previous_states = {}  # To track previous states for contact sensors
 
     def update_sensors(self, sensors):
+        """Update sensor data and determine which sensors are in alarm state."""
         if not isinstance(sensors, list):
             logging.error("Invalid sensor data: not a list")
             return
         self.sensor_data = sensors
         self.alarm_sensors = []
+
         for s in sensors:
             if not s:
                 continue
+            sensor_type = s.get("type")
             state = s.get("state")
-            if state in ["alarm", "leak", "motion", "open"]:
-                self.alarm_sensors.append(s)
-                continue
-            if s.get("type") == "COSmokeSensor" and isinstance(state, dict):
-                if state.get("smokeAlarm") or state.get("gasAlarm") or state.get("unexpected"):
+            signal = s.get("signal")
+            battery = s.get("battery")
+
+            # Motion Sensors
+            if sensor_type == "MotionSensor":
+                if (state == "motion" or
+                        (signal is not None and signal < -119) or
+                        (battery in [0, 1])):
                     self.alarm_sensors.append(s)
-                    continue
-            battery_val = safe_float(s.get("battery"))
-            if battery_val is not None and battery_val <= 1:
-                self.alarm_sensors.append(s)
+
+            # Contact Sensors
+            elif sensor_type == "ContactSensor":
+                previous_state = self.previous_states.get(s.get("deviceId"), "closed")
+                if ((state == "open" or (previous_state == "closed" and state == "open")) or
+                        (signal is not None and signal < -119) or
+                        (battery in [0, 1])):
+                    self.alarm_sensors.append(s)
+                self.previous_states[s.get("deviceId")] = state
+
+            # Temperature/Humidity Sensors
+            elif sensor_type == "THSensor":
+                # Assuming "alarm_state" is a boolean or specific value in the MQTT payload
+                alarm_state = s.get("alarm_state", False)  # Adjust based on actual payload structure
+                if (alarm_state or
+                        (battery in [0, 1]) or
+                        (signal is not None and signal < -119)):
+                    self.alarm_sensors.append(s)
+
+            # Outlets and other devices: no alarms, just display
+            # No action needed here; they won't be added to alarm_sensors
+
+        # Pagination logic
         sensors_per_page = 12
         self.total_pages = max(1, (len(self.sensor_data) + sensors_per_page - 1) // sensors_per_page)
         if self.current_page >= self.total_pages:
             self.current_page = 0
-        logging.info(f"Updated sensors: {len(self.sensor_data)}, alarms: {len(self.alarm_sensors)}, pages: {self.total_pages}")
+        logging.info(
+            f"Updated sensors: {len(self.sensor_data)}, alarms: {len(self.alarm_sensors)}, pages: {self.total_pages}")
 
-    def set_page(self, page):
-        if not isinstance(page, int):
-            logging.error("Invalid page number")
-            return
-        self.current_page = max(0, min(page, self.total_pages - 1))
-        logging.info(f"Set page to {self.current_page+1}/{self.total_pages}")
-
-    def render_frame(self):
-        now = time.time()
-        frame_interval = now - self.last_render_time
-        self.last_render_time = now
-
-        image = Image.new("RGB", (self.width, self.height), "#1e1e1e")
+    def render_frame(self, width, height):
+        """Render the dashboard frame, showing alarms if present, otherwise normal view."""
+        image = Image.new("RGB", (width, height), "#000000")
         draw = ImageDraw.Draw(image)
-
-        start_time = time.time()
         if self.alarm_sensors:
             self.render_alarm_view(draw)
         else:
             self.render_normal_view(draw)
-        self.render_footer(draw)
-
-        render_time = time.time() - start_time
-        if render_time > 0.05:
-            logging.info(f"Frame rendered in {render_time*1000:.1f}ms (interval: {frame_interval*1000:.1f}ms)")
-
-        buf = io.BytesIO()
-        image.save(buf, format="JPEG", quality=75)
-        return buf.getvalue()
-
-    def render_alarm_view(self, draw):
-        draw.rectangle([0, 0, self.width, self.height], fill="#ff0000")
-        draw.text((20, 10), "⚠️ ALARM SENSORS ⚠️", font=self.font_large, fill="#ffffff")
-        count = len(self.alarm_sensors)
-        columns = min(3, int(count**0.5) + 1)
-        rows = (count + columns - 1) // columns
-        cell_width = self.width / columns
-        cell_height = min(180, (self.height - 60) / rows)
-        for i, sensor in enumerate(self.alarm_sensors):
-            x = (i % columns) * cell_width
-            y = 60 + (i // columns) * cell_height
-            draw.rectangle([x+10, y+5, x+cell_width-10, y+cell_height-10], fill="#d70000")
-            name = sensor.get("name", f"Sensor {i+1}")
-            max_width = cell_width - 40
-            display_name = name
-            while get_text_width(draw, display_name, self.font_medium) > max_width and len(display_name) > 3:
-                display_name = display_name[:-1]
-            if display_name != name:
-                display_name += "..."
-            draw.text((x+20, y+10), display_name, font=self.font_medium, fill="#ffffff")
-            y_offset = 40
-            state = sensor.get("state")
-            if sensor.get("type") == "COSmokeSensor" and isinstance(state, dict):
-                if state.get("smokeAlarm"):
-                    state_text = "State: SMOKE DETECTED!"
-                elif state.get("gasAlarm"):
-                    state_text = "State: GAS DETECTED!"
-                elif state.get("unexpected"):
-                    state_text = "State: ALERT!"
-                else:
-                    state_text = f"State: {str(state)}"
-            else:
-                state_text = f"State: {state}"
-            draw.text((x+20, y+y_offset), state_text, font=self.font_small, fill="#ffffff")
-            y_offset += 20
-            if sensor.get("battery") is not None:
-                battery = sensor.get("battery")
-                battery_val = safe_float(battery)
-                low_text = " (LOW!)" if battery_val is not None and battery_val <= 1 else ""
-                battery_text = f"Battery: {battery}%{low_text}"
-                draw.text((x+20, y+y_offset), battery_text, font=self.font_small, fill="#ffffff")
-                y_offset += 20
-            if sensor.get("signal") is not None:
-                draw.text((x+20, y+y_offset), f"Signal: {sensor.get('signal')}", font=self.font_small, fill="#ffffff")
-                y_offset += 20
-            if sensor.get("temperature") is not None:
-                draw.text((x+20, y+y_offset), f"Temp: {sensor.get('temperature')}°{sensor.get('temperatureUnit','F')}", font=self.font_small, fill="#ffffff")
-                y_offset += 20
-            if sensor.get("humidity") is not None:
-                draw.text((x+20, y+y_offset), f"Humidity: {sensor.get('humidity')}%", font=self.font_small, fill="#ffffff")
+        return image
 
     def render_normal_view(self, draw):
+        """Render the normal view with relevant fields for each sensor type."""
+        draw.rectangle([(0, 0), (draw.im.size[0], 50)], fill="#333333")
+        draw.text((10, 10), "SENSORS", font=self.font_large, fill="#ffffff")
+
         sensors_per_page = 12
         start_idx = self.current_page * sensors_per_page
-        sensors_to_show = self.sensor_data[start_idx:start_idx+sensors_per_page]
-        columns = 4
-        rows = 3
-        cell_width = self.width / columns
-        cell_height = self.height / rows
-        header_text = f"YoLink Dashboard - Page {self.current_page+1} of {self.total_pages}"
-        draw.text((20, 10), header_text, font=self.font_medium, fill="#ffffff")
+        end_idx = min(start_idx + sensors_per_page, len(self.sensor_data))
+        sensors_to_show = self.sensor_data[start_idx:end_idx]
+
         for i, sensor in enumerate(sensors_to_show):
-            col = i % columns
-            row = i // columns
-            x = col * cell_width
-            y = 60 + row * (cell_height - 20)
-            bg_color = "#333333"
-            state = sensor.get("state")
-            if state in ["alarm", "leak", "motion", "open"]:
-                bg_color = "#ff0000"
-            elif sensor.get("type") == "COSmokeSensor" and isinstance(state, dict) and (state.get("smokeAlarm") or state.get("gasAlarm") or state.get("unexpected")):
-                bg_color = "#ff0000"
-            elif sensor.get("battery") is not None:
-                battery_val = safe_float(sensor.get("battery"))
-                if battery_val is not None and battery_val <= 1:
-                    bg_color = "#ffcc00"
-            elif state == "closed":
-                bg_color = "#006600"
-            elif state == "open":
-                bg_color = "#009900"
-            draw.rectangle([x+10, y+5, x+cell_width-10, y+cell_height-25], fill=bg_color)
-            name = sensor.get("name", f"Sensor {start_idx+i+1}")
-            max_width = cell_width - 40
-            display_name = name
-            while get_text_width(draw, display_name, self.font_medium) > max_width and len(display_name) > 3:
-                display_name = display_name[:-1]
-            if display_name != name:
-                display_name += "..."
-            draw.text((x+20, y+10), display_name, font=self.font_medium, fill="#ffffff")
-            draw.text((x+20, y+35), f"Type: {sensor.get('type','unknown')}", font=self.font_small, fill="#ffffff")
-            state_text = str(state)
-            if isinstance(state, dict):
-                if sensor.get("type") == "COSmokeSensor":
-                    if state.get("smokeAlarm"):
-                        state_text = "SMOKE ALARM"
-                    elif state.get("gasAlarm"):
-                        state_text = "GAS ALARM"
-                    elif state.get("unexpected"):
-                        state_text = "ALERT"
-                    else:
-                        state_text = "normal"
-                elif state.get("lock"):
-                    state_text = state.get("lock")
-                else:
-                    state_text = json.dumps(state)[:15]
-            draw.text((x+20, y+60), f"State: {state_text}", font=self.font_small, fill="#ffffff")
-            y_offset = 85
-            if sensor.get("battery") is not None:
-                battery = sensor.get("battery")
-                battery_val = safe_float(battery)
-                low_text = " (LOW!)" if battery_val is not None and battery_val <= 1 else ""
-                battery_text = f"Battery: {battery}%{low_text}"
-                draw.text((x+20, y+y_offset), battery_text, font=self.font_small, fill="#ffffff")
-                y_offset += 20
-            if sensor.get("signal") is not None:
-                draw.text((x+20, y+y_offset), f"Signal: {sensor.get('signal')}", font=self.font_small, fill="#ffffff")
-                y_offset += 20
-            if sensor.get("temperature") is not None:
-                draw.text((x+20, y+y_offset), f"Temp: {sensor.get('temperature')}°{sensor.get('temperatureUnit','F')}", font=self.font_small, fill="#ffffff")
-                y_offset += 20
-            if sensor.get("humidity") is not None:
-                draw.text((x+20, y+y_offset), f"Humidity: {sensor.get('humidity')}%", font=self.font_small, fill="#ffffff")
-            if sensor.get("last_seen"):
-                last_seen = sensor.get("last_seen").split(" ")[-1]
-                draw.text((x+20, y+cell_height-35), f"Last: {last_seen}", font=self.font_xsmall, fill="#ffffff")
+            x = 10 + (i % 4) * 200
+            y = 60 + (i // 4) * 150
+            draw.rectangle([(x, y), (x + 190, y + 140)], outline="#ffffff")
+            draw.text((x + 10, y + 10), sensor.get("name", "Unknown"), font=self.font_small, fill="#ffffff")
+
+            sensor_type = sensor.get("type")
+            state = sensor.get("state", "N/A")
+            draw.text((x + 10, y + 30), f"State: {state}", font=self.font_small, fill="#ffffff")
+            y_offset = 50
+
+            if sensor_type in ["MotionSensor", "ContactSensor"]:
+                if "battery" in sensor and sensor["battery"] is not None:
+                    battery_text = f"Battery: {sensor['battery']}%"
+                    draw.text((x + 10, y + y_offset), battery_text, font=self.font_small, fill="#ffffff")
+                    y_offset += 20
+                if "signal" in sensor:
+                    draw.text((x + 10, y + y_offset), f"Signal: {sensor['signal']}", font=self.font_small,
+                              fill="#ffffff")
+                    y_offset += 20
+
+            elif sensor_type == "THSensor":
+                if "temperature" in sensor and sensor["temperature"] not in [None, "unknown"]:
+                    draw.text((x + 10, y + y_offset),
+                              f"Temp: {sensor['temperature']}°{sensor.get('temperatureUnit', 'F')}",
+                              font=self.font_small, fill="#ffffff")
+                    y_offset += 20
+                if "humidity" in sensor and sensor["humidity"] not in [None, "unknown"]:
+                    draw.text((x + 10, y + y_offset), f"Humidity: {sensor['humidity']}%", font=self.font_small,
+                              fill="#ffffff")
+                    y_offset += 20
+                if "battery" in sensor and sensor["battery"] is not None:
+                    battery_text = f"Battery: {sensor['battery']}%"
+                    draw.text((x + 10, y + y_offset), battery_text, font=self.font_small, fill="#ffffff")
+                    y_offset += 20
+                if "signal" in sensor:
+                    draw.text((x + 10, y + y_offset), f"Signal: {sensor['signal']}", font=self.font_small,
+                              fill="#ffffff")
+                    y_offset += 20
+
+            elif sensor_type == "Outlet":
+                if "power" in sensor:
+                    draw.text((x + 10, y + y_offset), f"Power: {sensor['power']}", font=self.font_small, fill="#ffffff")
+                    y_offset += 20
+                if "watt" in sensor:
+                    draw.text((x + 10, y + y_offset), f"Watt: {sensor['watt']}", font=self.font_small, fill="#ffffff")
+                    y_offset += 20
+                if "signal" in sensor:
+                    draw.text((x + 10, y + y_offset), f"Signal: {sensor['signal']}", font=self.font_small,
+                              fill="#ffffff")
+                    y_offset += 20
+
+    def render_alarm_view(self, draw):
+        """Render the alarm view with relevant fields for alarmed sensors."""
+        draw.rectangle([(0, 0), (draw.im.size[0], 50)], fill="#ff0000")
+        draw.text((10, 10), "ALARM SENSORS", font=self.font_large, fill="#ffffff")
+
+        for i, sensor in enumerate(self.alarm_sensors[:12]):  # Limit to 12 for display
+            x = 10 + (i % 4) * 200
+            y = 60 + (i // 4) * 150
+            draw.rectangle([(x, y), (x + 190, y + 140)], outline="#ffffff")
+            draw.text((x + 10, y + 10), sensor.get("name", "Unknown"), font=self.font_small, fill="#ffffff")
+
+            sensor_type = sensor.get("type")
+            state = sensor.get("state", "N/A")
+            draw.text((x + 10, y + 30), f"State: {state}", font=self.font_small, fill="#ffffff")
+            y_offset = 50
+
+            if sensor_type in ["MotionSensor", "ContactSensor"]:
+                if "battery" in sensor and sensor["battery"] is not None:
+                    battery_text = f"Battery: {sensor['battery']}%"
+                    draw.text((x + 10, y + y_offset), battery_text, font=self.font_small, fill="#ffffff")
+                    y_offset += 20
+                if "signal" in sensor:
+                    draw.text((x + 10, y + y_offset), f"Signal: {sensor['signal']}", font=self.font_small,
+                              fill="#ffffff")
+                    y_offset += 20
+
+            elif sensor_type == "THSensor":
+                if "temperature" in sensor and sensor["temperature"] not in [None, "unknown"]:
+                    draw.text((x + 10, y + y_offset),
+                              f"Temp: {sensor['temperature']}°{sensor.get('temperatureUnit', 'F')}",
+                              font=self.font_small, fill="#ffffff")
+                    y_offset += 20
+                if "humidity" in sensor and sensor["humidity"] not in [None, "unknown"]:
+                    draw.text((x + 10, y + y_offset), f"Humidity: {sensor['humidity']}%", font=self.font_small,
+                              fill="#ffffff")
+                    y_offset += 20
+                if "battery" in sensor and sensor["battery"] is not None:
+                    battery_text = f"Battery: {sensor['battery']}%"
+                    draw.text((x + 10, y + y_offset), battery_text, font=self.font_small, fill="#ffffff")
+                    y_offset += 20
+                if "signal" in sensor:
+                    draw.text((x + 10, y + y_offset), f"Signal: {sensor['signal']}", font=self.font_small,
+                              fill="#ffffff")
+                    y_offset += 20
+                    
 
     def render_footer(self, draw):
         footer_height = 30
