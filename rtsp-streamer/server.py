@@ -410,17 +410,18 @@ class RtspStreamer(threading.Thread):
         self.pipe_path = "/tmp/streams/dashboard_pipe"
         self.running = True
         self.restart_attempts = 0
-        self.max_restarts = 10  # Increase retries to handle intermittent failures
-        self.retry_delay = 5  # Delay between retries in seconds
-        # Create directory and FIFO pipe if they don't exist
+        self.max_restarts = 10
+        self.retry_delay = 5
+        # Create directory and FIFO pipe with robust handling
         if not os.path.exists("/tmp/streams"):
             os.makedirs("/tmp/streams")
-        if not os.path.exists(self.pipe_path):
-            try:
-                os.mkfifo(self.pipe_path)
-                logging.info(f"FIFO created at {self.pipe_path}")
-            except Exception as e:
-                logging.error(f"Error creating FIFO pipe: {e}")
+        if os.path.exists(self.pipe_path) and not os.path.isfifo(self.pipe_path):
+            os.remove(self.pipe_path)  # Remove if it’s not a FIFO
+            os.mkfifo(self.pipe_path)
+            logging.info(f"Recreated FIFO at {self.pipe_path}")
+        elif not os.path.exists(self.pipe_path):
+            os.mkfifo(self.pipe_path)
+            logging.info(f"Created FIFO at {self.pipe_path}")
 
     def run(self):
         frame_interval = 1.0 / self.config.get("frame_rate", 6)  # Updated to 6 FPS (~166ms)
