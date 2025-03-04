@@ -136,7 +136,7 @@ class DashboardRenderer:
             is_alarm = False
             alarm_reason = []
 
-            if sensor_type == "ContactSensor":
+            if sensor_type == "DoorSensor":
                 if state_str == "open":
                     is_alarm = True
                     alarm_reason.append("State is 'open'")
