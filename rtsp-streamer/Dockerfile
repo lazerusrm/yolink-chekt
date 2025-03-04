@@ -1,6 +1,6 @@
 FROM python:3.9-slim
 
-# Install basic dependencies (excluding ffmpeg from apt)
+# Install basic dependencies, including xz-utils for tar.xz extraction
 RUN apt-get update && apt-get install -y \
     fonts-dejavu \
     procps \
@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y \
     curl \
     vim \
     file \
+    xz-utils \
  && rm -rf /var/lib/apt/lists/*
 
 # Download and install a recent FFmpeg static binary (e.g., 6.1.1)
