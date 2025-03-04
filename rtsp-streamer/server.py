@@ -458,7 +458,6 @@ class RtspStreamer(threading.Thread):
             "-threads", "2",  # Use 2 threads
             "-s", f"{self.config['width']}x{self.config['height']}",  # Match resolution
             "-timeout", "60000000",  # 60 seconds timeout for input (in microseconds)
-            "-stimeout", "60000000",  # 60 seconds socket timeout (in microseconds)
             "-reconnect", "1",  # Enable reconnection on network error
             "-reconnect_at_eof", "1",  # Reconnect at end of file or stream
             "-reconnect_streamed", "1",  # Reconnect for streamed content

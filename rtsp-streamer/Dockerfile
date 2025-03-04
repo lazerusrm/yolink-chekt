@@ -1,8 +1,7 @@
 FROM python:3.9-slim
 
-# Install dependencies, including file
+# Install basic dependencies (excluding ffmpeg from apt)
 RUN apt-get update && apt-get install -y \
-    ffmpeg \
     fonts-dejavu \
     procps \
     net-tools \
@@ -10,6 +9,12 @@ RUN apt-get update && apt-get install -y \
     vim \
     file \
  && rm -rf /var/lib/apt/lists/*
+
+# Download and install a recent FFmpeg static binary (e.g., 6.1.1)
+RUN curl -L https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz -o ffmpeg.tar.xz \
+    && file ffmpeg.tar.xz | grep -q "XZ compressed" || (echo "Downloaded file is not XZ compressed" && exit 1) \
+    && tar -xJf ffmpeg.tar.xz --strip-components=1 -C /usr/local/bin ffmpeg-6.1.1-amd64-static/ffmpeg ffmpeg-6.1.1-amd64-static/ffprobe \
+    && rm ffmpeg.tar.xz
 
 # Download MediaMTX v1.11.3
 RUN curl -L https://github.com/bluenviron/mediamtx/releases/download/v1.11.3/mediamtx_v1.11.3_linux_amd64.tar.gz -o mediamtx.tar.gz \
