@@ -124,10 +124,10 @@ class DashboardRenderer:
             name = s.get("name", "Unknown")
             device_id = s.get("deviceId", "UnknownID")
 
-            # Normalize state to string, strip whitespace, and convert to lowercase
-            state_str = str(state).strip().lower() if state is not None else ""
+            # Normalize state to string, strip whitespace, and convert to lowercase if it’s not a dict
+            state_str = str(state).strip().lower() if state is not None and not isinstance(state, dict) else ""
             logging.debug(
-                f"Sensor: {name} | Type: {sensor_type} | Raw State: {state} | Normalized State: {state_str} | Signal: {signal} | Battery: {battery}")
+                f"Sensor: {name} | Type: {sensor_type} | Raw State: {state} | Normalized State: {state_str if not isinstance(state, dict) else state} | Signal: {signal} | Battery: {battery}")
 
             # Map battery value if present
             mapped_battery = map_battery_value(battery) if battery is not None else None
@@ -136,7 +136,7 @@ class DashboardRenderer:
             is_alarm = False
             alarm_reason = []
 
-            if sensor_type == "DoorSensor":
+            if sensor_type == "DoorSensor":  # Updated from "ContactSensor"
                 if state_str == "open":
                     is_alarm = True
                     alarm_reason.append("State is 'open'")
@@ -159,11 +159,14 @@ class DashboardRenderer:
                     is_alarm = True
                     alarm_reason.append(f"Battery {mapped_battery}% <= 25%")
 
-            elif sensor_type == "THSensor":
-                alarms = s.get("alarms", {}).get("state", {})
-                if any(alarms.values()):
-                    is_alarm = True
-                    alarm_reason.append(f"Alarm state active: {alarms}")
+            elif sensor_type in ["THSensor", "COSmokeSensor"]:  # Added COSmokeSensor
+                # Handle dictionary-based state for THSensor and COSmokeSensor
+                if isinstance(state, dict):
+                    alarms = state  # Use the state dict directly as the alarms dict
+                    if any(alarms.get(key, False) for key in
+                           ["smokeAlarm", "gasAlarm", "unexpected", "highTempAlarm"]):  # Check relevant alarm flags
+                        is_alarm = True
+                        alarm_reason.append(f"Alarm state active: {alarms}")
                 if mapped_battery is not None and mapped_battery <= 25:
                     is_alarm = True
                     alarm_reason.append(f"Battery {mapped_battery}% <= 25%")
@@ -172,8 +175,8 @@ class DashboardRenderer:
                     alarm_reason.append(f"Signal {signal} < -119")
 
             elif sensor_type in ["Outlet", "MultiOutlet"]:
-                # Outlets don't trigger alarms in this context, just log for reference
-                logging.debug(f"Outlet/MultiOutlet {name} processed: State={state_str}")
+                logging.debug(
+                    f"Outlet/MultiOutlet {name} processed: State={state_str if not isinstance(state, dict) else state}")
 
             # Add to alarm list if applicable
             if is_alarm:
