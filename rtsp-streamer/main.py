@@ -13,15 +13,15 @@ from typing import Dict, Any
 from flask import Flask
 
 # Import application modules
-from .config import get_config
-from .renderer import DashboardRenderer
-from .websocket_client import WebSocketClient
-from .rtsp_streamer import RtspStreamer
-from .onvif_service import OnvifService
-from .routes import create_api_routes
-from .onvif import create_onvif_routes
-from .multi_profile_rtsp_streamer import MultiProfileRtspStreamer
-from .onvif_integration import setup_integration, OnvifStreamingIntegration
+from config import get_config
+from renderer import DashboardRenderer
+from websocket_client import WebSocketClient
+from rtsp_streamer import RtspStreamer
+from onvif_service import OnvifService
+from routes import create_api_routes
+from onvif import create_onvif_routes
+from multi_profile_rtsp_streamer import MultiProfileRtspStreamer
+from onvif_integration import setup_integration, OnvifStreamingIntegration
 
 # Configure logging
 logger = logging.getLogger(__name__)
