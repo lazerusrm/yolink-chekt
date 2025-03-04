@@ -31,18 +31,20 @@ for prefix, uri in NAMESPACES.items():
     ET.register_namespace(prefix, uri)
 
 
-    def create_onvif_routes(app: Flask, config: Dict[str, Any], onvif_service=None, renderer=None) -> None:
-        """
-        Configure ONVIF API routes for the YoLink Dashboard RTSP Server.
+def create_onvif_routes(app: Flask, config: Dict[str, Any], onvif_service=None, renderer=None) -> None:
+    """
+    Configure ONVIF API routes for the YoLink Dashboard RTSP Server.
 
-        Args:
-            app: Flask application
-            config: Application configuration
-            onvif_service: Optional OnvifService instance for authentication
-            renderer: DashboardRenderer instance
-        """
+    Args:
+        app: Flask application
+        config: Application configuration
+        onvif_service: Optional OnvifService instance for authentication
+        renderer: DashboardRenderer instance to get frames from
+    """
+    # Store renderer in app config for use in routes
+    if renderer is not None:
         app.config['renderer'] = renderer
-    
+
     @app.route('/onvif/device_service', methods=["POST"])
     def onvif_device_service():
         """
@@ -236,7 +238,7 @@ for prefix, uri in NAMESPACES.items():
         Provides a real-time snapshot of the current dashboard view with authentication.
         """
         # Check authentication if needed
-        renderer = app.config['renderer']
+        renderer = app.config.get('renderer')
         if config.get("onvif_auth_required", True) and onvif_service:
             auth_header = request.headers.get('Authorization')
 
