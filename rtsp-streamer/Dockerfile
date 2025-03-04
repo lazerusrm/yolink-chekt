@@ -11,9 +11,9 @@ RUN apt-get update && apt-get install -y \
  && rm -rf /var/lib/apt/lists/*
 
 # Download MediaMTX v0.20.1
-RUN curl -L https://github.com/aler9/rtsp-simple-server/releases/download/v0.20.1/rtsp-simple-server_v0.20.1_linux_amd64.tar.gz -o mediamtx.tar.gz \
+RUN curl -L https://github.com/bluenviron/mediamtx/releases/latest/download/mediamtx_linux_amd64.tar.gz -o mediamtx.tar.gz \
     && tar -xzvf mediamtx.tar.gz \
-    && mv rtsp-simple-server /usr/local/bin/mediamtx \
+    && mv mediamtx /usr/local/bin/mediamtx \
     && rm mediamtx.tar.gz
 
 # Create FIFO directory
