@@ -62,8 +62,14 @@ class DashboardRenderer:
         self.alarm_sensors = []
         self.current_page = 0
         self.total_pages = 1
-        self.font_large = ImageFont.truetype("arial.ttf", 36)  # Example font
-        self.font_small = ImageFont.truetype("arial.ttf", 18)
+        try:
+            # Use DejaVu Sans, which is commonly available in Debian-based images
+            self.font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 36)
+            self.font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 18)
+        except OSError as e:
+            logging.warning(f"Could not load DejaVu fonts, using default fonts: {e}")
+            self.font_large = ImageFont.load_default()
+            self.font_small = ImageFont.load_default()
         self.previous_states = {}  # To track previous states for contact sensors
 
     def update_sensors(self, sensors):
@@ -234,20 +240,6 @@ class DashboardRenderer:
                     draw.text((x + 10, y + y_offset), f"Signal: {sensor['signal']}", font=self.font_small,
                               fill="#ffffff")
                     y_offset += 20
-                    
-
-    def render_footer(self, draw):
-        footer_height = 30
-        draw.rectangle([0, self.height - footer_height, self.width, self.height], fill="#333333")
-        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        draw.text((10, self.height - footer_height + 5), f"Last Updated: {timestamp}", font=self.font_xsmall, fill="#ffffff")
-        alarm_text = f"⚠️ {len(self.alarm_sensors)} ALARM(S) ACTIVE" if self.alarm_sensors else "System Normal"
-        text_width = get_text_width(draw, alarm_text, self.font_xsmall)
-        draw.text((self.width - text_width - 20, self.height - footer_height + 5), alarm_text, font=self.font_xsmall, fill="#ffffff")
-        active_count = sum(1 for s in self.sensor_data if "2025" in s.get("last_seen", ""))
-        sensor_stats = f"Active Sensors: {active_count}/{len(self.sensor_data)}"
-        stats_width = get_text_width(draw, sensor_stats, self.font_xsmall)
-        draw.text(((self.width - stats_width) / 2, self.height - footer_height + 5), sensor_stats, font=self.font_xsmall, fill="#ffffff")
 
 # ----------------------
 # WebSocket Client
@@ -309,7 +301,7 @@ class RtspStreamer(threading.Thread):
                 logging.error(f"Error creating FIFO pipe: {e}")
 
     def run(self):
-        frame_interval = 1.0 / self.config.get("frame_rate", 6)  # e.g., 1 second for 1 FPS
+        frame_interval = 1.0 / self.config.get("frame_rate", 1)  # e.g., 1 second for 1 FPS
         while self.running:
             self.start_ffmpeg()
             time.sleep(10)  # Wait for FFmpeg to initialize and connect to MediaMTX
@@ -341,7 +333,7 @@ class RtspStreamer(threading.Thread):
             "ffmpeg",
             "-re",                     # Read input at native frame rate
             "-f", "image2pipe",        # Input format
-            "-framerate", str(self.config.get("frame_rate", 6)),  # Match config frame rate
+            "-framerate", str(self.config.get("frame_rate", 1)),  # Match config frame rate
             "-i", self.pipe_path,      # Input from FIFO pipe
             "-c:v", "libx264",         # Video codec
             "-r", str(self.config.get("frame_rate", 1)),  # Output frame rate
@@ -529,8 +521,11 @@ def status():
 @app.route('/snapshot')
 def snapshot():
     try:
-        frame = renderer.render_frame()
-        return Response(frame, mimetype="image/jpeg")
+        frame = renderer.render_frame(config['width'], config['height'])  # Updated to include width, height
+        # Convert PIL Image to bytes for Response
+        buf = io.BytesIO()
+        frame.save(buf, format="JPEG", quality=75)
+        return Response(buf.getvalue(), mimetype="image/jpeg")
     except Exception as e:
         logging.error(f"Snapshot error: {e}")
         return "Failed to generate snapshot", 500
@@ -582,7 +577,7 @@ def set_page(page_num):
     return jsonify({
         "success": True,
         "current_page": page_num,
-        "total_pages": renderer.total_pages
+        "totalPages": renderer.total_pages
     })
 
 @app.route('/onvif/device_service', methods=["POST"])
