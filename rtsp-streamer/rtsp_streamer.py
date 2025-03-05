@@ -117,12 +117,8 @@ class RtspStreamer(threading.Thread):
                 logger.error(f"Max restart attempts ({self.max_restarts}) reached, giving up.")
                 self.running = False
 
-    def start_ffmpeg(self) -> None:
-        """
-        Start the FFmpeg process for RTSP streaming.
-        """
+    def start_ffmpeg(self):
         rtsp_url = f"rtsp://127.0.0.1:{self.config.get('rtsp_port')}/{self.config.get('stream_name')}"
-
         cmd = [
             "ffmpeg",
             "-re",
