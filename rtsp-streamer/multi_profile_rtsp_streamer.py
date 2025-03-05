@@ -18,7 +18,6 @@ from rtsp_streamer import RtspStreamer
 
 logger = logging.getLogger(__name__)
 
-
 class ProfileStreamMonitor:
     """Helper class to monitor a single profile stream and its resources."""
 
@@ -62,7 +61,6 @@ class ProfileStreamMonitor:
                 except Exception as e:
                     logger.error(f"Error terminating FFmpeg for {self.profile_id}: {e}")
                 self.ffmpeg_process = None
-
 
 class MultiProfileRtspStreamer(RtspStreamer):
     """
@@ -361,10 +359,9 @@ class MultiProfileRtspStreamer(RtspStreamer):
             if stderr_line:
                 logger.info(f"FFmpeg initial output for {profile_id}: {stderr_line}")
 
-            # Start monitoring thread
+            # Start monitoring thread using a lambda to ensure the method is bound correctly
             monitor_thread = threading.Thread(
-                target=self._monitor_ffmpeg_for_profile,
-                args=(profile_id,),
+                target=lambda: self._monitor_ffmpeg_for_profile(profile_id),
                 daemon=True
             )
             monitor_thread.start()
@@ -479,3 +476,44 @@ class MultiProfileRtspStreamer(RtspStreamer):
             # Mark as inactive if we're still the monitor for this profile
             if profile_id in self.profile_monitors and self.profile_monitors[profile_id] == monitor:
                 monitor.active = False
+
+    def _monitor_ffmpeg_for_profile(self, profile_id: str) -> None:
+        """
+        Monitor FFmpeg process for a specific profile and log its output.
+
+        Args:
+            profile_id: Profile identifier
+        """
+        monitor = self.profile_monitors.get(profile_id)
+        if not monitor or not monitor.ffmpeg_process:
+            logger.error(f"No active FFmpeg process to monitor for profile: {profile_id}")
+            return
+
+        try:
+            while monitor.active and monitor.ffmpeg_process.poll() is None:
+                stderr_line = monitor.ffmpeg_process.stderr.readline().strip()
+                if stderr_line:
+                    logger.debug(f"FFmpeg output for {profile_id}: {stderr_line}")
+                time.sleep(0.1)  # Small sleep to prevent tight loop
+            if monitor.active:
+                logger.warning(f"FFmpeg for {profile_id} exited with code {monitor.ffmpeg_process.returncode}")
+                self._restart_profile_stream(profile_id)
+        except Exception as e:
+            logger.error(f"Error monitoring FFmpeg for {profile_id}: {e}")
+        finally:
+            if monitor.active:
+                monitor.cleanup()
+
+    def _restart_profile_stream(self, profile_id: str) -> None:
+        """
+        Restart a profile stream if it fails.
+
+        Args:
+            profile_id: Profile identifier
+        """
+        with self.lock:
+            monitor = self.profile_monitors.get(profile_id)
+            if monitor and monitor.is_active():
+                logger.info(f"Restarting stream for {profile_id}")
+                monitor.cleanup()
+                self.start_profile_stream(profile_id)
