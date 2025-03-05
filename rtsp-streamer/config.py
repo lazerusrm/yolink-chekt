@@ -12,7 +12,7 @@ from pathlib import Path
 
 # Configure basic logging until proper configuration is loaded
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='[%(asctime)s] %(levelname)s [%(name)s:%(lineno)s] %(message)s',
     datefmt="%Y-%m-%d %H:%M:%S"
 )
@@ -403,7 +403,7 @@ def get_config() -> Dict[str, Any]:
             "server_ip": server_ip,
 
             # Logging configuration
-            "log_level": os.environ.get("LOG_LEVEL", "INFO"),
+            "log_level": os.environ.get("LOG_LEVEL", "DEBUG"),
 
             # Resource monitoring
             "enable_resource_monitoring": os.environ.get("ENABLE_RESOURCE_MONITORING", "true"),

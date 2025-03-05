@@ -30,7 +30,7 @@ from onvif_integration import setup_integration
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='[%(asctime)s] %(levelname)s [%(name)s:%(lineno)s] %(message)s',
     datefmt="%Y-%m-%d %H:%M:%S"
 )
@@ -168,7 +168,7 @@ class DashboardApp:
         self._preprocess_config()  # Ensure numerical values are typed correctly
 
         # Configure logging level from config
-        log_level = self.config.get("log_level", "INFO").upper()
+        log_level = self.config.get("log_level", "DEBUG").upper()
         numeric_level = getattr(logging, log_level, logging.INFO)
         logging.getLogger().setLevel(numeric_level)
         logger.info(f"Log level set to {log_level}")
