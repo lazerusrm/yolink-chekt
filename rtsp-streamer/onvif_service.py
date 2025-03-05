@@ -1418,4 +1418,39 @@ class OnvifService(threading.Thread):
     <d:Bye xmlns:d="http://schemas.xmlsoap.org/ws/2005/04/discovery">
       <a:EndpointReference><a:Address>urn:uuid:{self.device_uuid}</a:Address></a:EndpointReference>
       <d:Types>dn:NetworkVideoTransmitter tds:Device</d:Types>
-      <d:Scopes>onvif://www.onvif.org/type/video_encoder onvif://www.onvif.org/Profile/Streaming onvif://www.onvif.org/name/YoLinkDashboard onvif://www.onvif.org/location/Dashboard
+      <d:Scopes>onvif://www.onvif.org/type/video_encoder onvif://www.onvif.org/Profile/Streaming onvif://www.onvif.org/name/YoLinkDashboard onvif://www.onvif.org/location/Dashboard</d:Scopes>
+      <d:XAddrs>{self.device_service_url}</d:XAddrs>
+      <d:MetadataVersion>1</d:MetadataVersion>
+    </d:Bye>
+  </s:Body>
+</s:Envelope>
+"""
+
+    def _cleanup(self) -> None:
+        """Clean up resources when stopping the service."""
+        logger.info("Cleaning up ONVIF service resources")
+        
+        # Close discovery socket
+        if self.discovery_socket:
+            try:
+                self.discovery_socket.close()
+            except Exception as e:
+                logger.error(f"Error closing discovery socket: {e}")
+            self.discovery_socket = None
+        
+        # Stop HTTP server
+        if self.http_server:
+            try:
+                self.http_server.shutdown()
+                self.http_server.close_all_connections()
+            except Exception as e:
+                logger.error(f"Error shutting down HTTP server: {e}")
+            self.http_server = None
+        
+        logger.info("ONVIF service resources cleaned up")
+        
+    def stop(self) -> None:
+        """Stop the ONVIF service."""
+        logger.info("Stopping ONVIF service")
+        self.running = False
+        self._cleanup()
