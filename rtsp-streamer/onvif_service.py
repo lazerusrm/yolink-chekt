@@ -32,7 +32,9 @@ NS = {
     'tt': 'http://www.onvif.org/ver10/schema',
     'wsnt': 'http://docs.oasis-open.org/wsn/b-2',
     'wsse': 'http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd',
-    'wsu': 'http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd'
+    'wsu': 'http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd',
+    's': 'http://www.w3.org/2003/05/soap-envelope',  # Sometimes used instead of soap
+    'ter': 'http://www.onvif.org/ver10/error'  # Error namespace
 }
 
 # Register namespace prefixes for pretty XML output
@@ -702,7 +704,7 @@ class OnvifService(threading.Thread):
         try:
             # Debug incoming GetStreamUri requests
             if "GetStreamUri" in soap_request:
-                logger.info(f"GetStreamUri request received: {soap_request[:200]}...")
+                logger.info(f"GetStreamUri request received: {soap_request[:500]}...")
 
             root = parse_xml_safely(soap_request)
             if root is None:
@@ -754,6 +756,130 @@ class OnvifService(threading.Thread):
                 )
         except Exception as e:
             logger.error(f"Error handling media service request: {e}")
+            return XMLGenerator.generate_fault_response(f"Internal error: {str(e)}")
+
+    def _handle_get_stream_uri(self, request: ET.Element) -> str:
+        """
+        Handle GetStreamUri request with comprehensive protocol information.
+
+        Args:
+            request: Request XML root
+
+        Returns:
+            str: SOAP response XML
+        """
+        try:
+            body = request.find('.//soap:Body', NS)
+            if body is None:
+                return XMLGenerator.generate_fault_response("Invalid SOAP request")
+
+            get_stream_uri = body.find('.//trt:GetStreamUri', NS)
+            if get_stream_uri is None:
+                # Try with the full namespace path
+                get_stream_uri = body.find('.//{http://www.onvif.org/ver10/media/wsdl}GetStreamUri')
+                if get_stream_uri is None:
+                    return XMLGenerator.generate_fault_response("Missing GetStreamUri element")
+
+            profile_token_elem = get_stream_uri.find('.//trt:ProfileToken', NS)
+            if profile_token_elem is None:
+                # Try with the full namespace path
+                profile_token_elem = get_stream_uri.find('.//{http://www.onvif.org/ver10/media/wsdl}ProfileToken')
+                if profile_token_elem is None:
+                    return XMLGenerator.generate_fault_response("Missing ProfileToken")
+
+            # Look for StreamSetup to extract protocol information
+            stream_setup = get_stream_uri.find('.//tt:StreamSetup', NS)
+            if stream_setup is None:
+                # Try alternative namespace
+                stream_setup = get_stream_uri.find('.//{http://www.onvif.org/ver10/schema}StreamSetup')
+
+            # Extract Stream type (RTP-Unicast, RTP-Multicast)
+            stream_type = "RTP-Unicast"  # Default value
+            if stream_setup is not None:
+                stream_elem = stream_setup.find('.//tt:Stream', NS)
+                if stream_elem is None:
+                    stream_elem = stream_setup.find('.//{http://www.onvif.org/ver10/schema}Stream')
+
+                if stream_elem is not None and stream_elem.text:
+                    stream_type = stream_elem.text
+
+            # Extract Transport Protocol (RTSP, HTTP, UDP)
+            protocol = "RTSP"  # Default value
+            if stream_setup is not None:
+                transport = stream_setup.find('.//tt:Transport', NS)
+                if transport is None:
+                    transport = stream_setup.find('.//{http://www.onvif.org/ver10/schema}Transport')
+
+                if transport is not None:
+                    protocol_elem = transport.find('.//tt:Protocol', NS)
+                    if protocol_elem is None:
+                        protocol_elem = transport.find('.//{http://www.onvif.org/ver10/schema}Protocol')
+
+                    if protocol_elem is not None and protocol_elem.text:
+                        protocol = protocol_elem.text
+
+            # Log the requested protocol and stream type for debugging
+            logger.info(f"GetStreamUri requested with protocol: {protocol}, stream type: {stream_type}")
+
+            token = profile_token_elem.text
+            profile_found = False
+            with self.profiles_lock:
+                for profile_info in self.media_profiles:
+                    if profile_info.token == token:
+                        profile_found = True
+                        profile_info.activate()
+                        break
+
+            if not profile_found:
+                return XMLGenerator.generate_fault_response(
+                    f"Profile not found: {token}",
+                    "ter:InvalidArgVal/ter:NoProfile"
+                )
+
+            if token in self.profile_callbacks:
+                self.profile_callbacks[token](token)
+            elif "default" in self.profile_callbacks:
+                self.profile_callbacks["default"](token)
+
+            stream_name = self.stream_name
+            if token == "profile1":
+                stream_name = f"{self.stream_name}_main"
+            elif token == "profile2":
+                stream_name = f"{self.stream_name}_low"
+            elif token == "profile3":
+                stream_name = f"{self.stream_name}_mobile"
+
+            auth_part = f"{self.username}:{self.password}@" if self.authentication_required else ""
+            stream_url = f"rtsp://{auth_part}{self.server_ip}:{self.rtsp_port}/{stream_name}"
+
+            # Get message ID from request if possible
+            message_id = None
+            header = request.find('.//soap:Header', NS)
+            if header is not None:
+                message_id_elem = header.find('.//wsa:MessageID', NS)
+                if message_id_elem is not None and message_id_elem.text:
+                    message_id = message_id_elem.text
+
+            # Create a response that explicitly includes all required fields
+            response = f"""
+<trt:GetStreamUriResponse>
+  <trt:MediaUri>
+    <tt:Uri>{stream_url}</tt:Uri>
+    <tt:InvalidAfterConnect>false</tt:InvalidAfterConnect>
+    <tt:InvalidAfterReboot>false</tt:InvalidAfterReboot>
+    <tt:Timeout>PT60S</tt:Timeout>
+  </trt:MediaUri>
+</trt:GetStreamUriResponse>
+"""
+            logger.info(f"Providing stream URI for profile {token}: {stream_url.replace(auth_part, '***:***@' if auth_part else '')}")
+
+            return XMLGenerator.generate_soap_response(
+                "http://www.onvif.org/ver10/media/wsdl/GetStreamUriResponse",
+                response,
+                message_id
+            )
+        except Exception as e:
+            logger.error(f"Error in GetStreamUri handler: {e}", exc_info=True)
             return XMLGenerator.generate_fault_response(f"Internal error: {str(e)}")
 
     def _handle_get_device_information(self, request: ET.Element) -> str:
