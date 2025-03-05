@@ -60,7 +60,7 @@ services:
       - CYCLE_INTERVAL=10000
       - ENABLE_ONVIF=true
       - ONVIF_PORT=8555
-      - SERVER_IP=10.250.250.2
+      - SERVER_IP=0.0.0.0
       - RTSP_API_PORT=3001
       - WS_PORT=9999
       - ENABLE_LOW_RES_PROFILE=true
