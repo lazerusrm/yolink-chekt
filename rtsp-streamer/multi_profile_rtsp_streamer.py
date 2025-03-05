@@ -244,29 +244,25 @@ class MultiProfileRtspStreamer(RtspStreamer):
                 logger.error(f"Cannot start unknown profile: {profile_id}")
                 return False
 
-            # Get monitor for this profile
             monitor = self.profile_monitors.get(profile_id)
             if not monitor:
                 logger.error(f"No monitor found for profile: {profile_id}")
                 return False
 
-            # If already active, just return success
             if monitor.is_active():
                 logger.info(f"Profile {profile_id} is already streaming")
                 return True
 
-            # Mark as active
-            monitor.active = True
+            monitor.active = True  # Set active before any operations
+            logger.debug(f"Set monitor.active to True for {profile_id}")
 
-            # Get profile configuration
             profile_config = self.profile_configs[profile_id]
 
-            # Start FFmpeg for this profile
             if not self._start_ffmpeg_for_profile(profile_id):
                 monitor.active = False
+                logger.debug(f"Reset monitor.active to False for {profile_id} due to FFmpeg failure")
                 return False
 
-            # Start frame feeding thread for this profile
             feed_thread = threading.Thread(
                 target=self._feed_frames_to_profile,
                 args=(profile_id,),
@@ -275,6 +271,12 @@ class MultiProfileRtspStreamer(RtspStreamer):
             feed_thread.start()
             monitor.feed_thread = feed_thread
             self.worker_threads.add(feed_thread)
+
+            # Wait briefly to ensure thread starts with active=True
+            time.sleep(0.1)  # Small delay to mitigate race condition
+            if not monitor.active:
+                logger.warning(f"Monitor for {profile_id} became inactive immediately after start")
+                return False
 
             logger.info(
                 f"Started streaming for {profile_id} at {profile_config['width']}x{profile_config['height']} with {profile_config['sensors_per_page']} sensors per page")
@@ -376,6 +378,13 @@ class MultiProfileRtspStreamer(RtspStreamer):
             return False
 
     def _feed_frames_to_profile(self, profile_id: str) -> None:
+        """
+        Feed frames to a specific profile's FIFO pipe.
+        Optimized to reduce memory allocations and improve stability.
+
+        Args:
+            profile_id: Profile identifier
+        """
         monitor = self.profile_monitors.get(profile_id)
         if not monitor:
             logger.error(f"No monitor found for profile: {profile_id}")
@@ -406,12 +415,25 @@ class MultiProfileRtspStreamer(RtspStreamer):
                 logger.debug(
                     f"Starting frame feed loop for {profile_id}, running={self.running}, active={monitor.active}")
 
+                # Wait for monitor.active to be True if it’s not already
+                while not monitor.active and self.running:
+                    logger.debug(f"Waiting for monitor.active to become True for {profile_id}")
+                    time.sleep(0.1)
+
+                if not self.running:
+                    logger.debug(f"Aborting feed loop for {profile_id} as running=False")
+                    return
+
                 while self.running and monitor.active:
                     try:
                         current_time = time.time()
                         if current_time - last_frame_time >= frame_interval:
                             if hasattr(self.renderer, 'set_resolution'):
-                                self.renderer.set_resolution(width, height, profile_config["sensors_per_page"])
+                                self.renderer.set_resolution(
+                                    width,
+                                    height,
+                                    profile_config["sensors_per_page"]
+                                )
                             frame = self.renderer.render_frame(width, height)
                             buffer.seek(0)
                             buffer.truncate(0)
