@@ -1218,86 +1218,114 @@ class OnvifService(threading.Thread):
             for profile_info in self.media_profiles:
                 profile = profile_info.to_dict()
                 video_encoders += f"""
-<trt:Configurations token="VideoEncoder_{profile['token']}">
-  <tt:Name>VideoEncoder</tt:Name>
-  <tt:UseCount>1</tt:UseCount>
-  <tt:Encoding>{profile['encoding']}</tt:Encoding>
-  <tt:Resolution>
-    <tt:Width>{profile['resolution']['width']}</tt:Width>
-    <tt:Height>{profile['resolution']['height']}</tt:Height>
-  </tt:Resolution>
-  <tt:Quality>5</tt:Quality>
-  <tt:RateControl>
-    <tt:FrameRateLimit>{profile['fps']}</tt:FrameRateLimit>
-    <tt:EncodingInterval>1</tt:EncodingInterval>
-    <tt:BitrateLimit>4096</tt:BitrateLimit>
-  </tt:RateControl>
-  <tt:H264>
-    <tt:GovLength>30</tt:GovLength>
-    <tt:H264Profile>High</tt:H264Profile>
-  </tt:H264>
-  <tt:Multicast>
-    <tt:Address>
-      <tt:Type>IPv4</tt:Type>
-      <tt:IPv4Address>0.0.0.0</tt:IPv4Address>
-    </tt:Address>
-    <tt:Port>0</tt:Port>
-    <tt:TTL>1</tt:TTL>
-    <tt:AutoStart>false</tt:AutoStart>
-  </tt:
+    <trt:Configurations token="VideoEncoder_{profile['token']}">
+      <tt:Name>VideoEncoder</tt:Name>
+      <tt:UseCount>1</tt:UseCount>
+      <tt:Encoding>{profile['encoding']}</tt:Encoding>
+      <tt:Resolution>
+        <tt:Width>{profile['resolution']['width']}</tt:Width>
+        <tt:Height>{profile['resolution']['height']}</tt:Height>
+      </tt:Resolution>
+      <tt:Quality>5</tt:Quality>
+      <tt:RateControl>
+        <tt:FrameRateLimit>{profile['fps']}</tt:FrameRateLimit>
+        <tt:EncodingInterval>1</tt:EncodingInterval>
+        <tt:BitrateLimit>4096</tt:BitrateLimit>
+      </tt:RateControl>
+      <tt:H264>
+        <tt:GovLength>30</tt:GovLength>
+        <tt:H264Profile>High</tt:H264Profile>
+      </tt:H264>
+      <tt:Multicast>
+        <tt:Address>
+          <tt:Type>IPv4</tt:Type>
+          <tt:IPv4Address>0.0.0.0</tt:IPv4Address>
+        </tt:Address>
+        <tt:Port>0</tt:Port>
+        <tt:TTL>1</tt:TTL>
+        <tt:AutoStart>false</tt:AutoStart>
+      </tt:Multicast>
+      <tt:SessionTimeout>PT60S</tt:SessionTimeout>
+    </trt:Configurations>
+    """
+
         response = f"""
-<tds:GetCapabilitiesResponse>
-  <tds:Capabilities>
-    <tt:Device>
-      <tt:XAddr>{device_service_url}</tt:XAddr>
-      <tt:Network>
-        <tt:IPFilter>false</tt:IPFilter>
-        <tt:ZeroConfiguration>false</tt:ZeroConfiguration>
-        <tt:IPVersion6>false</tt:IPVersion6>
-        <tt:DynDNS>false</tt:DynDNS>
-      </tt:Network>
-      <tt:System>
-        <tt:DiscoveryResolve>true</tt:DiscoveryResolve>
-        <tt:DiscoveryBye>true</tt:DiscoveryBye>
-        <tt:RemoteDiscovery>true</tt:RemoteDiscovery>
-        <tt:SystemBackup>false</tt:SystemBackup>
-        <tt:SystemLogging>false</tt:SystemLogging>
-        <tt:FirmwareUpgrade>false</tt:FirmwareUpgrade>
-        <tt:SupportedVersions>
-          <tt:Major>1</tt:Major>
-          <tt:Minor>0</tt:Minor>
-        </tt:SupportedVersions>
-      </tt:System>
-      <tt:Security>
-        <tt:TLS1.1>false</tt:TLS1.1>
-        <tt:TLS1.2>false</tt:TLS1.2>
-        <tt:OnboardKeyGeneration>false</tt:OnboardKeyGeneration>
-        <tt:AccessPolicyConfig>false</tt:AccessPolicyConfig>
-        <tt:DefaultAccessPolicy>false</tt:DefaultAccessPolicy>
-        <tt:Dot1X>false</tt:Dot1X>
-        <tt:RemoteUserHandling>false</tt:RemoteUserHandling>
-        <tt:X.509Token>false</tt:X.509Token>
-        <tt:SAMLToken>false</tt:SAMLToken>
-        <tt:KerberosToken>false</tt:KerberosToken>
-        <tt:UsernameToken>true</tt:UsernameToken>
-        <tt:HttpDigest>false</tt:HttpDigest>
-        <tt:RELToken>false</tt:RELToken>
-      </tt:Security>
-    </tt:Device>
-    <tt:Media>
-      <tt:XAddr>{media_service_url}</tt:XAddr>
-      <tt:StreamingCapabilities>
-        <tt:RTPMulticast>false</tt:RTPMulticast>
-        <tt:RTP_TCP>true</tt:RTP_TCP>
-        <tt:RTP_RTSP_TCP>true</tt:RTP_RTSP_TCP>
-      </tt:StreamingCapabilities>
-      <tt:SnapshotUri>true</tt:SnapshotUri>
-      <tt:Rotation>false</tt:Rotation>
-    </tt:Media>
-  </tds:Capabilities>
-</tds:GetCapabilitiesResponse>
-"""
-        return generate_soap_response(
+    <trt:GetVideoEncoderConfigurationsResponse>
+    {video_encoders}
+    </trt:GetVideoEncoderConfigurationsResponse>
+    """
+        return XMLGenerator.generate_soap_response(
+            "http://www.onvif.org/ver10/media/wsdl/GetVideoEncoderConfigurationsResponse",
+            response
+        )
+
+    def _handle_get_capabilities(self, request: ET.Element) -> str:
+        """
+        Handle GetCapabilities request.
+
+        Args:
+            request: Request XML root
+
+        Returns:
+            str: SOAP response XML
+        """
+        # Base URLs
+        device_service_url = self.device_service_url
+        media_service_url = self.media_service_url
+
+        response = f"""
+    <tds:GetCapabilitiesResponse>
+      <tds:Capabilities>
+        <tt:Device>
+          <tt:XAddr>{device_service_url}</tt:XAddr>
+          <tt:Network>
+            <tt:IPFilter>false</tt:IPFilter>
+            <tt:ZeroConfiguration>false</tt:ZeroConfiguration>
+            <tt:IPVersion6>false</tt:IPVersion6>
+            <tt:DynDNS>false</tt:DynDNS>
+          </tt:Network>
+          <tt:System>
+            <tt:DiscoveryResolve>true</tt:DiscoveryResolve>
+            <tt:DiscoveryBye>true</tt:DiscoveryBye>
+            <tt:RemoteDiscovery>true</tt:RemoteDiscovery>
+            <tt:SystemBackup>false</tt:SystemBackup>
+            <tt:SystemLogging>false</tt:SystemLogging>
+            <tt:FirmwareUpgrade>false</tt:FirmwareUpgrade>
+            <tt:SupportedVersions>
+              <tt:Major>1</tt:Major>
+              <tt:Minor>0</tt:Minor>
+            </tt:SupportedVersions>
+          </tt:System>
+          <tt:Security>
+            <tt:TLS1.1>false</tt:TLS1.1>
+            <tt:TLS1.2>false</tt:TLS1.2>
+            <tt:OnboardKeyGeneration>false</tt:OnboardKeyGeneration>
+            <tt:AccessPolicyConfig>false</tt:AccessPolicyConfig>
+            <tt:DefaultAccessPolicy>false</tt:DefaultAccessPolicy>
+            <tt:Dot1X>false</tt:Dot1X>
+            <tt:RemoteUserHandling>false</tt:RemoteUserHandling>
+            <tt:X.509Token>false</tt:X.509Token>
+            <tt:SAMLToken>false</tt:SAMLToken>
+            <tt:KerberosToken>false</tt:KerberosToken>
+            <tt:UsernameToken>true</tt:UsernameToken>
+            <tt:HttpDigest>false</tt:HttpDigest>
+            <tt:RELToken>false</tt:RELToken>
+          </tt:Security>
+        </tt:Device>
+        <tt:Media>
+          <tt:XAddr>{media_service_url}</tt:XAddr>
+          <tt:StreamingCapabilities>
+            <tt:RTPMulticast>false</tt:RTPMulticast>
+            <tt:RTP_TCP>true</tt:RTP_TCP>
+            <tt:RTP_RTSP_TCP>true</tt:RTP_RTSP_TCP>
+          </tt:StreamingCapabilities>
+          <tt:SnapshotUri>true</tt:SnapshotUri>
+          <tt:Rotation>false</tt:Rotation>
+        </tt:Media>
+      </tds:Capabilities>
+    </tds:GetCapabilitiesResponse>
+    """
+        return XMLGenerator.generate_soap_response(
             "http://www.onvif.org/ver10/device/wsdl/GetCapabilitiesResponse",
             response
         )
