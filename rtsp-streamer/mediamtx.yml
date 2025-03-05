@@ -1,20 +1,11 @@
-logLevel: debug
-rtspAddress: ":8554"
-readTimeout: 120s
-writeTimeout: 120s
-rtmpDisable: false
-hlsDisable: true
-webrtcDisable: true
-protocols: [tcp]
+logLevel: info
+rtspAddress: :8554
+readTimeout: 10s
+writeTimeout: 10s
+api: yes
+apiAddress: :9997
 
-# Configure paths
 paths:
-  all:
-    readUser: ""
-    readPass: ""
-    publishUser: ""
-    publishPass: ""
-
   yolink-dashboard:
     source: publisher
 
@@ -22,7 +13,4 @@ paths:
     source: publisher
 
   yolink-dashboard_low:
-    source: publisher
-
-  yolink-dashboard_mobile:
     source: publisher

@@ -186,6 +186,7 @@ class MultiProfileRtspStreamer(RtspStreamer):
             "ffmpeg",
             "-re",
             "-f", "image2pipe",
+            "-vcodec", "mjpeg",  # Add this line to specify the codec
             "-framerate", str(fps),
             "-i", pipe_path,
             "-c:v", "libx264",
@@ -278,7 +279,7 @@ class MultiProfileRtspStreamer(RtspStreamer):
 
                             # Convert PIL Image to JPEG bytes
                             buf = io.BytesIO()
-                            frame.save(buf, format="JPEG", quality=75)
+                            frame.save(buf, format="JPEG", quality=90)
 
                             # Write to FIFO
                             fifo.write(buf.getvalue())
