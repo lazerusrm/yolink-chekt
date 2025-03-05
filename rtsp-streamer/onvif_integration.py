@@ -233,7 +233,7 @@ class OnvifStreamingIntegration:
             if profile_token == "profile1":
                 stream_name = f"{self.onvif_service.stream_name}_main"
             elif profile_token == "profile2":
-                stream_name = f"{self.onvif_service.stream_name}_low"
+                stream_name = f"{self.onvif_service.stream_name}_sub"
             elif profile_token == "profile3":
                 stream_name = f"{self.onvif_service.stream_name}_mobile"
             else:

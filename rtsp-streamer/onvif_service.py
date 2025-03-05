@@ -803,7 +803,7 @@ class OnvifService(threading.Thread):
             if token == "profile1":
                 stream_name = f"{self.stream_name}_main"
             elif token == "profile2":
-                stream_name = f"{self.stream_name}_low"
+                stream_name = f"{self.stream_name}_sub"
             elif token == "profile3":
                 stream_name = f"{self.stream_name}_mobile"
 

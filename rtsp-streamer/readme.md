@@ -129,7 +129,7 @@ The RTSP streams are available at:
 rtsp://<SERVER_IP>:<RTSP_PORT>/<STREAM_NAME>
 
 # Low-resolution stream (if enabled)
-rtsp://<SERVER_IP>:<RTSP_PORT>/<STREAM_NAME>_low
+rtsp://<SERVER_IP>:<RTSP_PORT>/<STREAM_NAME>_sub
 
 # Mobile stream (if enabled)
 rtsp://<SERVER_IP>:<RTSP_PORT>/<STREAM_NAME>_mobile
