@@ -80,23 +80,41 @@ class DashboardRenderer:
         """
         Load appropriate fonts based on the current resolution.
         Cached to avoid repeatedly loading the same fonts.
+        Improved scaling for different resolutions.
 
         Returns:
             Dict[str, ImageFont.FreeTypeFont]: Dictionary of font objects
         """
-        if (self.cached_fonts_resolution == (self.current_width, self.current_height) and
-            self.fonts is not None):
+        if (self.cached_fonts_resolution == (self.current_width, self.current_height, self.sensors_per_page) and
+                self.fonts is not None):
             return self.fonts
 
-        base_font_size = max(18, int(self.current_height / 36))
-        title_font_size = max(28, int(self.current_height / 20))
-        xl_font_size = max(36, int(self.current_height / 15))
+        # Calculate panel dimensions to better adjust font sizes
+        layout = self._calc_layout_params()
+        panel_width = layout["panel_width"]
+        panel_height = layout["panel_height"]
+
+        # Dynamic sizing based on panel dimensions rather than just screen height
+        # More aggressive scaling for lower resolutions
+        if self.current_width <= 640:  # Mobile profile
+            base_font_size = max(10, int(panel_height / 12))
+            title_font_size = max(14, int(panel_height / 8))
+            xl_font_size = max(16, int(panel_height / 6))
+        elif self.current_width <= 960:  # Low-res profile
+            base_font_size = max(12, int(panel_height / 10))
+            title_font_size = max(18, int(panel_height / 7))
+            xl_font_size = max(24, int(panel_height / 5))
+        else:  # Main profile
+            base_font_size = max(14, int(panel_height / 9))
+            title_font_size = max(20, int(panel_height / 6))
+            xl_font_size = max(28, int(panel_height / 4))
 
         try:
             fonts = {
                 "xl": ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", xl_font_size),
                 "large": ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", title_font_size),
-                "medium": ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", base_font_size + 6),
+                "medium": ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+                                             base_font_size + 2),
                 "small": ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", base_font_size)
             }
         except OSError as e:
@@ -108,34 +126,59 @@ class DashboardRenderer:
                 "small": ImageFont.load_default()
             }
 
-        logger.info(f"Loaded fonts - XL: {xl_font_size}px, Large: {title_font_size}px, Medium: {base_font_size+6}px, Small: {base_font_size}px")
+        logger.info(
+            f"Loaded fonts for {self.current_width}x{self.current_height} - XL: {xl_font_size}px, Large: {title_font_size}px, Medium: {base_font_size + 2}px, Small: {base_font_size}px")
 
-        self.cached_fonts_resolution = (self.current_width, self.current_height)
+        self.cached_fonts_resolution = (self.current_width, self.current_height, self.sensors_per_page)
         self.fonts = fonts
         return self.fonts
 
     def _calc_layout_params(self) -> Dict[str, Any]:
         """
         Calculate layout parameters based on current resolution.
+        Improved to better handle different resolutions and sensor counts.
         Cached to avoid recalculating the same parameters repeatedly.
 
         Returns:
             Dict[str, Any]: Layout parameters
         """
         if (self.cached_layout_resolution == (self.current_width, self.current_height, self.sensors_per_page) and
-            self.layout_params is not None):
+                self.layout_params is not None):
             return self.layout_params
 
         width, height = self.current_width, self.current_height
         sensors_per_page = max(1, self.sensors_per_page)  # Ensure positive integer
 
-        banner_height = max(60, min(80, height // 12))
-        grid_cols = min(5, max(1, int(sensors_per_page ** 0.5)))
+        # More responsive banner height based on resolution
+        if height <= 360:
+            banner_height = max(30, min(40, height // 8))
+        elif height <= 720:
+            banner_height = max(40, min(60, height // 10))
+        else:
+            banner_height = max(60, min(80, height // 12))
+
+        # Adjust grid layout based on sensors_per_page
+        # Use fewer columns for small screens to allow bigger panels
+        if width <= 640:
+            max_cols = 2
+        elif width <= 960:
+            max_cols = 3
+        else:
+            max_cols = 5
+
+        grid_cols = min(max_cols, max(1, min(sensors_per_page, int(sensors_per_page ** 0.5))))
         grid_rows = (sensors_per_page + grid_cols - 1) // grid_cols
 
-        padding = max(8, min(20, height // 72))
-        panel_width = max(280, (width - (grid_cols + 1) * padding) // grid_cols)
-        panel_height = max(180, (height - banner_height - (grid_rows + 1) * padding) // grid_rows)
+        # Scale padding based on resolution
+        padding = max(4, min(16, height // 80))
+
+        # Calculate panel dimensions based on available space
+        panel_width = max(180, (width - (grid_cols + 1) * padding) // grid_cols)
+        panel_height = max(120, (height - banner_height - (grid_rows + 1) * padding) // grid_rows)
+
+        # Scale internal element heights based on panel size
+        title_height = max(20, min(36, panel_height // 6))
+        sensor_row_height = max(16, min(28, (panel_height - title_height) // 5))
 
         layout_params = {
             "grid_cols": grid_cols,
@@ -144,8 +187,8 @@ class DashboardRenderer:
             "panel_height": panel_height,
             "banner_height": banner_height,
             "padding": padding,
-            "title_height": max(30, min(40, height // 27)),
-            "sensor_row_height": max(24, min(32, height // 34)),
+            "title_height": title_height,
+            "sensor_row_height": sensor_row_height,
         }
 
         self.cached_layout_resolution = (self.current_width, self.current_height, self.sensors_per_page)
@@ -436,6 +479,7 @@ class DashboardRenderer:
     def _truncate_text(self, draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont, max_width: int) -> str:
         """
         Truncate text to fit within a maximum width.
+        More aggressive truncation for smaller widths.
         Uses a more efficient approach than the original method.
 
         Args:
@@ -453,13 +497,20 @@ class DashboardRenderer:
         if self._get_text_width(draw, text, font) <= max_width:
             return text
 
-        ellipsis = "..."
+        # For very small widths, be more aggressive with shorter ellipsis
+        if max_width < 80:
+            ellipsis = ".."
+        else:
+            ellipsis = "..."
+
         ellipsis_width = self._get_text_width(draw, ellipsis, font)
 
         if ellipsis_width >= max_width:
             return ""
 
         available_width = max_width - ellipsis_width
+
+        # Faster binary search for the right cutoff point
         start, end = 0, len(text)
 
         while start < end:
@@ -472,9 +523,10 @@ class DashboardRenderer:
         return text[:start] + ellipsis
 
     def _render_sensor_details(self, draw: ImageDraw.ImageDraw, sensor: Dict[str, Any],
-                              x: int, y: int, panel_width: int, y_offset: int = 50) -> None:
+                               x: int, y: int, panel_width: int, y_offset: int = 50,
+                               is_small_panel: bool = False) -> None:
         """
-        Render sensor details in a sensor panel.
+        Render sensor details in a sensor panel with improved handling for small panels.
 
         Args:
             draw: PIL ImageDraw object
@@ -483,67 +535,80 @@ class DashboardRenderer:
             y: Y-coordinate of the sensor panel
             panel_width: Width of the panel in pixels
             y_offset: Starting Y-offset for additional details
+            is_small_panel: Flag indicating if we're rendering in a small panel
         """
         padding = self.layout_params["padding"]
         row_height = self.layout_params["sensor_row_height"]
         sensor_type = sensor.get("type")
 
+        # Use smaller font for details in small panels
+        detail_font = self.fonts["small"] if not is_small_panel else self.fonts["small"]
+
+        # Calculate available height for details
+        max_y = y + self.layout_params["panel_height"] - padding
+
+        # For small panels, show condensed info
         if sensor_type in ["MotionSensor", "ContactSensor", "DoorSensor"]:
-            if "battery" in sensor and sensor["battery"] is not None:
+            if "battery" in sensor and sensor["battery"] is not None and y_offset < max_y:
                 battery_value = map_battery_value(safe_int(sensor["battery"]))
                 if battery_value is not None:
                     batt_color = "#ff5555" if battery_value <= 25 else "#ffff55" if battery_value <= 50 else "#ffffff"
-                    batt_text = f"Battery: {battery_value}%"
-                    draw.text((x + padding, y + y_offset), batt_text, font=self.fonts["medium"], fill=batt_color)
+                    batt_text = f"Batt: {battery_value}%" if is_small_panel else f"Battery: {battery_value}%"
+                    draw.text((x + padding, y + y_offset), batt_text, font=detail_font, fill=batt_color)
                     y_offset += row_height
 
-            if "signal" in sensor:
+            if "signal" in sensor and y_offset < max_y:
                 signal_value = safe_int(sensor["signal"])
                 if signal_value is not None:
                     signal_color = "#ff5555" if signal_value < -90 else "#ffff55" if signal_value < -70 else "#55ff55"
-                    signal_text = f"Signal: {signal_value}"
-                    draw.text((x + padding, y + y_offset), signal_text, font=self.fonts["medium"], fill=signal_color)
+                    signal_text = f"Sig: {signal_value}" if is_small_panel else f"Signal: {signal_value}"
+                    draw.text((x + padding, y + y_offset), signal_text, font=detail_font, fill=signal_color)
                     y_offset += row_height
 
         elif sensor_type == "THSensor":
-            if sensor.get("temperature", "unknown") != "unknown":
-                temp_text = f"Temp: {sensor['temperature']}°{sensor.get('temperatureUnit', 'F')}"
-                draw.text((x + padding, y + y_offset), temp_text, font=self.fonts["medium"], fill="#ffffff")
+            if sensor.get("temperature", "unknown") != "unknown" and y_offset < max_y:
+                # Cleaner temperature display for small panels
+                if is_small_panel:
+                    temp_text = f"{sensor['temperature']}°{sensor.get('temperatureUnit', 'F')}"
+                else:
+                    temp_text = f"Temp: {sensor['temperature']}°{sensor.get('temperatureUnit', 'F')}"
+                draw.text((x + padding, y + y_offset), temp_text, font=detail_font, fill="#ffffff")
                 y_offset += row_height
 
-            if sensor.get("humidity", "unknown") != "unknown":
-                humidity_text = f"Humidity: {sensor['humidity']}%"
-                draw.text((x + padding, y + y_offset), humidity_text, font=self.fonts["medium"], fill="#ffffff")
+            if sensor.get("humidity", "unknown") != "unknown" and y_offset < max_y:
+                humidity_text = f"Hum: {sensor['humidity']}%" if is_small_panel else f"Humidity: {sensor['humidity']}%"
+                draw.text((x + padding, y + y_offset), humidity_text, font=detail_font, fill="#ffffff")
                 y_offset += row_height
 
-            if "battery" in sensor and sensor["battery"] is not None:
+            if "battery" in sensor and sensor["battery"] is not None and y_offset < max_y:
                 battery_value = map_battery_value(safe_int(sensor["battery"]))
                 if battery_value is not None:
                     batt_color = "#ff5555" if battery_value <= 25 else "#ffff55" if battery_value <= 50 else "#ffffff"
-                    batt_text = f"Battery: {battery_value}%"
-                    draw.text((x + padding, y + y_offset), batt_text, font=self.fonts["medium"], fill=batt_color)
+                    batt_text = f"Batt: {battery_value}%" if is_small_panel else f"Battery: {battery_value}%"
+                    draw.text((x + padding, y + y_offset), batt_text, font=detail_font, fill=batt_color)
                     y_offset += row_height
 
-            if "signal" in sensor:
+            if "signal" in sensor and y_offset < max_y:
                 signal_value = safe_int(sensor["signal"])
                 if signal_value is not None:
                     signal_color = "#ff5555" if signal_value < -90 else "#ffff55" if signal_value < -70 else "#55ff55"
-                    signal_text = f"Signal: {signal_value}"
-                    draw.text((x + padding, y + y_offset), signal_text, font=self.fonts["medium"], fill=signal_color)
+                    signal_text = f"Sig: {signal_value}" if is_small_panel else f"Signal: {signal_value}"
+                    draw.text((x + padding, y + y_offset), signal_text, font=detail_font, fill=signal_color)
                     y_offset += row_height
 
         elif sensor_type in ["Outlet", "MultiOutlet"]:
-            if "signal" in sensor:
+            if "signal" in sensor and y_offset < max_y:
                 signal_value = safe_int(sensor["signal"])
                 if signal_value is not None:
                     signal_color = "#ff5555" if signal_value < -90 else "#ffff55" if signal_value < -70 else "#55ff55"
-                    signal_text = f"Signal: {signal_value}"
-                    draw.text((x + padding, y + y_offset), signal_text, font=self.fonts["medium"], fill=signal_color)
+                    signal_text = f"Sig: {signal_value}" if is_small_panel else f"Signal: {signal_value}"
+                    draw.text((x + padding, y + y_offset), signal_text, font=detail_font, fill=signal_color)
 
     def _render_sensor_panel(self, draw: ImageDraw.ImageDraw, sensor: Dict[str, Any],
-                            x: int, y: int) -> None:
+                             x: int, y: int) -> None:
         """
         Render a single sensor panel with enhanced visual indicators.
+        Improved scaling for different resolutions.
 
         Args:
             draw: PIL ImageDraw object
@@ -556,6 +621,9 @@ class DashboardRenderer:
         padding = self.layout_params["padding"]
         title_height = self.layout_params["title_height"]
 
+        # Determine if we're in a small resolution mode
+        is_small_panel = panel_width < 200 or panel_height < 150
+
         device_id = sensor.get("deviceId", "")
         is_newest_alarm = device_id == self.newest_alarm_id
         is_in_alarm = device_id in [s.get("deviceId") for s in self.alarm_sensors]
@@ -564,76 +632,97 @@ class DashboardRenderer:
             gradient_top = "#ff3333"
             gradient_bottom = "#cc0000"
             outline_color = "#ffff00"
-            outline_width = 3
+            outline_width = 2 if is_small_panel else 3
         elif is_in_alarm:
             gradient_top = "#cc3333"
             gradient_bottom = "#aa0000"
             outline_color = "#ff5555"
-            outline_width = 2
+            outline_width = 1 if is_small_panel else 2
         else:
             gradient_top = "#333333"
             gradient_bottom = "#222222"
             outline_color = "#555555"
             outline_width = 1
 
+        # Draw panel outline
         for i in range(outline_width):
             draw.rectangle(
-                [(x+i, y+i), (x + panel_width-i, y + panel_height-i)],
+                [(x + i, y + i), (x + panel_width - i, y + panel_height - i)],
                 fill=None,
                 outline=outline_color
             )
 
+        # Draw panel background
         draw.rectangle(
-            [(x+outline_width, y+outline_width),
-             (x + panel_width-outline_width, y + panel_height-outline_width)],
+            [(x + outline_width, y + outline_width),
+             (x + panel_width - outline_width, y + panel_height - outline_width)],
             fill=gradient_bottom
         )
 
+        # Draw header
         header_height = title_height + padding
         draw.rectangle([(x, y), (x + panel_width, y + header_height)], fill=gradient_top)
 
+        # Get sensor name and truncate as needed
         sensor_name = sensor.get("name", "Unknown")
-        sensor_name = self._truncate_text(draw, sensor_name, self.fonts["large"], panel_width - (padding * 2))
+        sensor_name = self._truncate_text(draw, sensor_name,
+                                          self.fonts["large" if not is_small_panel else "medium"],
+                                          panel_width - (padding * 2))
 
+        # Render sensor name
         if is_newest_alarm:
-            name_font = self.fonts["xl"]
-            draw.text((x + padding, y + 2), "⚠ NEW ALARM ⚠", font=self.fonts["medium"], fill="#ffff00")
-            draw.text((x + padding, y + title_height), sensor_name, font=name_font, fill="#ffffff")
-        else:
             name_font = self.fonts["large"]
+            # For small panels, skip the alarm warning text to save space
+            if not is_small_panel:
+                draw.text((x + padding, y + 2), "⚠ NEW ALARM ⚠", font=self.fonts["medium"], fill="#ffff00")
+            draw.text((x + padding, y + (title_height // 4 if is_small_panel else title_height)),
+                      sensor_name, font=name_font, fill="#ffffff")
+        else:
+            name_font = self.fonts["large" if not is_small_panel else "medium"]
             draw.text((x + padding, y + padding), sensor_name, font=name_font, fill="#ffffff")
 
+        # Get sensor details
         sensor_type = sensor.get("type")
         state = sensor.get("state", "N/A")
         y_offset = header_height + padding
 
+        # Determine font for state based on panel size
+        state_font = self.fonts["medium"] if not is_small_panel else self.fonts["small"]
+        detail_font = self.fonts["small"]
+
+        # Calculate available height for details
+        available_height = panel_height - header_height - padding * 2
+
+        # Render state and details with more condensed layout for small panels
         if sensor_type in ["Outlet", "MultiOutlet"]:
             if "power" in sensor:
                 power = safe_float(sensor["power"])
                 if power is not None:
                     status = "On" if power > 0 else "Off"
                     status_color = "#55ff55" if power > 0 else "#ff5555"
-                    status_text = f"Status: {status} ({power}W)"
-                    draw.text((x + padding, y + y_offset), status_text, font=self.fonts["medium"], fill=status_color)
+                    status_text = f"Status: {status}" if is_small_panel else f"Status: {status} ({power}W)"
+                    draw.text((x + padding, y + y_offset), status_text, font=state_font, fill=status_color)
                 else:
-                    draw.text((x + padding, y + y_offset), "Status: Unknown", font=self.fonts["medium"], fill="#aaaaaa")
+                    draw.text((x + padding, y + y_offset), "Unknown", font=state_font, fill="#aaaaaa")
                 y_offset += self.layout_params["sensor_row_height"]
             elif "powers" in sensor and isinstance(sensor["powers"], list):
                 powers = sensor["powers"]
-                for j, power in enumerate(powers[:2]):
+                max_outlets = 1 if is_small_panel else 2  # Show fewer outlets on small panels
+                for j, power in enumerate(powers[:max_outlets]):
                     power_val = safe_float(power)
                     if power_val is not None:
                         status = "On" if power_val > 0 else "Off"
                         status_color = "#55ff55" if power_val > 0 else "#ff5555"
-                        outlet_text = f"Outlet {j + 1}: {status} ({power_val}W)"
+                        outlet_text = f"Out {j + 1}: {status}" if is_small_panel else f"Outlet {j + 1}: {status} ({power_val}W)"
                         draw.text((x + padding, y + y_offset + j * self.layout_params["sensor_row_height"]),
-                                 outlet_text, font=self.fonts["medium"], fill=status_color)
+                                  outlet_text, font=state_font, fill=status_color)
                     else:
                         draw.text((x + padding, y + y_offset + j * self.layout_params["sensor_row_height"]),
-                                 f"Outlet {j + 1}: Unknown", font=self.fonts["medium"], fill="#aaaaaa")
-                y_offset += len(powers[:2]) * self.layout_params["sensor_row_height"]
+                                  f"Out {j + 1}: Unknown" if is_small_panel else f"Outlet {j + 1}: Unknown",
+                                  font=state_font, fill="#aaaaaa")
+                y_offset += len(powers[:max_outlets]) * self.layout_params["sensor_row_height"]
             else:
-                draw.text((x + padding, y + y_offset), "Status: Unknown", font=self.fonts["medium"], fill="#aaaaaa")
+                draw.text((x + padding, y + y_offset), "Unknown", font=state_font, fill="#aaaaaa")
                 y_offset += self.layout_params["sensor_row_height"]
         else:
             if sensor_type == "THSensor" and isinstance(state, dict):
@@ -642,29 +731,37 @@ class DashboardRenderer:
                     state_color = "#55ff55"
                 else:
                     state_color = "#ff5555"
-                draw.text((x + padding, y + y_offset), f"State: {state_text}",
-                         font=self.fonts["medium"], fill=state_color)
+                draw.text((x + padding, y + y_offset),
+                          f"State: {state_text}" if not is_small_panel else state_text,
+                          font=state_font, fill=state_color)
                 y_offset += self.layout_params["sensor_row_height"]
             elif isinstance(state, str) and state.lower() in ["open", "motion"]:
                 state_text = state.upper()
                 state_color = "#ff5555"
-                draw.text((x + padding, y + y_offset), f"State: {state_text}",
-                         font=self.fonts["xl"], fill=state_color)
-                y_offset += self.layout_params["sensor_row_height"] * 1.5
+                state_font_to_use = self.fonts["large"] if not is_small_panel else self.fonts["medium"]
+                draw.text((x + padding, y + y_offset),
+                          f"State: {state_text}" if not is_small_panel else state_text,
+                          font=state_font_to_use, fill=state_color)
+                y_offset += self.layout_params["sensor_row_height"] * (1.5 if not is_small_panel else 1.2)
             elif isinstance(state, str) and state.lower() in ["closed", "no motion"]:
-                state_text = state
+                state_text = state if not is_small_panel else "CLOSED" if state.lower() == "closed" else "NO MOTION"
                 state_color = "#55ff55"
-                draw.text((x + padding, y + y_offset), f"State: {state_text}",
-                         font=self.fonts["medium"], fill=state_color)
+                draw.text((x + padding, y + y_offset),
+                          f"State: {state_text}" if not is_small_panel else state_text,
+                          font=state_font, fill=state_color)
                 y_offset += self.layout_params["sensor_row_height"]
             else:
                 state_text = str(state)
                 state_color = "#ffffff"
-                draw.text((x + padding, y + y_offset), f"State: {state_text}",
-                         font=self.fonts["medium"], fill=state_color)
+                draw.text((x + padding, y + y_offset),
+                          f"State: {state_text}" if not is_small_panel else state_text,
+                          font=state_font, fill=state_color)
                 y_offset += self.layout_params["sensor_row_height"]
 
-        self._render_sensor_details(draw, sensor, x, y, panel_width, y_offset)
+        # Check if we have room for more details
+        if y_offset + self.layout_params["sensor_row_height"] <= y + panel_height - padding:
+            # Render more sensor details if there's space
+            self._render_sensor_details(draw, sensor, x, y, panel_width, y_offset, is_small_panel)
 
     def _render_alarm_view(self, draw: ImageDraw.ImageDraw) -> None:
         """Render the alarm view (placeholder implementation)."""

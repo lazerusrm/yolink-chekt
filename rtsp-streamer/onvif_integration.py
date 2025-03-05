@@ -68,10 +68,12 @@ class OnvifStreamingIntegration:
             logger.info("Profile callbacks registered with ONVIF service")
 
     def _initialize_default_profile(self) -> None:
-        """Initialize the default profile (usually the main profile)."""
-        # Always start the main profile
+        """Initialize all profiles instead of just the main profile."""
+        # Start all profiles
         self.ensure_profile_active("profile1")
-        logger.info("Main profile (profile1) initialized")
+        self.ensure_profile_active("profile2")
+        self.ensure_profile_active("profile3")
+        logger.info("All profiles (profile1, profile2, profile3) initialized")
 
     def _start_activation_thread(self) -> None:
         """Start the delayed profile activation thread."""

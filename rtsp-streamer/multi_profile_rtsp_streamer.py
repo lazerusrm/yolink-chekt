@@ -208,12 +208,13 @@ class MultiProfileRtspStreamer(RtspStreamer):
 
     def run(self) -> None:
         """
-        Thread main function. Starts FFmpeg for the main profile and feeds frames to it.
-        Additional profiles are started on demand when requested through ONVIF.
+        Thread main function. Starts FFmpeg for all profiles and feeds frames to them.
         """
         try:
-            # Always start the main profile stream
+            # Start all profiles instead of just the main one
             self.start_profile_stream("profile1")
+            self.start_profile_stream("profile2")
+            self.start_profile_stream("profile3")
 
             # Main loop: monitor and restart profiles as needed
             while self.running:
