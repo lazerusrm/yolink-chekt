@@ -331,29 +331,30 @@ class DashboardApp:
             # Connect to WebSocket data source
             ws_connected = self._start_websocket_client()
             if not ws_connected:
-                # Continue operation even if WebSocket fails - we'll show empty data
                 logger.warning("Operating without WebSocket connection")
 
             # Start RTSP streamer
             streaming_started = self._start_streaming()
             if not streaming_started:
-                # This is a critical service - report error but continue to at least provide APIs
                 logger.error("Failed to start streaming, continuing with limited functionality")
 
-            # Start ONVIF service if enabled
-            if self.config.get("enable_onvif"):
-                onvif_started = self._start_onvif_service()
-                if not onvif_started:
-                    logger.warning("ONVIF service failed to start, continuing without ONVIF support")
-                    self.config["enable_onvif"] = False
-            else:
-                logger.info("ONVIF service is disabled in configuration")
+            # Always start the ONVIF service
+            onvif_started = self._start_onvif_service()
+            if not onvif_started:
+                logger.warning("ONVIF service failed to start, continuing without ONVIF support")
 
             # Start page cycling thread
             self._start_page_cycling()
 
-            # Configure API routes
-            self._setup_api_routes()
+            # Configure API routes (always include ONVIF routes)
+            create_api_routes(self.app, self.config, self.renderer, self.streamer)
+            create_onvif_routes(
+                self.app,
+                self.config,
+                onvif_service=self.onvif_service,
+                renderer=self.renderer
+            )
+            logger.info("API routes configured")
 
             # Start Flask server
             self._start_http_server()
@@ -405,6 +406,7 @@ class DashboardApp:
     def _start_onvif_service(self) -> bool:
         """
         Initialize and start the ONVIF service.
+        Always available.
 
         Returns:
             bool: True if successfully started, False otherwise
@@ -426,25 +428,22 @@ class DashboardApp:
             # Start the service
             self.onvif_service.start()
 
-            # Set up integration between ONVIF and streamer if using multi-profile
-            use_multi_profile = (self.config.get("enable_low_res_profile", False) or
-                                 self.config.get("enable_mobile_profile", False))
-
-            if use_multi_profile:
-                self.onvif_integration = setup_integration(
-                    self.config,
-                    self.onvif_service,
-                    self.streamer,
-                    self.renderer
-                )
+            # Always set up integration between ONVIF and the RTSP streamer
+            self.onvif_integration = setup_integration(
+                self.config,
+                self.onvif_service,
+                self.streamer,
+                self.renderer
+            )
 
             # Log authentication details (masking password)
             masked_password = "*" * (len(self.config["onvif_password"]) - 2)
             if len(self.config["onvif_password"]) > 2:
-                masked_password = self.config["onvif_password"][:1] + masked_password + self.config["onvif_password"][-1:]
-
+                masked_password = self.config["onvif_password"][:1] + masked_password + self.config["onvif_password"][
+                                                                                        -1:]
             logger.info(
-                f"ONVIF service started on port {self.config.get('onvif_port')} with credentials: {self.config['onvif_username']}/{masked_password}")
+                f"ONVIF service started on port {self.config.get('onvif_port')} with credentials: {self.config['onvif_username']}/{masked_password}"
+            )
             return True
         except Exception as e:
             logger.error(f"Failed to start ONVIF service: {e}")
