@@ -613,8 +613,8 @@ class OnvifService(threading.Thread):
     <d:Hello>
       <a:EndpointReference><a:Address>urn:uuid:{self.device_uuid}</a:Address></a:EndpointReference>
       <d:Types>dn:NetworkVideoTransmitter tds:Device</d:Types>
-      <d:Scopes>onvif://www.onvif.org/type/video_encoder onvif://www.onvif.org/Profile/Streaming onvif://www.onvif.org/name/YoLinkDashboard onvif://www.onvif.org/location/Dashboard</d:Scopes>
-      <d:XAddrs>{self.device_service_url}</d:XAddrs>
+      <d:Scopes>onvif://www.onvif.org/type/video_encoder onvif://www.onvif.org/Profile/Streaming onvif://www.onvif.org/name/YoLinkDashboard onvif://www.onvif.org/location/Dashboard onvif://www.onvif.org/hardware/{self.device_uuid}</d:Scopes>
+      <d:XAddrs>{self.device_service_url} {self.media_service_url}</d:XAddrs>
       <d:MetadataVersion>1</d:MetadataVersion>
     </d:Hello>
   </s:Body>
@@ -889,7 +889,7 @@ class OnvifService(threading.Thread):
     <tt:SourceToken>VideoSource</tt:SourceToken>
     <tt:Bounds height="{profile['resolution']['height']}" width="{profile['resolution']['width']}" y="0" x="0"/>
   </tt:VideoSourceConfiguration>
-  <tt:VideoEncoderConfiguration token="VideoEncoder">
+  <tt:VideoEncoderConfiguration token="VideoEncoder_{profile['token']}">
     <tt:Name>VideoEncoder</tt:Name>
     <tt:UseCount>1</tt:UseCount>
     <tt:Encoding>{profile['encoding']}</tt:Encoding>
@@ -918,6 +918,36 @@ class OnvifService(threading.Thread):
     </tt:Multicast>
     <tt:SessionTimeout>PT60S</tt:SessionTimeout>
   </tt:VideoEncoderConfiguration>
+  <tt:PTZConfiguration token="PTZConfig_{profile['token']}">
+    <tt:Name>PTZConfig</tt:Name>
+    <tt:UseCount>1</tt:UseCount>
+    <tt:NodeToken>PTZNode</tt:NodeToken>
+    <tt:DefaultAbsolutePantTiltPositionSpace>http://www.onvif.org/ver10/tptz/PanTiltSpaces/PositionGenericSpace</tt:DefaultAbsolutePantTiltPositionSpace>
+    <tt:DefaultAbsoluteZoomPositionSpace>http://www.onvif.org/ver10/tptz/ZoomSpaces/PositionGenericSpace</tt:DefaultAbsoluteZoomPositionSpace>
+    <tt:DefaultPTZTimeout>PT5S</tt:DefaultPTZTimeout>
+    <tt:PanTiltLimits>
+      <tt:Range>
+        <tt:URI>http://www.onvif.org/ver10/tptz/PanTiltSpaces/PositionGenericSpace</tt:URI>
+        <tt:XRange>
+          <tt:Min>-1.0</tt:Min>
+          <tt:Max>1.0</tt:Max>
+        </tt:XRange>
+        <tt:YRange>
+          <tt:Min>-1.0</tt:Min>
+          <tt:Max>1.0</tt:Max>
+        </tt:YRange>
+      </tt:Range>
+    </tt:PanTiltLimits>
+    <tt:ZoomLimits>
+      <tt:Range>
+        <tt:URI>http://www.onvif.org/ver10/tptz/ZoomSpaces/PositionGenericSpace</tt:URI>
+        <tt:XRange>
+          <tt:Min>0.0</tt:Min>
+          <tt:Max>1.0</tt:Max>
+        </tt:XRange>
+      </tt:Range>
+    </tt:ZoomLimits>
+  </tt:PTZConfiguration>
 </trt:Profiles>
 """
             response = f"""
@@ -981,7 +1011,7 @@ class OnvifService(threading.Thread):
       <tt:SourceToken>VideoSource</tt:SourceToken>
       <tt:Bounds height="{profile['resolution']['height']}" width="{profile['resolution']['width']}" y="0" x="0"/>
     </tt:VideoSourceConfiguration>
-    <tt:VideoEncoderConfiguration token="VideoEncoder">
+    <tt:VideoEncoderConfiguration token="VideoEncoder_{profile['token']}">
       <tt:Name>VideoEncoder</tt:Name>
       <tt:UseCount>1</tt:UseCount>
       <tt:Encoding>{profile['encoding']}</tt:Encoding>
@@ -1010,6 +1040,36 @@ class OnvifService(threading.Thread):
       </tt:Multicast>
       <tt:SessionTimeout>PT60S</tt:SessionTimeout>
     </tt:VideoEncoderConfiguration>
+    <tt:PTZConfiguration token="PTZConfig_{profile['token']}">
+      <tt:Name>PTZConfig</tt:Name>
+      <tt:UseCount>1</tt:UseCount>
+      <tt:NodeToken>PTZNode</tt:NodeToken>
+      <tt:DefaultAbsolutePantTiltPositionSpace>http://www.onvif.org/ver10/tptz/PanTiltSpaces/PositionGenericSpace</tt:DefaultAbsolutePantTiltPositionSpace>
+      <tt:DefaultAbsoluteZoomPositionSpace>http://www.onvif.org/ver10/tptz/ZoomSpaces/PositionGenericSpace</tt:DefaultAbsoluteZoomPositionSpace>
+      <tt:DefaultPTZTimeout>PT5S</tt:DefaultPTZTimeout>
+      <tt:PanTiltLimits>
+        <tt:Range>
+          <tt:URI>http://www.onvif.org/ver10/tptz/PanTiltSpaces/PositionGenericSpace</tt:URI>
+          <tt:XRange>
+            <tt:Min>-1.0</tt:Min>
+            <tt:Max>1.0</tt:Max>
+          </tt:XRange>
+          <tt:YRange>
+            <tt:Min>-1.0</tt:Min>
+            <tt:Max>1.0</tt:Max>
+          </tt:YRange>
+        </tt:Range>
+      </tt:PanTiltLimits>
+      <tt:ZoomLimits>
+        <tt:Range>
+          <tt:URI>http://www.onvif.org/ver10/tptz/ZoomSpaces/PositionGenericSpace</tt:URI>
+          <tt:XRange>
+            <tt:Min>0.0</tt:Min>
+            <tt:Max>1.0</tt:Max>
+          </tt:XRange>
+        </tt:Range>
+      </tt:ZoomLimits>
+    </tt:PTZConfiguration>
   </trt:Profile>
 </trt:GetProfileResponse>
 """
@@ -1044,6 +1104,11 @@ class OnvifService(threading.Thread):
         if protocol_elem is None:
             return XMLGenerator.generate_fault_response("Missing Protocol")
 
+        # Extract the protocol - important for ONVIF clients
+        protocol = protocol_elem.text
+        if not protocol:
+            protocol = "RTSP"  # Default to RTSP if not specified
+
         token = profile_token_elem.text
         profile_found = False
         with self.profiles_lock:
@@ -1075,6 +1140,7 @@ class OnvifService(threading.Thread):
         auth_part = f"{self.username}:{self.password}@" if self.authentication_required else ""
         stream_url = f"rtsp://{auth_part}{self.server_ip}:{self.rtsp_port}/{stream_name}"
 
+        # Add explicit protocol information
         response = f"""
 <trt:GetStreamUriResponse>
   <trt:MediaUri>
@@ -1315,6 +1381,10 @@ class OnvifService(threading.Thread):
     <tds:ScopeDef>Fixed</tds:ScopeDef>
     <tds:ScopeItem>onvif://www.onvif.org/location/Dashboard</tds:ScopeItem>
   </tds:Scopes>
+  <tds:Scopes>
+    <tds:ScopeDef>Fixed</tds:ScopeDef>
+    <tds:ScopeItem>onvif://www.onvif.org/hardware/{self.device_uuid}</tds:ScopeItem>
+  </tds:Scopes>
 </tds:GetScopesResponse>
 """
         return XMLGenerator.generate_soap_response(
@@ -1474,8 +1544,8 @@ class OnvifService(threading.Thread):
           <a:Address>urn:uuid:{self.device_uuid}</a:Address>
         </a:EndpointReference>
         <d:Types>dn:NetworkVideoTransmitter tds:Device</d:Types>
-        <d:Scopes>onvif://www.onvif.org/type/video_encoder onvif://www.onvif.org/Profile/Streaming onvif://www.onvif.org/name/YoLinkDashboard onvif://www.onvif.org/location/Dashboard</d:Scopes>
-        <d:XAddrs>{self.device_service_url}</d:XAddrs>
+        <d:Scopes>onvif://www.onvif.org/type/video_encoder onvif://www.onvif.org/Profile/Streaming onvif://www.onvif.org/name/YoLinkDashboard onvif://www.onvif.org/location/Dashboard onvif://www.onvif.org/hardware/{self.device_uuid}</d:Scopes>
+        <d:XAddrs>{self.device_service_url} {self.media_service_url}</d:XAddrs>
         <d:MetadataVersion>1</d:MetadataVersion>
       </d:ProbeMatch>
     </d:ProbeMatches>
@@ -1505,8 +1575,8 @@ class OnvifService(threading.Thread):
     <d:Bye>
       <a:EndpointReference><a:Address>urn:uuid:{self.device_uuid}</a:Address></a:EndpointReference>
       <d:Types>dn:NetworkVideoTransmitter tds:Device</d:Types>
-      <d:Scopes>onvif://www.onvif.org/type/video_encoder onvif://www.onvif.org/Profile/Streaming onvif://www.onvif.org/name/YoLinkDashboard onvif://www.onvif.org/location/Dashboard</d:Scopes>
-      <d:XAddrs>{self.device_service_url}</d:XAddrs>
+      <d:Scopes>onvif://www.onvif.org/type/video_encoder onvif://www.onvif.org/Profile/Streaming onvif://www.onvif.org/name/YoLinkDashboard onvif://www.onvif.org/location/Dashboard onvif://www.onvif.org/hardware/{self.device_uuid}</d:Scopes>
+      <d:XAddrs>{self.device_service_url} {self.media_service_url}</d:XAddrs>
       <d:MetadataVersion>1</d:MetadataVersion>
     </d:Bye>
   </s:Body>
