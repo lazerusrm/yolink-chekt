@@ -159,8 +159,8 @@ class MultiProfileRtspStreamer(RtspStreamer):
             "height": int(self.config.get("low_res_height", int(self.config.get("height", 1080)) // 2)),
             "fps": int(self.config.get("low_res_fps", min(int(self.config.get("frame_rate", 6)), 4))),
             "bitrate": int(self.config.get("low_res_bitrate", int(self.config.get("bitrate", 500)) // 4)),
-            "pipe_path": "/tmp/streams/dashboard_pipe_low",
-            "stream_name": f"{self.config.get('stream_name', 'yolink-dashboard')}_low",
+            "pipe_path": "/tmp/streams/dashboard_pipe_sub",
+            "stream_name": f"{self.config.get('stream_name', 'yolink-dashboard')}_sub",
             "sensors_per_page": int(self.config.get("low_res_sensors_per_page", 6))
         }
 
