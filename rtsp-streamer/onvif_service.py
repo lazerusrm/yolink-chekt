@@ -488,6 +488,22 @@ class OnvifService(threading.Thread):
                 height=config.get("height", 1080),
                 fps=config.get("frame_rate", 6),
                 sensors_per_page=config.get("sensors_per_page", 20)
+            ),
+            ProfileInfo(
+                token="profile2",
+                name="YoLink Low Stream",
+                width=1280,
+                height=720,
+                fps=6,
+                sensors_per_page=6
+            ),
+            ProfileInfo(
+                token="profile3",
+                name="YoLink Mobile Stream",
+                width=640,
+                height=360,
+                fps=6,
+                sensors_per_page=4
             )
         ]
 
@@ -660,23 +676,27 @@ class OnvifService(threading.Thread):
             str: SOAP XML Hello message
         """
         return f"""
-<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope" xmlns:a="http://schemas.xmlsoap.org/ws/2004/08/addressing">
-  <s:Header>
-    <a:Action>http://schemas.xmlsoap.org/ws/2005/04/discovery/Hello</a:Action>
-    <a:MessageID>urn:uuid:{uuid.uuid4()}</a:MessageID>
-    <a:To>urn:schemas-xmlsoap-org:ws:2005:04:discovery</a:To>
-  </s:Header>
-  <s:Body>
-    <d:Hello xmlns:d="http://schemas.xmlsoap.org/ws/2005/04/discovery">
-      <a:EndpointReference><a:Address>urn:uuid:{self.device_uuid}</a:Address></a:EndpointReference>
-      <d:Types>dn:NetworkVideoTransmitter tds:Device</d:Types>
-      <d:Scopes>onvif://www.onvif.org/type/video_encoder onvif://www.onvif.org/Profile/Streaming onvif://www.onvif.org/name/YoLinkDashboard onvif://www.onvif.org/location/Dashboard</d:Scopes>
-      <d:XAddrs>{self.device_service_url}</d:XAddrs>
-      <d:MetadataVersion>1</d:MetadataVersion>
-    </d:Bye>
-  </s:Body>
-</s:Envelope>
-"""
+    <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope" 
+                xmlns:a="http://schemas.xmlsoap.org/ws/2004/08/addressing"
+                xmlns:d="http://schemas.xmlsoap.org/ws/2005/04/discovery"
+                xmlns:dn="http://www.onvif.org/ver10/network/wsdl"
+                xmlns:tds="http://www.onvif.org/ver10/device/wsdl">
+      <s:Header>
+        <a:Action>http://schemas.xmlsoap.org/ws/2005/04/discovery/Hello</a:Action>
+        <a:MessageID>urn:uuid:{uuid.uuid4()}</a:MessageID>
+        <a:To>urn:schemas-xmlsoap-org:ws:2005:04:discovery</a:To>
+      </s:Header>
+      <s:Body>
+        <d:Hello>
+          <a:EndpointReference><a:Address>urn:uuid:{self.device_uuid}</a:Address></a:EndpointReference>
+          <d:Types>dn:NetworkVideoTransmitter tds:Device</d:Types>
+          <d:Scopes>onvif://www.onvif.org/type/video_encoder onvif://www.onvif.org/Profile/Streaming onvif://www.onvif.org/name/YoLinkDashboard onvif://www.onvif.org/location/Dashboard</d:Scopes>
+          <d:XAddrs>{self.device_service_url}</d:XAddrs>
+          <d:MetadataVersion>1</d:MetadataVersion>
+        </d:Hello>
+      </s:Body>
+    </s:Envelope>
+    """
 
     def handle_device_service(self, soap_request: str) -> str:
         """
@@ -1343,26 +1363,26 @@ class OnvifService(threading.Thread):
         """
         if service_type == 'device':
             response = """
-<tds:GetServiceCapabilitiesResponse>
-  <tds:Capabilities>
-    <tds:Network IPFilter="false" ZeroConfiguration="false" IPVersion6="false" DynDNS="false" Dot11Configuration="false" HostnameFromDHCP="false" NTP="0" />
-    <tds:Security TLS1.0="false" TLS1.1="false" TLS1.2="false" OnboardKeyGeneration="false" AccessPolicyConfig="false" DefaultAccessPolicy="false" Dot1X="false" RemoteUserHandling="false" X.509Token="false" SAMLToken="false" KerberosToken="false" UsernameToken="true" HttpDigest="false" RELToken="false" SupportedEAPMethods="0" MaxUsers="1" MaxUserNameLength="16" MaxPasswordLength="16" />
-    <tds:System DiscoveryResolve="true" DiscoveryBye="true" RemoteDiscovery="true" SystemBackup="false" SystemLogging="false" FirmwareUpgrade="false" HttpFirmwareUpgrade="false" HttpSystemBackup="false" HttpSystemLogging="false" HttpSupportInformation="false" StorageConfiguration="false" />
-  </tds:Capabilities>
-</tds:GetServiceCapabilitiesResponse>
-"""
+    <tds:GetServiceCapabilitiesResponse>
+      <tds:Capabilities>
+        <tds:Network IPFilter="false" ZeroConfiguration="false" IPVersion6="false" DynDNS="false" Dot11Configuration="false" HostnameFromDHCP="false" NTP="0" />
+        <tds:Security TLS1.0="false" TLS1.1="false" TLS1.2="false" OnboardKeyGeneration="false" AccessPolicyConfig="false" DefaultAccessPolicy="false" Dot1X="false" RemoteUserHandling="false" X.509Token="false" SAMLToken="false" KerberosToken="false" UsernameToken="true" HttpDigest="false" RELToken="false" SupportedEAPMethods="0" MaxUsers="1" MaxUserNameLength="16" MaxPasswordLength="16" />
+        <tds:System DiscoveryResolve="true" DiscoveryBye="true" RemoteDiscovery="true" SystemBackup="false" SystemLogging="false" FirmwareUpgrade="false" HttpFirmwareUpgrade="false" HttpSystemBackup="false" HttpSystemLogging="false" HttpSupportInformation="false" StorageConfiguration="false" />
+      </tds:Capabilities>
+    </tds:GetServiceCapabilitiesResponse>
+    """
             action = "http://www.onvif.org/ver10/device/wsdl/GetServiceCapabilitiesResponse"
         elif service_type == 'media':
             response = """
-<trt:GetServiceCapabilitiesResponse>
-  <trt:Capabilities SnapshotUri="true" Rotation="false" VideoSourceMode="false" OSD="false" TemporaryOSDText="false" EXICompression="false" RuleEngine="false" IVASupport="false" ProfileCapabilities="false" MaximumNumberOfProfiles="1" />
-</trt:GetServiceCapabilitiesResponse>
-"""
+    <trt:GetServiceCapabilitiesResponse>
+      <trt:Capabilities SnapshotUri="true" Rotation="false" VideoSourceMode="false" OSD="false" TemporaryOSDText="false" EXICompression="false" RuleEngine="false" IVASupport="false" ProfileCapabilities="false" MaximumNumberOfProfiles="1" />
+    </trt:GetServiceCapabilitiesResponse>
+    """
             action = "http://www.onvif.org/ver10/media/wsdl/GetServiceCapabilitiesResponse"
         else:
             return XMLGenerator.generate_fault_response(f"Unknown service type: {service_type}")
 
-        return XMLGenerator.generate_soap_response(action, response)</d:Scopes>
+        return XMLGenerator.generate_soap_response(action, response)
       <d:XAddrs>{self.device_service_url}</d:XAddrs>
       <d:MetadataVersion>1</d:MetadataVersion>
     </d:Hello>
@@ -1371,26 +1391,30 @@ class OnvifService(threading.Thread):
 """
 
     def _generate_probe_match_response(self) -> str:
-        """
-        Generate a WS-Discovery ProbeMatch response.
+    """
+    Generate a WS-Discovery ProbeMatch response.
 
-        Returns:
-            str: SOAP XML response
-        """
-        return f"""
-<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope" xmlns:a="http://schemas.xmlsoap.org/ws/2004/08/addressing">
+    Returns:
+        str: SOAP XML response
+    """
+    return f"""
+<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
+            xmlns:a="http://schemas.xmlsoap.org/ws/2004/08/addressing"
+            xmlns:d="http://schemas.xmlsoap.org/ws/2005/04/discovery"
+            xmlns:dn="http://www.onvif.org/ver10/network/wsdl"
+            xmlns:tds="http://www.onvif.org/ver10/device/wsdl">
   <s:Header>
     <a:Action>http://schemas.xmlsoap.org/ws/2005/04/discovery/ProbeMatches</a:Action>
     <a:MessageID>urn:uuid:{uuid.uuid4()}</a:MessageID>
     <a:To>http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous</a:To>
   </s:Header>
   <s:Body>
-    <d:ProbeMatches xmlns:d="http://schemas.xmlsoap.org/ws/2005/04/discovery">
+    <d:ProbeMatches>
       <d:ProbeMatch>
         <a:EndpointReference>
           <a:Address>urn:uuid:{self.device_uuid}</a:Address>
         </a:EndpointReference>
-        <d:Types xmlns:tds="http://www.onvif.org/ver10/device/wsdl">tds:Device</d:Types>
+        <d:Types>dn:NetworkVideoTransmitter tds:Device</d:Types>
         <d:Scopes>onvif://www.onvif.org/type/video_encoder onvif://www.onvif.org/Profile/Streaming onvif://www.onvif.org/name/YoLinkDashboard onvif://www.onvif.org/location/Dashboard</d:Scopes>
         <d:XAddrs>{self.device_service_url}</d:XAddrs>
         <d:MetadataVersion>1</d:MetadataVersion>
@@ -1401,21 +1425,25 @@ class OnvifService(threading.Thread):
 """
 
     def _generate_bye_message(self) -> str:
-        """
-        Generate a WS-Discovery Bye message to announce device going offline.
+    """
+    Generate a WS-Discovery Bye message to announce device going offline.
 
-        Returns:
-            str: XML Bye message
-        """
-        return f"""
-<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope" xmlns:a="http://schemas.xmlsoap.org/ws/2004/08/addressing">
+    Returns:
+        str: XML Bye message
+    """
+    return f"""
+<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
+            xmlns:a="http://schemas.xmlsoap.org/ws/2004/08/addressing"
+            xmlns:d="http://schemas.xmlsoap.org/ws/2005/04/discovery"
+            xmlns:dn="http://www.onvif.org/ver10/network/wsdl"
+            xmlns:tds="http://www.onvif.org/ver10/device/wsdl">
   <s:Header>
     <a:Action>http://schemas.xmlsoap.org/ws/2005/04/discovery/Bye</a:Action>
     <a:MessageID>urn:uuid:{uuid.uuid4()}</a:MessageID>
     <a:To>urn:schemas-xmlsoap-org:ws:2005:04:discovery</a:To>
   </s:Header>
   <s:Body>
-    <d:Bye xmlns:d="http://schemas.xmlsoap.org/ws/2005/04/discovery">
+    <d:Bye>
       <a:EndpointReference><a:Address>urn:uuid:{self.device_uuid}</a:Address></a:EndpointReference>
       <d:Types>dn:NetworkVideoTransmitter tds:Device</d:Types>
       <d:Scopes>onvif://www.onvif.org/type/video_encoder onvif://www.onvif.org/Profile/Streaming onvif://www.onvif.org/name/YoLinkDashboard onvif://www.onvif.org/location/Dashboard</d:Scopes>
