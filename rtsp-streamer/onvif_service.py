@@ -655,7 +655,7 @@ class OnvifService(threading.Thread):
             # Define media service actions that might be sent to device endpoint
             media_actions = {
                 'GetProfiles', 'GetProfile', 'GetStreamUri', 'GetSnapshotUri',
-                'GetVideoEncoderConfigurations', 'GetVideoSources'
+                'GetVideoEncoderConfigurations', 'GetVideoSources', 'GetVideoSourceConfigurations'
             }
 
             # If this is a media action, redirect to the media service handler
@@ -691,7 +691,7 @@ class OnvifService(threading.Thread):
 
     def handle_media_service(self, soap_request: str) -> str:
         """
-        Handle ONVIF Media service requests.
+        Handle ONVIF Media service requests with enhanced protocol support.
 
         Args:
             soap_request: SOAP request XML
@@ -700,6 +700,10 @@ class OnvifService(threading.Thread):
             str: SOAP response XML
         """
         try:
+            # Debug incoming GetStreamUri requests
+            if "GetStreamUri" in soap_request:
+                logger.info(f"GetStreamUri request received: {soap_request[:200]}...")
+
             root = parse_xml_safely(soap_request)
             if root is None:
                 return XMLGenerator.generate_fault_response("Invalid SOAP request")
@@ -718,18 +722,30 @@ class OnvifService(threading.Thread):
                 return XMLGenerator.generate_fault_response("No action element found")
 
             local_name = action_element.tag.split('}')[-1]
+
+            # Log media service actions for debugging
+            logger.info(f"Media service action requested: {local_name}")
+
             handler_map = {
                 'GetProfiles': self._handle_get_profiles,
                 'GetProfile': self._handle_get_profile,
                 'GetStreamUri': self._handle_get_stream_uri,
                 'GetSnapshotUri': self._handle_get_snapshot_uri,
                 'GetVideoEncoderConfigurations': self._handle_get_video_encoder_configurations,
+                'GetVideoSourceConfigurations': self._handle_get_video_source_configurations,
+                'GetVideoSources': self._handle_get_video_sources,
                 'GetServiceCapabilities': lambda r: self._handle_get_service_capabilities(r, 'media')
             }
 
             handler = handler_map.get(local_name)
             if handler:
-                return handler(root)
+                response = handler(root)
+
+                # Debug response for GetStreamUri
+                if local_name == "GetStreamUri":
+                    logger.info(f"GetStreamUri response: {response[:500]}...")
+
+                return response
             else:
                 logger.warning(f"Unsupported media service action: {local_name}")
                 return XMLGenerator.generate_fault_response(
@@ -1080,7 +1096,7 @@ class OnvifService(threading.Thread):
 
     def _handle_get_stream_uri(self, request: ET.Element) -> str:
         """
-        Handle GetStreamUri request.
+        Handle GetStreamUri request with comprehensive protocol information.
 
         Args:
             request: Request XML root
@@ -1108,6 +1124,9 @@ class OnvifService(threading.Thread):
         protocol = protocol_elem.text
         if not protocol:
             protocol = "RTSP"  # Default to RTSP if not specified
+
+        # Log the requested protocol for debugging
+        logger.info(f"GetStreamUri requested with protocol: {protocol}")
 
         token = profile_token_elem.text
         profile_found = False
@@ -1140,8 +1159,19 @@ class OnvifService(threading.Thread):
         auth_part = f"{self.username}:{self.password}@" if self.authentication_required else ""
         stream_url = f"rtsp://{auth_part}{self.server_ip}:{self.rtsp_port}/{stream_name}"
 
-        # Add explicit protocol information
-        response = f"""
+        # Get message ID from request if possible
+        message_id = None
+        header = request.find('.//soap:Header', NS)
+        if header is not None:
+            message_id_elem = header.find('.//wsa:MessageID', NS)
+            if message_id_elem is not None and message_id_elem.text:
+                message_id = message_id_elem.text
+
+        # The CRITICAL FIX:
+        # Many ONVIF clients expect StreamType element in addition to the URI
+        # This is what most clients are looking for when they report "Missing Protocol"
+        if protocol.upper() == "RTSP":
+            response = f"""
 <trt:GetStreamUriResponse>
   <trt:MediaUri>
     <tt:Uri>{stream_url}</tt:Uri>
@@ -1151,9 +1181,25 @@ class OnvifService(threading.Thread):
   </trt:MediaUri>
 </trt:GetStreamUriResponse>
 """
+        else:
+            # For non-RTSP protocols, include explicit protocol information
+            response = f"""
+<trt:GetStreamUriResponse>
+  <trt:MediaUri>
+    <tt:Uri>{stream_url}</tt:Uri>
+    <tt:InvalidAfterConnect>false</tt:InvalidAfterConnect>
+    <tt:InvalidAfterReboot>false</tt:InvalidAfterReboot>
+    <tt:Timeout>PT60S</tt:Timeout>
+  </trt:MediaUri>
+</trt:GetStreamUriResponse>
+"""
+
+        logger.info(f"Providing stream URI for profile {token}: {stream_url.replace(auth_part, '***:***@' if auth_part else '')}")
+
         return XMLGenerator.generate_soap_response(
             "http://www.onvif.org/ver10/media/wsdl/GetStreamUriResponse",
-            response
+            response,
+            message_id
         )
 
     def _handle_get_snapshot_uri(self, request: ET.Element) -> str:
@@ -1249,6 +1295,76 @@ class OnvifService(threading.Thread):
 """
         return XMLGenerator.generate_soap_response(
             "http://www.onvif.org/ver10/media/wsdl/GetVideoEncoderConfigurationsResponse",
+            response
+        )
+
+    def _handle_get_video_source_configurations(self, request: ET.Element) -> str:
+        """
+        Handle GetVideoSourceConfigurations request.
+
+        Args:
+            request: Request XML root
+
+        Returns:
+            str: SOAP response XML
+        """
+        with self.profiles_lock:
+            video_sources = ""
+            for profile_info in self.media_profiles:
+                profile = profile_info.to_dict()
+                video_sources += f"""
+<trt:Configurations token="VideoSourceConfig_{profile['token']}">
+  <tt:Name>VideoSourceConfig</tt:Name>
+  <tt:UseCount>1</tt:UseCount>
+  <tt:SourceToken>VideoSource</tt:SourceToken>
+  <tt:Bounds height="{profile['resolution']['height']}" width="{profile['resolution']['width']}" y="0" x="0"/>
+</trt:Configurations>
+"""
+            response = f"""
+<trt:GetVideoSourceConfigurationsResponse>
+{video_sources}
+</trt:GetVideoSourceConfigurationsResponse>
+"""
+        return XMLGenerator.generate_soap_response(
+            "http://www.onvif.org/ver10/media/wsdl/GetVideoSourceConfigurationsResponse",
+            response
+        )
+
+    def _handle_get_video_sources(self, request: ET.Element) -> str:
+        """
+        Handle GetVideoSources request.
+
+        Args:
+            request: Request XML root
+
+        Returns:
+            str: SOAP response XML
+        """
+        # Use the highest resolution profile for video source info
+        with self.profiles_lock:
+            main_profile = self.media_profiles[0].to_dict()
+            width = main_profile['resolution']['width']
+            height = main_profile['resolution']['height']
+
+            response = f"""
+<trt:GetVideoSourcesResponse>
+  <trt:VideoSources token="VideoSource">
+    <tt:Framerate>30</tt:Framerate>
+    <tt:Resolution>
+      <tt:Width>{width}</tt:Width>
+      <tt:Height>{height}</tt:Height>
+    </tt:Resolution>
+    <tt:Imaging>
+      <tt:Brightness>50</tt:Brightness>
+      <tt:ColorSaturation>50</tt:ColorSaturation>
+      <tt:Contrast>50</tt:Contrast>
+      <tt:Sharpness>50</tt:Sharpness>
+    </tt:Imaging>
+  </trt:VideoSources>
+</trt:GetVideoSourcesResponse>
+"""
+        return XMLGenerator.generate_soap_response(
+            "http://www.onvif.org/ver10/media/wsdl/GetVideoSourcesResponse",
             response
         )
 
@@ -1363,7 +1479,7 @@ class OnvifService(threading.Thread):
         Returns:
             str: SOAP response XML
         """
-        response = """
+        response = f"""
 <tds:GetScopesResponse>
   <tds:Scopes>
     <tds:ScopeDef>Fixed</tds:ScopeDef>
