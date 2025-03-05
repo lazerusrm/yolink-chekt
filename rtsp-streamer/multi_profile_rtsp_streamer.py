@@ -269,9 +269,12 @@ class MultiProfileRtspStreamer(RtspStreamer):
             self.worker_threads.add(feed_thread)
             logger.debug(f"Starting feed thread for {profile_id}")
             feed_thread.start()
+            monitor.feed_thread = feed_thread
+            self.worker_threads.add(feed_thread)
+            logger.debug(f"Started feed thread for {profile_id}")
 
             # Wait longer to ensure thread initializes
-            time.sleep(1.0)  # Extended to 1 second
+            time.sleep(0.1)
             logger.debug(f"Post-start state for {profile_id}: running={self.running}, active={monitor.active}")
             if not monitor.active:
                 logger.warning(f"Monitor for {profile_id} became inactive immediately after start")
@@ -320,20 +323,20 @@ class MultiProfileRtspStreamer(RtspStreamer):
             "-i", pipe_path,
             "-c:v", "libx264",
             "-r", str(fps),
-            "-g", str(fps * 2),  # GOP size (2 seconds)
+            "-g", str(fps * 2),
             "-preset", "ultrafast",
             "-tune", "zerolatency",
             "-b:v", f"{bitrate}k",
             "-bufsize", f"{bitrate * 2}k",
             "-maxrate", f"{int(bitrate * 1.1)}k",
             "-pix_fmt", "yuv420p",
-            "-threads", "2",  # Use 2 threads for encoding
+            "-threads", "2",
             "-s", f"{width}x{height}",
-            "-timeout", "10000000",  # 10s timeout
+            "-timeout", "30000000",  # Increased to 30 seconds
             "-reconnect", "1",
             "-reconnect_at_eof", "1",
             "-reconnect_streamed", "1",
-            "-reconnect_delay_max", "5",  # Reduced max delay
+            "-reconnect_delay_max", "5",
             "-f", "rtsp",
             "-rtsp_transport", "tcp",
             rtsp_url
@@ -410,10 +413,21 @@ class MultiProfileRtspStreamer(RtspStreamer):
             with open(pipe_path, "wb") as fifo:
                 monitor.pipe_handle = fifo
                 logger.info(f"Opened FIFO {pipe_path} for writing to {profile_id}")
-                # Set active here to ensure it’s True when the loop starts
                 with self.lock:
                     logger.debug(f"Setting monitor.active to True inside feed thread for {profile_id}")
                     monitor.active = True
+
+                # Write an initial frame immediately to keep FFmpeg alive
+                if hasattr(self.renderer, 'set_resolution'):
+                    self.renderer.set_resolution(width, height, profile_config["sensors_per_page"])
+                initial_frame = self.renderer.render_frame(width, height)
+                buffer.seek(0)
+                buffer.truncate(0)
+                initial_frame.save(buffer, format="JPEG", quality=90, optimize=True)
+                fifo.write(buffer.getvalue())
+                fifo.flush()
+                logger.debug(f"Wrote initial frame to FIFO for {profile_id}")
+
                 logger.debug(
                     f"Starting frame feed loop for {profile_id}, running={self.running}, active={monitor.active}")
 
@@ -443,6 +457,10 @@ class MultiProfileRtspStreamer(RtspStreamer):
                                 frames_sent = 0
                                 last_stats_time = current_time
                         time.sleep(min(0.01, frame_interval / 10))
+                    except IOError as e:
+                        logger.error(f"IOError writing to FIFO for {profile_id}: {e}, likely pipe closed, restarting")
+                        self._restart_profile_stream(profile_id)
+                        break
                     except BrokenPipeError as e:
                         logger.error(f"Broken pipe for {profile_id}: {e}, restarting FFmpeg")
                         self._restart_profile_stream(profile_id)
