@@ -16,7 +16,7 @@ import time
 import weakref
 import ipaddress
 import re
-from typing import Dict, Any, Tuple, Optional, List, Callable, Union, Set
+from typing import Dict, Any, Optional, List, Callable
 from urllib.parse import urlparse, parse_qs
 from functools import lru_cache
 
@@ -232,26 +232,22 @@ class OnvifRequestHandler(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self):
         """Handle ONVIF SOAP POST requests."""
-        # Extract content length
         try:
             content_length = int(self.headers.get('Content-Length', 0))
             if content_length == 0:
                 self.send_error(400, "Missing request body")
                 return
 
-            # Read request body with size limit to prevent memory issues
             if content_length > 1024 * 1024:  # 1MB limit
                 self.send_error(413, "Request body too large")
                 return
 
             soap_request = self.rfile.read(content_length).decode('utf-8')
 
-            # Validate request format early
             if not soap_request.strip().startswith('<'):
                 self.send_error(400, "Invalid request format")
                 return
 
-            # Check authentication
             if not self._check_authentication(soap_request):
                 self.send_response(401)
                 self.send_header('WWW-Authenticate', 'Basic realm="ONVIF"')
@@ -260,35 +256,22 @@ class OnvifRequestHandler(http.server.BaseHTTPRequestHandler):
                 self.wfile.write(b"Authentication required")
                 return
 
-            # Parse service path and dispatch to appropriate handler
             service_path = self.path.lower()
             response = ""
 
-            try:
-                if '/onvif/device_service' in service_path:
-                    response = self.service.handle_device_service(soap_request)
-                elif '/onvif/media_service' in service_path:
-                    response = self.service.handle_media_service(soap_request)
-                else:
-                    # Unknown service
-                    self.send_error(404, "Service not found")
-                    return
+            if '/onvif/device_service' in service_path:
+                response = self.service.handle_device_service(soap_request)
+            elif '/onvif/media_service' in service_path:
+                response = self.service.handle_media_service(soap_request)
+            else:
+                self.send_error(404, "Service not found")
+                return
 
-                # Send successful response
-                self.send_response(200)
-                self.send_header('Content-Type', 'application/soap+xml; charset=utf-8')
-                self.send_header('Content-Length', str(len(response)))
-                self.end_headers()
-                self.wfile.write(response.encode('utf-8'))
-
-            except Exception as e:
-                logger.error(f"Error handling SOAP request: {e}")
-                fault_response = XMLGenerator.generate_fault_response(f"Internal server error: {str(e)}")
-                self.send_response(500)
-                self.send_header('Content-Type', 'application/soap+xml; charset=utf-8')
-                self.send_header('Content-Length', str(len(fault_response)))
-                self.end_headers()
-                self.wfile.write(fault_response.encode('utf-8'))
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/soap+xml; charset=utf-8')
+            self.send_header('Content-Length', str(len(response)))
+            self.end_headers()
+            self.wfile.write(response.encode('utf-8'))
 
         except Exception as e:
             logger.error(f"Request processing error: {e}")
@@ -307,22 +290,17 @@ class OnvifRequestHandler(http.server.BaseHTTPRequestHandler):
         if not self.service.authentication_required:
             return True
 
-        # Check for Authorization header for Basic auth
         auth_header = self.headers.get('Authorization')
         if auth_header and auth_header.startswith('Basic '):
             try:
                 auth_decoded = base64.b64decode(auth_header[6:]).decode('utf-8')
                 username, password = auth_decoded.split(':', 1)
-
-                if (username == self.service.username and
-                    password == self.service.password):
+                if username == self.service.username and password == self.service.password:
                     return True
             except Exception:
-                pass  # Failed basic auth, continue to check WS-Security
+                pass
 
-        # Check for WS-Security in SOAP header
         try:
-            # Use safer XML parsing
             root = parse_xml_safely(soap_request)
             if root is None:
                 return False
@@ -336,15 +314,12 @@ class OnvifRequestHandler(http.server.BaseHTTPRequestHandler):
                         username_elem = username_token.find('.//wsse:Username', NS)
                         password_elem = username_token.find('.//wsse:Password', NS)
 
-                        if (username_elem is not None and
-                            password_elem is not None and
-                            username_elem.text == self.service.username):
-
-                            # Check if it's plaintext or digest
-                            password_type = password_elem.attrib.get('{http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd}Type', '')
+                        if (username_elem is not None and password_elem is not None and
+                                username_elem.text == self.service.username):
+                            password_type = password_elem.attrib.get(
+                                '{http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd}Type', '')
 
                             if 'PasswordDigest' in password_type:
-                                # Handle digest authentication
                                 nonce_elem = username_token.find('.//wsse:Nonce', NS)
                                 created_elem = username_token.find('.//wsu:Created', NS)
 
@@ -352,24 +327,20 @@ class OnvifRequestHandler(http.server.BaseHTTPRequestHandler):
                                     nonce = nonce_elem.text
                                     created = created_elem.text
 
-                                    # Verify timestamp is not too old (prevent replay attacks)
                                     try:
                                         created_time = datetime.datetime.strptime(created, '%Y-%m-%dT%H:%M:%S.%fZ')
                                         now = datetime.datetime.utcnow()
-                                        if abs((now - created_time).total_seconds()) > 300:  # 5 minutes tolerance
+                                        if abs((now - created_time).total_seconds()) > 300:
                                             logger.warning("Timestamp too old in authentication")
                                             return False
                                     except ValueError:
                                         logger.warning("Invalid timestamp format in authentication")
                                         return False
 
-                                    password_digest = compute_password_digest(
-                                        nonce, created, self.service.password)
-
+                                    password_digest = compute_password_digest(nonce, created, self.service.password)
                                     if password_digest == password_elem.text:
                                         return True
                             else:
-                                # Handle plaintext password
                                 if password_elem.text == self.service.password:
                                     return True
         except Exception as e:
@@ -385,7 +356,7 @@ class OnvifRequestHandler(http.server.BaseHTTPRequestHandler):
 class OnvifHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     """Threaded HTTP server for ONVIF services."""
     allow_reuse_address = True
-    daemon_threads = True  # Daemon threads for automatic cleanup
+    daemon_threads = True
 
     def __init__(self, server_address, service):
         self.service = service
@@ -413,7 +384,6 @@ class OnvifHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
         with self.connection_lock:
             if request in self.active_connections:
                 self.active_connections.remove(request)
-
         super().shutdown_request(request)
 
     def close_all_connections(self):
@@ -443,18 +413,15 @@ class OnvifService(threading.Thread):
         super().__init__(daemon=True)
         self.config = config
 
-        # Network configuration
         self.server_ip = config.get("server_ip", "127.0.0.1")
         self.onvif_port = int(config.get("onvif_port", 8555))
         self.rtsp_port = int(config.get("rtsp_port", 8554))
         self.stream_name = config.get("stream_name", "yolink-dashboard")
 
-        # Authentication settings
         self.authentication_required = config.get("onvif_auth_required", True)
         self.username = config.get("onvif_username", "admin")
         self.password = config.get("onvif_password", "123456")
 
-        # Generate unique device identifiers
         self.device_uuid = str(uuid.uuid4())
         self.device_info = {
             "Manufacturer": config.get("manufacturer", "YoLink"),
@@ -464,21 +431,16 @@ class OnvifService(threading.Thread):
             "HardwareId": config.get("hardware_id", "YOLINK-DASHBOARD-1")
         }
 
-        # ONVIF services base URLs
         self.device_service_url = f"http://{self.server_ip}:{self.onvif_port}/onvif/device_service"
         self.media_service_url = f"http://{self.server_ip}:{self.onvif_port}/onvif/media_service"
         self.events_service_url = f"http://{self.server_ip}:{self.onvif_port}/onvif/events_service"
 
-        # HTTP server for ONVIF services
         self.http_server = None
-
-        # WS-Discovery socket and state
         self.discovery_socket = None
         self.discovery_thread = None
         self.last_announce_time = 0
-        self.announce_interval = 300  # Send announcements every 5 minutes
+        self.announce_interval = 300
 
-        # Media profiles with thread-safe access
         self.profiles_lock = threading.RLock()
         self.media_profiles = [
             ProfileInfo(
@@ -507,10 +469,7 @@ class OnvifService(threading.Thread):
             )
         ]
 
-        # Callbacks for profile activation
         self.profile_callbacks = {}
-
-        # Thread synchronization and lifecycle management
         self.running = True
         self.lock = threading.RLock()
 
@@ -538,27 +497,18 @@ class OnvifService(threading.Thread):
             logger.info(f"Profile-specific callback registered for {profile_token}")
 
     def run(self) -> None:
-        """
-        Thread main function. Starts WS-Discovery service and HTTP services.
-        """
+        """Thread main function. Starts WS-Discovery service and HTTP services."""
         logger.info(f"Starting ONVIF service on port {self.onvif_port}")
         logger.info(f"ONVIF device service: {self.device_service_url}")
 
         try:
-            # Start HTTP server for ONVIF services
             self._start_http_server()
-
-            # Start WS-Discovery in a separate thread
             self._start_discovery_thread()
-
-            # Keep running until stopped
             while self.running:
                 time.sleep(1)
-
         except Exception as e:
             logger.error(f"Error in ONVIF service: {e}")
         finally:
-            # Clean up resources
             self._cleanup()
 
     def _start_http_server(self) -> None:
@@ -587,65 +537,40 @@ class OnvifService(threading.Thread):
         logger.info("WS-Discovery service started")
 
     def _ws_discovery(self) -> None:
-        """
-        Implement WS-Discovery for ONVIF device announcement.
-        """
+        """Implement WS-Discovery for ONVIF device announcement."""
         try:
-            # Create multicast UDP socket for WS-Discovery
             self.discovery_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-
-            # Configure socket for multicast
             self.discovery_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-
-            # Bind to WS-Discovery port
             self.discovery_socket.bind(('', 3702))
-
-            # Join multicast group
             mreq = socket.inet_aton('239.255.255.250') + socket.inet_aton('0.0.0.0')
             self.discovery_socket.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
-
-            # Configure socket timeout for responsive operation
             self.discovery_socket.settimeout(0.5)
 
             logger.info("WS-Discovery listening on UDP 3702")
-
-            # Send initial Hello announcement
             self._send_hello_announcement()
 
-            # Main discovery loop - listen for Probe messages and send periodic announcements
             while self.running:
                 try:
-                    # Check if it's time for a periodic announcement
                     current_time = time.time()
                     if current_time - self.last_announce_time > self.announce_interval:
                         self._send_hello_announcement()
 
-                    # Try to receive a discovery message
                     data, addr = self.discovery_socket.recvfrom(4096)
-
-                    # Process incoming message
                     if b"Probe" in data:
                         logger.debug(f"Received WS-Discovery probe from {addr}")
-
-                        # Generate and send probe match response
                         response = self._generate_probe_match_response()
                         self.discovery_socket.sendto(response.encode('utf-8'), addr)
                         logger.debug(f"Sent WS-Discovery response to {addr}")
-
                 except socket.timeout:
-                    # Timeout is expected, just continue the loop
                     pass
                 except Exception as e:
-                    if self.running:  # Only log if we're still supposed to be running
+                    if self.running:
                         logger.error(f"WS-Discovery error: {e}")
-
-                # Small sleep to prevent tight loop
                 time.sleep(0.1)
 
         except Exception as e:
             logger.error(f"Error in WS-Discovery service: {e}")
         finally:
-            # Clean up socket when thread exits
             if self.discovery_socket:
                 try:
                     self.discovery_socket.close()
@@ -654,9 +579,7 @@ class OnvifService(threading.Thread):
                 self.discovery_socket = None
 
     def _send_hello_announcement(self) -> None:
-        """
-        Send a WS-Discovery Hello announcement to advertise the device.
-        """
+        """Send a WS-Discovery Hello announcement to advertise the device."""
         if not self.discovery_socket:
             return
 
@@ -676,27 +599,27 @@ class OnvifService(threading.Thread):
             str: SOAP XML Hello message
         """
         return f"""
-    <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope" 
-                xmlns:a="http://schemas.xmlsoap.org/ws/2004/08/addressing"
-                xmlns:d="http://schemas.xmlsoap.org/ws/2005/04/discovery"
-                xmlns:dn="http://www.onvif.org/ver10/network/wsdl"
-                xmlns:tds="http://www.onvif.org/ver10/device/wsdl">
-      <s:Header>
-        <a:Action>http://schemas.xmlsoap.org/ws/2005/04/discovery/Hello</a:Action>
-        <a:MessageID>urn:uuid:{uuid.uuid4()}</a:MessageID>
-        <a:To>urn:schemas-xmlsoap-org:ws:2005:04:discovery</a:To>
-      </s:Header>
-      <s:Body>
-        <d:Hello>
-          <a:EndpointReference><a:Address>urn:uuid:{self.device_uuid}</a:Address></a:EndpointReference>
-          <d:Types>dn:NetworkVideoTransmitter tds:Device</d:Types>
-          <d:Scopes>onvif://www.onvif.org/type/video_encoder onvif://www.onvif.org/Profile/Streaming onvif://www.onvif.org/name/YoLinkDashboard onvif://www.onvif.org/location/Dashboard</d:Scopes>
-          <d:XAddrs>{self.device_service_url}</d:XAddrs>
-          <d:MetadataVersion>1</d:MetadataVersion>
-        </d:Hello>
-      </s:Body>
-    </s:Envelope>
-    """
+<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope" 
+            xmlns:a="http://schemas.xmlsoap.org/ws/2004/08/addressing"
+            xmlns:d="http://schemas.xmlsoap.org/ws/2005/04/discovery"
+            xmlns:dn="http://www.onvif.org/ver10/network/wsdl"
+            xmlns:tds="http://www.onvif.org/ver10/device/wsdl">
+  <s:Header>
+    <a:Action>http://schemas.xmlsoap.org/ws/2005/04/discovery/Hello</a:Action>
+    <a:MessageID>urn:uuid:{uuid.uuid4()}</a:MessageID>
+    <a:To>urn:schemas-xmlsoap-org:ws:2005:04:discovery</a:To>
+  </s:Header>
+  <s:Body>
+    <d:Hello>
+      <a:EndpointReference><a:Address>urn:uuid:{self.device_uuid}</a:Address></a:EndpointReference>
+      <d:Types>dn:NetworkVideoTransmitter tds:Device</d:Types>
+      <d:Scopes>onvif://www.onvif.org/type/video_encoder onvif://www.onvif.org/Profile/Streaming onvif://www.onvif.org/name/YoLinkDashboard onvif://www.onvif.org/location/Dashboard</d:Scopes>
+      <d:XAddrs>{self.device_service_url}</d:XAddrs>
+      <d:MetadataVersion>1</d:MetadataVersion>
+    </d:Hello>
+  </s:Body>
+</s:Envelope>
+"""
 
     def handle_device_service(self, soap_request: str) -> str:
         """
@@ -717,7 +640,6 @@ class OnvifService(threading.Thread):
             if body is None:
                 return XMLGenerator.generate_fault_response("Invalid SOAP request")
 
-            # Extract the action from the request
             action_element = None
             for child in body:
                 if child.tag.startswith("{"):
@@ -727,9 +649,7 @@ class OnvifService(threading.Thread):
             if action_element is None:
                 return XMLGenerator.generate_fault_response("No action element found")
 
-            # Handle different device service actions
             local_name = action_element.tag.split('}')[-1]
-
             handler_map = {
                 'GetDeviceInformation': self._handle_get_device_information,
                 'GetServices': self._handle_get_services,
@@ -751,7 +671,6 @@ class OnvifService(threading.Thread):
                     f"Unsupported action: {local_name}",
                     "ter:ActionNotSupported"
                 )
-
         except Exception as e:
             logger.error(f"Error handling device service request: {e}")
             return XMLGenerator.generate_fault_response(f"Internal error: {str(e)}")
@@ -775,7 +694,6 @@ class OnvifService(threading.Thread):
             if body is None:
                 return XMLGenerator.generate_fault_response("Invalid SOAP request")
 
-            # Extract the action from the request
             action_element = None
             for child in body:
                 if child.tag.startswith("{"):
@@ -785,9 +703,7 @@ class OnvifService(threading.Thread):
             if action_element is None:
                 return XMLGenerator.generate_fault_response("No action element found")
 
-            # Handle different media service actions
             local_name = action_element.tag.split('}')[-1]
-
             handler_map = {
                 'GetProfiles': self._handle_get_profiles,
                 'GetProfile': self._handle_get_profile,
@@ -806,7 +722,6 @@ class OnvifService(threading.Thread):
                     f"Unsupported action: {local_name}",
                     "ter:ActionNotSupported"
                 )
-
         except Exception as e:
             logger.error(f"Error handling media service request: {e}")
             return XMLGenerator.generate_fault_response(f"Internal error: {str(e)}")
@@ -856,7 +771,6 @@ class OnvifService(threading.Thread):
 
         capability_device = ""
         capability_media = ""
-
         if include_capability:
             capability_device = """
 <tds:Capabilities>
@@ -898,7 +812,6 @@ class OnvifService(threading.Thread):
   </tt:Device>
 </tds:Capabilities>
 """
-
             capability_media = """
 <tds:Capabilities>
   <tt:Media>
@@ -993,8 +906,7 @@ class OnvifService(threading.Thread):
   </tt:VideoEncoderConfiguration>
 </trt:Profiles>
 """
-
-        response = f"""
+            response = f"""
 <trt:GetProfilesResponse>
 {profiles_xml}
 </trt:GetProfilesResponse>
@@ -1026,7 +938,6 @@ class OnvifService(threading.Thread):
         if profile_token_elem is None:
             return XMLGenerator.generate_fault_response("Missing ProfileToken")
 
-        # Find the requested profile
         token = profile_token_elem.text
         profile = None
         with self.profiles_lock:
@@ -1041,7 +952,6 @@ class OnvifService(threading.Thread):
                 "ter:InvalidArgVal/ter:NoProfile"
             )
 
-        # Trigger the profile callback if registered
         if token in self.profile_callbacks:
             self.profile_callbacks[token](token)
         elif "default" in self.profile_callbacks:
@@ -1112,24 +1022,20 @@ class OnvifService(threading.Thread):
         if get_stream_uri is None:
             return XMLGenerator.generate_fault_response("Missing GetStreamUri element")
 
-        # Get profile token
         profile_token_elem = get_stream_uri.find('.//trt:ProfileToken', NS)
         if profile_token_elem is None:
             return XMLGenerator.generate_fault_response("Missing ProfileToken")
 
-        # Get stream protocol
         protocol_elem = get_stream_uri.find('.//trt:Protocol', NS)
         if protocol_elem is None:
             return XMLGenerator.generate_fault_response("Missing Protocol")
 
-        # Validate profile token
         token = profile_token_elem.text
         profile_found = False
         with self.profiles_lock:
             for profile_info in self.media_profiles:
                 if profile_info.token == token:
                     profile_found = True
-                    # Mark profile as active
                     profile_info.activate()
                     break
 
@@ -1139,13 +1045,11 @@ class OnvifService(threading.Thread):
                 "ter:InvalidArgVal/ter:NoProfile"
             )
 
-        # Trigger callback if registered
         if token in self.profile_callbacks:
             self.profile_callbacks[token](token)
         elif "default" in self.profile_callbacks:
             self.profile_callbacks["default"](token)
 
-        # Determine stream name based on profile token
         stream_name = self.stream_name
         if token == "profile1":
             stream_name = f"{self.stream_name}_main"
@@ -1154,12 +1058,7 @@ class OnvifService(threading.Thread):
         elif token == "profile3":
             stream_name = f"{self.stream_name}_mobile"
 
-        # Get auth parameters for RTSP URL if needed
-        auth_part = ""
-        if self.authentication_required:
-            auth_part = f"{self.username}:{self.password}@"
-
-        # Return RTSP URI with appropriate stream name
+        auth_part = f"{self.username}:{self.password}@" if self.authentication_required else ""
         stream_url = f"rtsp://{auth_part}{self.server_ip}:{self.rtsp_port}/{stream_name}"
 
         response = f"""
@@ -1195,18 +1094,13 @@ class OnvifService(threading.Thread):
         if get_snapshot_uri is None:
             return XMLGenerator.generate_fault_response("Missing GetSnapshotUri element")
 
-        # Get profile token
         profile_token_elem = get_snapshot_uri.find('.//trt:ProfileToken', NS)
         if profile_token_elem is None:
             return XMLGenerator.generate_fault_response("Missing ProfileToken")
 
-        # For simplicity, we'll just return a mock snapshot URI
         token = profile_token_elem.text
-        snapshot_url = f"http://{self.server_ip}:{self.onvif_port}/onvif/snapshot"
-
-        # Add authentication parameters if needed
-        if self.authentication_required:
-            snapshot_url = f"http://{self.username}:{self.password}@{self.server_ip}:{self.onvif_port}/onvif/snapshot"
+        auth_part = f"{self.username}:{self.password}@" if self.authentication_required else ""
+        snapshot_url = f"http://{auth_part}{self.server_ip}:{self.onvif_port}/onvif/snapshot"
 
         response = f"""
 <trt:GetSnapshotUriResponse>
@@ -1238,42 +1132,41 @@ class OnvifService(threading.Thread):
             for profile_info in self.media_profiles:
                 profile = profile_info.to_dict()
                 video_encoders += f"""
-    <trt:Configurations token="VideoEncoder_{profile['token']}">
-      <tt:Name>VideoEncoder</tt:Name>
-      <tt:UseCount>1</tt:UseCount>
-      <tt:Encoding>{profile['encoding']}</tt:Encoding>
-      <tt:Resolution>
-        <tt:Width>{profile['resolution']['width']}</tt:Width>
-        <tt:Height>{profile['resolution']['height']}</tt:Height>
-      </tt:Resolution>
-      <tt:Quality>5</tt:Quality>
-      <tt:RateControl>
-        <tt:FrameRateLimit>{profile['fps']}</tt:FrameRateLimit>
-        <tt:EncodingInterval>1</tt:EncodingInterval>
-        <tt:BitrateLimit>4096</tt:BitrateLimit>
-      </tt:RateControl>
-      <tt:H264>
-        <tt:GovLength>30</tt:GovLength>
-        <tt:H264Profile>High</tt:H264Profile>
-      </tt:H264>
-      <tt:Multicast>
-        <tt:Address>
-          <tt:Type>IPv4</tt:Type>
-          <tt:IPv4Address>0.0.0.0</tt:IPv4Address>
-        </tt:Address>
-        <tt:Port>0</tt:Port>
-        <tt:TTL>1</tt:TTL>
-        <tt:AutoStart>false</tt:AutoStart>
-      </tt:Multicast>
-      <tt:SessionTimeout>PT60S</tt:SessionTimeout>
-    </trt:Configurations>
-    """
-
-        response = f"""
-    <trt:GetVideoEncoderConfigurationsResponse>
-    {video_encoders}
-    </trt:GetVideoEncoderConfigurationsResponse>
-    """
+<trt:Configurations token="VideoEncoder_{profile['token']}">
+  <tt:Name>VideoEncoder</tt:Name>
+  <tt:UseCount>1</tt:UseCount>
+  <tt:Encoding>{profile['encoding']}</tt:Encoding>
+  <tt:Resolution>
+    <tt:Width>{profile['resolution']['width']}</tt:Width>
+    <tt:Height>{profile['resolution']['height']}</tt:Height>
+  </tt:Resolution>
+  <tt:Quality>5</tt:Quality>
+  <tt:RateControl>
+    <tt:FrameRateLimit>{profile['fps']}</tt:FrameRateLimit>
+    <tt:EncodingInterval>1</tt:EncodingInterval>
+    <tt:BitrateLimit>4096</tt:BitrateLimit>
+  </tt:RateControl>
+  <tt:H264>
+    <tt:GovLength>30</tt:GovLength>
+    <tt:H264Profile>High</tt:H264Profile>
+  </tt:H264>
+  <tt:Multicast>
+    <tt:Address>
+      <tt:Type>IPv4</tt:Type>
+      <tt:IPv4Address>0.0.0.0</tt:IPv4Address>
+    </tt:Address>
+    <tt:Port>0</tt:Port>
+    <tt:TTL>1</tt:TTL>
+    <tt:AutoStart>false</tt:AutoStart>
+  </tt:Multicast>
+  <tt:SessionTimeout>PT60S</tt:SessionTimeout>
+</trt:Configurations>
+"""
+            response = f"""
+<trt:GetVideoEncoderConfigurationsResponse>
+{video_encoders}
+</trt:GetVideoEncoderConfigurationsResponse>
+"""
         return XMLGenerator.generate_soap_response(
             "http://www.onvif.org/ver10/media/wsdl/GetVideoEncoderConfigurationsResponse",
             response
@@ -1289,62 +1182,58 @@ class OnvifService(threading.Thread):
         Returns:
             str: SOAP response XML
         """
-        # Base URLs
-        device_service_url = self.device_service_url
-        media_service_url = self.media_service_url
-
         response = f"""
-    <tds:GetCapabilitiesResponse>
-      <tds:Capabilities>
-        <tt:Device>
-          <tt:XAddr>{device_service_url}</tt:XAddr>
-          <tt:Network>
-            <tt:IPFilter>false</tt:IPFilter>
-            <tt:ZeroConfiguration>false</tt:ZeroConfiguration>
-            <tt:IPVersion6>false</tt:IPVersion6>
-            <tt:DynDNS>false</tt:DynDNS>
-          </tt:Network>
-          <tt:System>
-            <tt:DiscoveryResolve>true</tt:DiscoveryResolve>
-            <tt:DiscoveryBye>true</tt:DiscoveryBye>
-            <tt:RemoteDiscovery>true</tt:RemoteDiscovery>
-            <tt:SystemBackup>false</tt:SystemBackup>
-            <tt:SystemLogging>false</tt:SystemLogging>
-            <tt:FirmwareUpgrade>false</tt:FirmwareUpgrade>
-            <tt:SupportedVersions>
-              <tt:Major>1</tt:Major>
-              <tt:Minor>0</tt:Minor>
-            </tt:SupportedVersions>
-          </tt:System>
-          <tt:Security>
-            <tt:TLS1.1>false</tt:TLS1.1>
-            <tt:TLS1.2>false</tt:TLS1.2>
-            <tt:OnboardKeyGeneration>false</tt:OnboardKeyGeneration>
-            <tt:AccessPolicyConfig>false</tt:AccessPolicyConfig>
-            <tt:DefaultAccessPolicy>false</tt:DefaultAccessPolicy>
-            <tt:Dot1X>false</tt:Dot1X>
-            <tt:RemoteUserHandling>false</tt:RemoteUserHandling>
-            <tt:X.509Token>false</tt:X.509Token>
-            <tt:SAMLToken>false</tt:SAMLToken>
-            <tt:KerberosToken>false</tt:KerberosToken>
-            <tt:UsernameToken>true</tt:UsernameToken>
-            <tt:HttpDigest>false</tt:HttpDigest>
-            <tt:RELToken>false</tt:RELToken>
-          </tt:Security>
-        </tt:Device>
-        <tt:Media>
-          <tt:XAddr>{media_service_url}</tt:XAddr>
-          <tt:StreamingCapabilities>
-            <tt:RTPMulticast>false</tt:RTPMulticast>
-            <tt:RTP_TCP>true</tt:RTP_TCP>
-            <tt:RTP_RTSP_TCP>true</tt:RTP_RTSP_TCP>
-          </tt:StreamingCapabilities>
-          <tt:SnapshotUri>true</tt:SnapshotUri>
-          <tt:Rotation>false</tt:Rotation>
-        </tt:Media>
-      </tds:Capabilities>
-    </tds:GetCapabilitiesResponse>
-    """
+<tds:GetCapabilitiesResponse>
+  <tds:Capabilities>
+    <tt:Device>
+      <tt:XAddr>{self.device_service_url}</tt:XAddr>
+      <tt:Network>
+        <tt:IPFilter>false</tt:IPFilter>
+        <tt:ZeroConfiguration>false</tt:ZeroConfiguration>
+        <tt:IPVersion6>false</tt:IPVersion6>
+        <tt:DynDNS>false</tt:DynDNS>
+      </tt:Network>
+      <tt:System>
+        <tt:DiscoveryResolve>true</tt:DiscoveryResolve>
+        <tt:DiscoveryBye>true</tt:DiscoveryBye>
+        <tt:RemoteDiscovery>true</tt:RemoteDiscovery>
+        <tt:SystemBackup>false</tt:SystemBackup>
+        <tt:SystemLogging>false</tt:SystemLogging>
+        <tt:FirmwareUpgrade>false</tt:FirmwareUpgrade>
+        <tt:SupportedVersions>
+          <tt:Major>1</tt:Major>
+          <tt:Minor>0</tt:Minor>
+        </tt:SupportedVersions>
+      </tt:System>
+      <tt:Security>
+        <tt:TLS1.1>false</tt:TLS1.1>
+        <tt:TLS1.2>false</tt:TLS1.2>
+        <tt:OnboardKeyGeneration>false</tt:OnboardKeyGeneration>
+        <tt:AccessPolicyConfig>false</tt:AccessPolicyConfig>
+        <tt:DefaultAccessPolicy>false</tt:DefaultAccessPolicy>
+        <tt:Dot1X>false</tt:Dot1X>
+        <tt:RemoteUserHandling>false</tt:RemoteUserHandling>
+        <tt:X.509Token>false</tt:X.509Token>
+        <tt:SAMLToken>false</tt:SAMLToken>
+        <tt:KerberosToken>false</tt:KerberosToken>
+        <tt:UsernameToken>true</tt:UsernameToken>
+        <tt:HttpDigest>false</tt:HttpDigest>
+        <tt:RELToken>false</tt:RELToken>
+      </tt:Security>
+    </tt:Device>
+    <tt:Media>
+      <tt:XAddr>{self.media_service_url}</tt:XAddr>
+      <tt:StreamingCapabilities>
+        <tt:RTPMulticast>false</tt:RTPMulticast>
+        <tt:RTP_TCP>true</tt:RTP_TCP>
+        <tt:RTP_RTSP_TCP>true</tt:RTP_RTSP_TCP>
+      </tt:StreamingCapabilities>
+      <tt:SnapshotUri>true</tt:SnapshotUri>
+      <tt:Rotation>false</tt:Rotation>
+    </tt:Media>
+  </tds:Capabilities>
+</tds:GetCapabilitiesResponse>
+"""
         return XMLGenerator.generate_soap_response(
             "http://www.onvif.org/ver10/device/wsdl/GetCapabilitiesResponse",
             response
@@ -1363,41 +1252,197 @@ class OnvifService(threading.Thread):
         """
         if service_type == 'device':
             response = """
-    <tds:GetServiceCapabilitiesResponse>
-      <tds:Capabilities>
-        <tds:Network IPFilter="false" ZeroConfiguration="false" IPVersion6="false" DynDNS="false" Dot11Configuration="false" HostnameFromDHCP="false" NTP="0" />
-        <tds:Security TLS1.0="false" TLS1.1="false" TLS1.2="false" OnboardKeyGeneration="false" AccessPolicyConfig="false" DefaultAccessPolicy="false" Dot1X="false" RemoteUserHandling="false" X.509Token="false" SAMLToken="false" KerberosToken="false" UsernameToken="true" HttpDigest="false" RELToken="false" SupportedEAPMethods="0" MaxUsers="1" MaxUserNameLength="16" MaxPasswordLength="16" />
-        <tds:System DiscoveryResolve="true" DiscoveryBye="true" RemoteDiscovery="true" SystemBackup="false" SystemLogging="false" FirmwareUpgrade="false" HttpFirmwareUpgrade="false" HttpSystemBackup="false" HttpSystemLogging="false" HttpSupportInformation="false" StorageConfiguration="false" />
-      </tds:Capabilities>
-    </tds:GetServiceCapabilitiesResponse>
-    """
+<tds:GetServiceCapabilitiesResponse>
+  <tds:Capabilities>
+    <tds:Network IPFilter="false" ZeroConfiguration="false" IPVersion6="false" DynDNS="false" Dot11Configuration="false" HostnameFromDHCP="false" NTP="0" />
+    <tds:Security TLS1.0="false" TLS1.1="false" TLS1.2="false" OnboardKeyGeneration="false" AccessPolicyConfig="false" DefaultAccessPolicy="false" Dot1X="false" RemoteUserHandling="false" X.509Token="false" SAMLToken="false" KerberosToken="false" UsernameToken="true" HttpDigest="false" RELToken="false" SupportedEAPMethods="0" MaxUsers="1" MaxUserNameLength="16" MaxPasswordLength="16" />
+    <tds:System DiscoveryResolve="true" DiscoveryBye="true" RemoteDiscovery="true" SystemBackup="false" SystemLogging="false" FirmwareUpgrade="false" HttpFirmwareUpgrade="false" HttpSystemBackup="false" HttpSystemLogging="false" HttpSupportInformation="false" StorageConfiguration="false" />
+  </tds:Capabilities>
+</tds:GetServiceCapabilitiesResponse>
+"""
             action = "http://www.onvif.org/ver10/device/wsdl/GetServiceCapabilitiesResponse"
         elif service_type == 'media':
             response = """
-    <trt:GetServiceCapabilitiesResponse>
-      <trt:Capabilities SnapshotUri="true" Rotation="false" VideoSourceMode="false" OSD="false" TemporaryOSDText="false" EXICompression="false" RuleEngine="false" IVASupport="false" ProfileCapabilities="false" MaximumNumberOfProfiles="1" />
-    </trt:GetServiceCapabilitiesResponse>
-    """
+<trt:GetServiceCapabilitiesResponse>
+  <trt:Capabilities SnapshotUri="true" Rotation="false" VideoSourceMode="false" OSD="false" TemporaryOSDText="false" EXICompression="false" RuleEngine="false" IVASupport="false" ProfileCapabilities="false" MaximumNumberOfProfiles="1" />
+</trt:GetServiceCapabilitiesResponse>
+"""
             action = "http://www.onvif.org/ver10/media/wsdl/GetServiceCapabilitiesResponse"
         else:
             return XMLGenerator.generate_fault_response(f"Unknown service type: {service_type}")
 
         return XMLGenerator.generate_soap_response(action, response)
-      <d:XAddrs>{self.device_service_url}</d:XAddrs>
-      <d:MetadataVersion>1</d:MetadataVersion>
-    </d:Hello>
-  </s:Body>
-</s:Envelope>
+
+    def _handle_get_scopes(self, request: ET.Element) -> str:
+        """
+        Handle GetScopes request.
+
+        Args:
+            request: Request XML root
+
+        Returns:
+            str: SOAP response XML
+        """
+        response = """
+<tds:GetScopesResponse>
+  <tds:Scopes>
+    <tds:ScopeDef>Fixed</tds:ScopeDef>
+    <tds:ScopeItem>onvif://www.onvif.org/type/video_encoder</tds:ScopeItem>
+  </tds:Scopes>
+  <tds:Scopes>
+    <tds:ScopeDef>Fixed</tds:ScopeDef>
+    <tds:ScopeItem>onvif://www.onvif.org/Profile/Streaming</tds:ScopeItem>
+  </tds:Scopes>
+  <tds:Scopes>
+    <tds:ScopeDef>Fixed</tds:ScopeDef>
+    <tds:ScopeItem>onvif://www.onvif.org/name/YoLinkDashboard</tds:ScopeItem>
+  </tds:Scopes>
+  <tds:Scopes>
+    <tds:ScopeDef>Fixed</tds:ScopeDef>
+    <tds:ScopeItem>onvif://www.onvif.org/location/Dashboard</tds:ScopeItem>
+  </tds:Scopes>
+</tds:GetScopesResponse>
 """
+        return XMLGenerator.generate_soap_response(
+            "http://www.onvif.org/ver10/device/wsdl/GetScopesResponse",
+            response
+        )
+
+    def _handle_get_system_date_and_time(self, request: ET.Element) -> str:
+        """
+        Handle GetSystemDateAndTime request.
+
+        Args:
+            request: Request XML root
+
+        Returns:
+            str: SOAP response XML
+        """
+        now = datetime.datetime.utcnow()
+        response = f"""
+<tds:GetSystemDateAndTimeResponse>
+  <tds:SystemDateAndTime>
+    <tt:DateTimeType>Manual</tt:DateTimeType>
+    <tt:DaylightSavings>false</tt:DaylightSavings>
+    <tt:TimeZone>
+      <tt:TZ>UTC</tt:TZ>
+    </tt:TimeZone>
+    <tt:UTCDateTime>
+      <tt:Time>
+        <tt:Hour>{now.hour}</tt:Hour>
+        <tt:Minute>{now.minute}</tt:Minute>
+        <tt:Second>{now.second}</tt:Second>
+      </tt:Time>
+      <tt:Date>
+        <tt:Year>{now.year}</tt:Year>
+        <tt:Month>{now.month}</tt:Month>
+        <tt:Day>{now.day}</tt:Day>
+      </tt:Date>
+    </tt:UTCDateTime>
+  </tds:SystemDateAndTime>
+</tds:GetSystemDateAndTimeResponse>
+"""
+        return XMLGenerator.generate_soap_response(
+            "http://www.onvif.org/ver10/device/wsdl/GetSystemDateAndTimeResponse",
+            response
+        )
+
+    def _handle_get_hostname(self, request: ET.Element) -> str:
+        """
+        Handle GetHostname request.
+
+        Args:
+            request: Request XML root
+
+        Returns:
+            str: SOAP response XML
+        """
+        response = """
+<tds:GetHostnameResponse>
+  <tds:HostnameInformation>
+    <tt:FromDHCP>false</tt:FromDHCP>
+    <tt:Name>YoLinkDashboard</tt:Name>
+  </tds:HostnameInformation>
+</tds:GetHostnameResponse>
+"""
+        return XMLGenerator.generate_soap_response(
+            "http://www.onvif.org/ver10/device/wsdl/GetHostnameResponse",
+            response
+        )
+
+    def _handle_get_network_interfaces(self, request: ET.Element) -> str:
+        """
+        Handle GetNetworkInterfaces request.
+
+        Args:
+            request: Request XML root
+
+        Returns:
+            str: SOAP response XML
+        """
+        response = f"""
+<tds:GetNetworkInterfacesResponse>
+  <tds:NetworkInterfaces token="eth0">
+    <tt:Enabled>true</tt:Enabled>
+    <tt:Info>
+      <tt:Name>eth0</tt:Name>
+      <tt:HwAddress>{self.device_uuid[:17]}</tt:HwAddress>
+    </tt:Info>
+    <tt:IPv4>
+      <tt:Enabled>true</tt:Enabled>
+      <tt:Config>
+        <tt:Manual>
+          <tt:Address>{self.server_ip}</tt:Address>
+          <tt:PrefixLength>24</tt:PrefixLength>
+        </tt:Manual>
+        <tt:DHCP>false</tt:DHCP>
+      </tt:Config>
+    </tt:IPv4>
+  </tds:NetworkInterfaces>
+</tds:GetNetworkInterfacesResponse>
+"""
+        return XMLGenerator.generate_soap_response(
+            "http://www.onvif.org/ver10/device/wsdl/GetNetworkInterfacesResponse",
+            response
+        )
+
+    def _handle_get_network_protocols(self, request: ET.Element) -> str:
+        """
+        Handle GetNetworkProtocols request.
+
+        Args:
+            request: Request XML root
+
+        Returns:
+            str: SOAP response XML
+        """
+        response = f"""
+<tds:GetNetworkProtocolsResponse>
+  <tds:NetworkProtocols>
+    <tt:Name>HTTP</tt:Name>
+    <tt:Enabled>true</tt:Enabled>
+    <tt:Port>{self.onvif_port}</tt:Port>
+  </tds:NetworkProtocols>
+  <tds:NetworkProtocols>
+    <tt:Name>RTSP</tt:Name>
+    <tt:Enabled>true</tt:Enabled>
+    <tt:Port>{self.rtsp_port}</tt:Port>
+  </tds:NetworkProtocols>
+</tds:GetNetworkProtocolsResponse>
+"""
+        return XMLGenerator.generate_soap_response(
+            "http://www.onvif.org/ver10/device/wsdl/GetNetworkProtocolsResponse",
+            response
+        )
 
     def _generate_probe_match_response(self) -> str:
-    """
-    Generate a WS-Discovery ProbeMatch response.
+        """
+        Generate a WS-Discovery ProbeMatch response.
 
-    Returns:
-        str: SOAP XML response
-    """
-    return f"""
+        Returns:
+            str: SOAP XML response
+        """
+        return f"""
 <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
             xmlns:a="http://schemas.xmlsoap.org/ws/2004/08/addressing"
             xmlns:d="http://schemas.xmlsoap.org/ws/2005/04/discovery"
@@ -1425,13 +1470,13 @@ class OnvifService(threading.Thread):
 """
 
     def _generate_bye_message(self) -> str:
-    """
-    Generate a WS-Discovery Bye message to announce device going offline.
+        """
+        Generate a WS-Discovery Bye message to announce device going offline.
 
-    Returns:
-        str: XML Bye message
-    """
-    return f"""
+        Returns:
+            str: XML Bye message
+        """
+        return f"""
 <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
             xmlns:a="http://schemas.xmlsoap.org/ws/2004/08/addressing"
             xmlns:d="http://schemas.xmlsoap.org/ws/2005/04/discovery"
@@ -1457,16 +1502,13 @@ class OnvifService(threading.Thread):
     def _cleanup(self) -> None:
         """Clean up resources when stopping the service."""
         logger.info("Cleaning up ONVIF service resources")
-        
-        # Close discovery socket
         if self.discovery_socket:
             try:
                 self.discovery_socket.close()
             except Exception as e:
                 logger.error(f"Error closing discovery socket: {e}")
             self.discovery_socket = None
-        
-        # Stop HTTP server
+
         if self.http_server:
             try:
                 self.http_server.shutdown()
@@ -1474,9 +1516,9 @@ class OnvifService(threading.Thread):
             except Exception as e:
                 logger.error(f"Error shutting down HTTP server: {e}")
             self.http_server = None
-        
+
         logger.info("ONVIF service resources cleaned up")
-        
+
     def stop(self) -> None:
         """Stop the ONVIF service."""
         logger.info("Stopping ONVIF service")
