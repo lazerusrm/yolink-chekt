@@ -81,13 +81,13 @@ def parse_xml_safely(xml_string: str) -> Optional[ET.Element]:
     Returns:
         ET.Element: Parsed XML root element or None if parsing failed
     """
-    if not xml_string:
+    if not xml_string or not isinstance(xml_string, str):
+        logger.warning("Invalid input: XML string is empty or not a string")
         return None
 
     try:
-        # Limit entity expansion to prevent billion laughs attack
-        parser = ET.XMLParser(resolve_entities=False)
-        return ET.fromstring(xml_string, parser=parser)
+        # Default parser prevents entity expansion since Python 3.7.1
+        return ET.fromstring(xml_string)
     except ET.ParseError as e:
         logger.warning(f"XML parse error: {e}")
         return None
