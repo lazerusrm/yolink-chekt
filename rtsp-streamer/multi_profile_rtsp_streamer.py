@@ -376,14 +376,6 @@ class MultiProfileRtspStreamer(RtspStreamer):
             return False
 
     def _feed_frames_to_profile(self, profile_id: str) -> None:
-        """
-        Feed frames to a specific profile's FIFO pipe.
-        Optimized to reduce memory allocations and improve stability.
-
-        Args:
-            profile_id: Profile identifier
-        """
-        # Get monitor and config for this profile
         monitor = self.profile_monitors.get(profile_id)
         if not monitor:
             logger.error(f"No monitor found for profile: {profile_id}")
@@ -400,80 +392,55 @@ class MultiProfileRtspStreamer(RtspStreamer):
         fps = profile_config["fps"]
         frame_interval = 1.0 / fps
 
-        # Track frame statistics
         frames_sent = 0
         start_time = time.time()
         last_frame_time = start_time
         last_stats_time = start_time
 
-        # Reuse buffer
         buffer = io.BytesIO()
 
         try:
-            # Open FIFO pipe for writing
             with open(pipe_path, "wb") as fifo:
-                # Store in monitor
                 monitor.pipe_handle = fifo
                 logger.info(f"Opened FIFO {pipe_path} for writing to {profile_id}")
+                logger.debug(
+                    f"Starting frame feed loop for {profile_id}, running={self.running}, active={monitor.active}")
 
-                # Main frame feeding loop
                 while self.running and monitor.active:
                     try:
                         current_time = time.time()
-
-                        # Check if it's time for a new frame
                         if current_time - last_frame_time >= frame_interval:
-                            # Update renderer resolution if needed
                             if hasattr(self.renderer, 'set_resolution'):
-                                self.renderer.set_resolution(
-                                    width,
-                                    height,
-                                    profile_config["sensors_per_page"]
-                                )
-
-                            # Get a frame from the renderer
+                                self.renderer.set_resolution(width, height, profile_config["sensors_per_page"])
                             frame = self.renderer.render_frame(width, height)
-
-                            # Convert PIL Image to JPEG bytes efficiently
                             buffer.seek(0)
                             buffer.truncate(0)
                             frame.save(buffer, format="JPEG", quality=90, optimize=True)
-
-                            # Write to FIFO
                             fifo.write(buffer.getvalue())
                             fifo.flush()
-
-                            # Update frame statistics
                             frames_sent += 1
                             last_frame_time = current_time
-
-                            # Log stats periodically
-                            if current_time - last_stats_time > 60:  # Every minute
+                            if current_time - last_stats_time > 60:
                                 elapsed = current_time - last_stats_time
                                 fps_actual = frames_sent / elapsed
                                 logger.info(
                                     f"Profile {profile_id} stats: {fps_actual:.2f} FPS, {frames_sent} frames sent")
                                 frames_sent = 0
                                 last_stats_time = current_time
-
-                        # Small sleep to avoid busy loop
                         time.sleep(min(0.01, frame_interval / 10))
-
                     except BrokenPipeError as e:
                         logger.error(f"Broken pipe for {profile_id}: {e}, restarting FFmpeg")
                         self._restart_profile_stream(profile_id)
                         break
                     except Exception as e:
                         logger.error(f"Error writing to FIFO for {profile_id}: {e}")
-                        time.sleep(0.5)  # Brief pause before retry
-
+                        time.sleep(0.5)
+                logger.debug(
+                    f"Frame feed loop exited for {profile_id}, running={self.running}, active={monitor.active}")
         except Exception as e:
             logger.error(f"Failed to open or maintain FIFO for {profile_id}: {e}")
         finally:
-            # Clean up when thread exits
             logger.info(f"Stopped feeding frames to {profile_id}")
-
-            # Mark as inactive if we're still the monitor for this profile
             if profile_id in self.profile_monitors and self.profile_monitors[profile_id] == monitor:
                 monitor.active = False
 
