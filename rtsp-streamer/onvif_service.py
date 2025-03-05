@@ -1249,7 +1249,7 @@ class OnvifService(threading.Thread):
 <tds:GetCapabilitiesResponse>
   <tds:Capabilities>
     <tt:Device>
-      <tt:XAddr>{self.device_service_url}</tt:XAddr>
+      <tt:XAddr>{device_service_url}</tt:XAddr>
       <tt:Network>
         <tt:IPFilter>false</tt:IPFilter>
         <tt:ZeroConfiguration>false</tt:ZeroConfiguration>
@@ -1285,7 +1285,7 @@ class OnvifService(threading.Thread):
       </tt:Security>
     </tt:Device>
     <tt:Media>
-      <tt:XAddr>{self.media_service_url}</tt:XAddr>
+      <tt:XAddr>{media_service_url}</tt:XAddr>
       <tt:StreamingCapabilities>
         <tt:RTPMulticast>false</tt:RTPMulticast>
         <tt:RTP_TCP>true</tt:RTP_TCP>
@@ -1297,7 +1297,7 @@ class OnvifService(threading.Thread):
   </tds:Capabilities>
 </tds:GetCapabilitiesResponse>
 """
-        return XMLGenerator.generate_soap_response(
+        return generate_soap_response(
             "http://www.onvif.org/ver10/device/wsdl/GetCapabilitiesResponse",
             response
         )
