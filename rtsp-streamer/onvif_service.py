@@ -624,6 +624,7 @@ class OnvifService(threading.Thread):
     def handle_device_service(self, soap_request: str) -> str:
         """
         Handle ONVIF Device service requests.
+        Now also handles media requests for better compatibility with some clients.
 
         Args:
             soap_request: SOAP request XML
@@ -650,6 +651,19 @@ class OnvifService(threading.Thread):
                 return XMLGenerator.generate_fault_response("No action element found")
 
             local_name = action_element.tag.split('}')[-1]
+
+            # Define media service actions that might be sent to device endpoint
+            media_actions = {
+                'GetProfiles', 'GetProfile', 'GetStreamUri', 'GetSnapshotUri',
+                'GetVideoEncoderConfigurations', 'GetVideoSources'
+            }
+
+            # If this is a media action, redirect to the media service handler
+            if local_name in media_actions:
+                logger.info(f"Redirecting media action '{local_name}' from device service to media service")
+                return self.handle_media_service(soap_request)
+
+            # Regular device service actions
             handler_map = {
                 'GetDeviceInformation': self._handle_get_device_information,
                 'GetServices': self._handle_get_services,
