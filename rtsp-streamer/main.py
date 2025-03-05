@@ -165,6 +165,7 @@ class DashboardApp:
         """
         # Load configuration
         self.config = get_config()
+        self._preprocess_config()  # Ensure numerical values are typed correctly
 
         # Configure logging level from config
         log_level = self.config.get("log_level", "INFO").upper()
@@ -199,6 +200,40 @@ class DashboardApp:
 
         # Register exit handler
         atexit.register(self.stop)
+
+    def _preprocess_config(self):
+        """
+        Preprocess configuration to ensure numerical values are integers.
+
+        Handles keys that should be integers and applies defaults if conversion fails.
+        """
+        int_keys = [
+            "sensors_per_page", "width", "height", "fps", "rtsp_port",
+            "http_port", "onvif_port", "cycle_interval"
+        ]
+        default_values = {
+            "sensors_per_page": 9,
+            "width": 1920,
+            "height": 1080,
+            "fps": 6,
+            "rtsp_port": 8554,
+            "http_port": 3001,
+            "onvif_port": 8555,
+            "cycle_interval": 10000
+        }
+
+        for key in int_keys:
+            if key in self.config:
+                value = self.config[key]
+                try:
+                    self.config[key] = int(value)
+                except (ValueError, TypeError):
+                    default = default_values.get(key, 0)
+                    logger.error(
+                        f"Invalid config value for {key}: '{value}' (type: {type(value)}). "
+                        f"Using default: {default}"
+                    )
+                    self.config[key] = default
 
     def _setup_signal_handlers(self):
         """Set up handlers for OS signals."""
@@ -236,6 +271,7 @@ class DashboardApp:
         try:
             new_config = get_config()
             self.config.update(new_config)
+            self._preprocess_config()  # Reprocess after reload
             logger.info("Configuration reloaded")
         except Exception as e:
             logger.error(f"Failed to reload configuration: {e}")
@@ -405,8 +441,7 @@ class DashboardApp:
             # Log authentication details (masking password)
             masked_password = "*" * (len(self.config["onvif_password"]) - 2)
             if len(self.config["onvif_password"]) > 2:
-                masked_password = self.config["onvif_password"][:1] + masked_password + self.config["onvif_password"][
-                                                                                        -1:]
+                masked_password = self.config["onvif_password"][:1] + masked_password + self.config["onvif_password"][-1:]
 
             logger.info(
                 f"ONVIF service started on port {self.config.get('onvif_port')} with credentials: {self.config['onvif_username']}/{masked_password}")
