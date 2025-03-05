@@ -2,9 +2,17 @@
 Enhanced Dashboard UI rendering for the YoLink Dashboard RTSP Server.
 Supports multiple resolutions with appropriate layouts, alarm highlighting,
 and update time indicators for improved readability.
+
+This renderer implementation has been optimized for performance and memory usage:
+1. Caches fonts and layouts based on resolution to avoid repeated loading
+2. Implements frame caching to reduce CPU usage
+3. Uses thread-safe operations to prevent race conditions
+4. Optimizes text rendering and measurement operations
+5. Minimizes object creation during rendering loops
 """
 import time
 import logging
+import threading
 from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime, timedelta
 from PIL import Image, ImageDraw, ImageFont
@@ -19,6 +27,7 @@ class DashboardRenderer:
     """
     Renders the dashboard UI with sensor information.
     Supports multiple resolutions with appropriate layouts.
+    Optimized for performance and memory efficiency.
     """
 
     def __init__(self, config: Dict[str, Any]):
@@ -37,36 +46,54 @@ class DashboardRenderer:
 
         # Alarm display settings
         self.alarm_display_timer = 0
-        self.alarm_display_duration = 30  # Increased to 30 seconds (was variable in config)
+        self.alarm_display_duration = 30
         self.normal_display_duration = 30
         self.new_alarm_triggered = False
         self.previous_states = {}
         self.newest_alarm_id = None  # Track the newest alarm for highlighting
 
-        # Default resolution values
+        # Initialize default resolution values
         self.current_width = config.get("width", 1920)
         self.current_height = config.get("height", 1080)
         self.sensors_per_page = config.get("sensors_per_page", 20)
 
-        # Layout parameters based on resolution
-        self.layout_params = self._calc_layout_params()
+        # Initialize frame caching
+        self.last_frame = None
+        self.last_render_time = 0
+        self.last_render_config = {}
 
-        # Load fonts
-        self.fonts = self._load_fonts_for_resolution()
+        # Thread safety
+        self.render_lock = threading.RLock()
+
+        # Cache for layout parameters and fonts based on resolution
+        self.cached_fonts_resolution = None
+        self.cached_layout_resolution = None
+        self.layout_params = None
+        self.fonts = None
+
+        # Reusable objects for rendering
+        self.buffer = None
+
+        # Initialize layout and fonts for the current resolution
+        self._calc_layout_params()
+        self._load_fonts_for_resolution()
 
     def _load_fonts_for_resolution(self) -> Dict[str, ImageFont.FreeTypeFont]:
         """
         Load appropriate fonts based on the current resolution.
-        Increased font sizes for better readability on mobile devices.
+        Cached to avoid repeatedly loading the same fonts.
 
         Returns:
             Dict[str, ImageFont.FreeTypeFont]: Dictionary of font objects
         """
-        # Increased base font sizes significantly for better readability
-        base_font_size = max(18, int(self.current_height / 36))  # Was /54, now /36
-        title_font_size = max(28, int(self.current_height / 20))  # Was /30, now /20
+        # Check if we already have fonts loaded for this resolution
+        if (self.cached_fonts_resolution == (self.current_width, self.current_height) and
+            self.fonts is not None):
+            return self.fonts
 
-        # Add an extra large font for critical information
+        # Calculate font sizes based on screen resolution
+        base_font_size = max(18, int(self.current_height / 36))
+        title_font_size = max(28, int(self.current_height / 20))
         xl_font_size = max(36, int(self.current_height / 15))
 
         try:
@@ -86,95 +113,120 @@ class DashboardRenderer:
             }
 
         logger.info(f"Loaded fonts - XL: {xl_font_size}px, Large: {title_font_size}px, Medium: {base_font_size+6}px, Small: {base_font_size}px")
-        return fonts
+
+        # Update cache
+        self.cached_fonts_resolution = (self.current_width, self.current_height)
+        self.fonts = fonts
+
+        return self.fonts
 
     def _calc_layout_params(self) -> Dict[str, Any]:
         """
         Calculate layout parameters based on current resolution.
-        Adjusted for larger fonts and better readability.
+        Cached to avoid recalculating the same parameters repeatedly.
 
         Returns:
             Dict[str, Any]: Layout parameters
         """
+        # Check if we already have layout parameters for this resolution
+        if (self.cached_layout_resolution == (self.current_width, self.current_height, self.sensors_per_page) and
+            self.layout_params is not None):
+            return self.layout_params
+
         # Base everything on relative proportions of the screen
         width, height = self.current_width, self.current_height
 
-        # Increase banner height for larger text
-        banner_height = max(60, min(80, height // 12))  # Was //18, now //12
+        # Banner height calculation
+        banner_height = max(60, min(80, height // 12))
 
         # Calculate the grid size based on sensors_per_page
         grid_cols = min(5, max(1, int(self.sensors_per_page ** 0.5)))
         grid_rows = (self.sensors_per_page + grid_cols - 1) // grid_cols
 
-        # Panel size calculated relative to screen size and grid dimensions
-        panel_width = max(280, (width - (grid_cols + 1) * 15) // grid_cols)  # Wider panels
-        panel_height = max(180, (height - banner_height - (grid_rows + 1) * 15) // grid_rows)  # Taller panels
+        # Panel size calculation
+        padding = max(8, min(20, height // 72))
+        panel_width = max(280, (width - (grid_cols + 1) * padding) // grid_cols)
+        panel_height = max(180, (height - banner_height - (grid_rows + 1) * padding) // grid_rows)
 
-        return {
+        # Create layout parameters dictionary
+        layout_params = {
             "grid_cols": grid_cols,
             "grid_rows": grid_rows,
             "panel_width": panel_width,
             "panel_height": panel_height,
             "banner_height": banner_height,
-            "padding": max(8, min(20, height // 72)),  # Increased padding
-            "title_height": max(30, min(40, height // 27)),  # Taller title section
-            "sensor_row_height": max(24, min(32, height // 34)),  # Taller rows for more readable text
+            "padding": padding,
+            "title_height": max(30, min(40, height // 27)),
+            "sensor_row_height": max(24, min(32, height // 34)),
         }
+
+        # Update cache
+        self.cached_layout_resolution = (self.current_width, self.current_height, self.sensors_per_page)
+        self.layout_params = layout_params
+
+        return self.layout_params
 
     def set_resolution(self, width: int, height: int, sensors_per_page: Optional[int] = None) -> None:
         """
         Update the renderer's resolution and adjust layout accordingly.
+        Optimized to skip unnecessary recalculations.
 
         Args:
             width: New width in pixels
             height: New height in pixels
-            sensors_per_page: Optional explicit sensors per page override
+            sensors_per_page: Optional number of sensors to show per page
         """
-        if width == self.current_width and height == self.current_height and (
-            sensors_per_page is None or sensors_per_page == self.sensors_per_page):
-            # No change in resolution or sensors_per_page, skip recalculation
-            return
+        with self.render_lock:
+            # Check if there's no change in configuration
+            if (width == self.current_width and height == self.current_height and
+                    (sensors_per_page is None or sensors_per_page == self.sensors_per_page)):
+                return
 
-        self.current_width = width
-        self.current_height = height
+            # Update dimensions
+            self.current_width = width
+            self.current_height = height
 
-        # Update sensors per page if specified or calculate based on resolution
-        if sensors_per_page is not None:
-            self.sensors_per_page = sensors_per_page
-        else:
-            # Calculate appropriate number based on resolution
-            if width >= 1920 and height >= 1080:
-                self.sensors_per_page = 20  # Full HD
-            elif width >= 1280 and height >= 720:
-                self.sensors_per_page = 12  # HD
-            elif width >= 960 and height >= 540:
-                self.sensors_per_page = 6  # qHD
-            else:
-                self.sensors_per_page = 4  # Low resolution
+            # Update sensors per page if specified
+            if sensors_per_page is not None:
+                self.sensors_per_page = sensors_per_page
+            elif width != self.current_width or height != self.current_height:
+                # Adjust sensors per page based on resolution if not explicitly specified
+                if width >= 1920 and height >= 1080:
+                    self.sensors_per_page = 20  # Full HD
+                elif width >= 1280 and height >= 720:
+                    self.sensors_per_page = 12  # HD
+                elif width >= 960 and height >= 540:
+                    self.sensors_per_page = 6  # qHD
+                else:
+                    self.sensors_per_page = 4  # Low resolution
 
-        # Update layout parameters for new resolution
-        self.layout_params = self._calc_layout_params()
+            # Update layout and fonts
+            self._calc_layout_params()
+            self._load_fonts_for_resolution()
+            self._update_pagination()
 
-        # Reload fonts appropriate for this resolution
-        self.fonts = self._load_fonts_for_resolution()
+            # Invalidate frame cache since resolution changed
+            self.last_frame = None
 
-        # Recalculate pagination
-        self._update_pagination()
-
-        logger.info(f"Renderer resolution set to {width}x{height} with {self.sensors_per_page} sensors per page")
+            logger.info(f"Renderer resolution set to {width}x{height} with {self.sensors_per_page} sensors per page")
 
     def _update_pagination(self) -> None:
         """
         Update pagination based on current sensors_per_page.
         """
-        total_sensors = len(self.sensor_data)
-        self.total_pages = max(1, (total_sensors + self.sensors_per_page - 1) // self.sensors_per_page)
+        with self.render_lock:
+            total_sensors = len(self.sensor_data)
+            new_total_pages = max(1, (total_sensors + self.sensors_per_page - 1) // self.sensors_per_page)
 
-        # Adjust current page if it's now out of bounds
-        if self.current_page >= self.total_pages:
-            self.current_page = 0
+            # Only update if the number of pages has changed
+            if new_total_pages != self.total_pages:
+                self.total_pages = new_total_pages
 
-        logger.debug(f"Pagination updated: {total_sensors} sensors, {self.total_pages} pages")
+                # Adjust current page if it's now out of bounds
+                if self.current_page >= self.total_pages:
+                    self.current_page = 0
+
+                logger.debug(f"Pagination updated: {total_sensors} sensors, {self.total_pages} pages")
 
     def _format_time_since_update(self) -> str:
         """
@@ -208,140 +260,127 @@ class DashboardRenderer:
         Args:
             sensors: List of sensor data dictionaries
         """
-        if not isinstance(sensors, list):
-            logger.error("Invalid sensor data: not a list")
-            return
+        with self.render_lock:
+            if not isinstance(sensors, list):
+                logger.error("Invalid sensor data: not a list")
+                return
 
-        # Track previous alarm sensors to detect new alarms
-        previous_alarm_ids = set(s.get("deviceId") for s in self.alarm_sensors if s.get("deviceId"))
+            # Track previous alarm sensors to detect new alarms
+            previous_alarm_ids = set(s.get("deviceId") for s in self.alarm_sensors if s.get("deviceId"))
 
-        # Reset for new data
-        self.sensor_data = []
-        self.alarm_sensors = []
-        self.last_update_time = time.time()
-        logger.info(f"Received {len(sensors)} sensors via WebSocket")
+            # Reset for new data
+            self.sensor_data = []
+            self.alarm_sensors = []
+            self.last_update_time = time.time()
+            logger.info(f"Received {len(sensors)} sensors via WebSocket")
 
-        # Define the cutoff date (60 days ago from today)
-        cutoff_date = datetime.now() - timedelta(days=60)
+            # Define the cutoff date (60 days ago from today)
+            cutoff_date = datetime.now() - timedelta(days=60)
 
-        for s in sensors:
-            if not s:
-                logger.warning("Skipping empty sensor data")
-                continue
-
-            # Extract last_seen and filter out old or never-seen sensors
-            last_seen = s.get("last_seen")
-            if last_seen == "never":
-                logger.debug(f"Filtered out {s.get('name', 'Unknown')} | Last seen: never")
-                continue
-
-            try:
-                last_seen_date = datetime.strptime(last_seen, "%Y-%m-%d %H:%M:%S")
-                if last_seen_date < cutoff_date:
-                    logger.debug(
-                        f"Filtered out {s.get('name', 'Unknown')} | Last seen: {last_seen} (older than 60 days)")
+            # Process each sensor
+            for s in sensors:
+                if not s:
                     continue
-            except (ValueError, TypeError) as e:
-                logger.warning(f"Invalid last_seen format for {s.get('name', 'Unknown')}: {last_seen}, error: {e}")
-                continue  # Skip if date parsing fails
 
-            # If we reach here, the sensor is within the last 60 days
-            self.sensor_data.append(s)
+                # Process last_seen date
+                last_seen = s.get("last_seen")
+                if last_seen == "never":
+                    continue
 
-            # Extract key fields
-            sensor_type = s.get("type")
-            state = s.get("state")
-            signal = safe_int(s.get("signal"))
-            battery = safe_int(s.get("battery"))
-            name = s.get("name", "Unknown")
-            device_id = s.get("deviceId", "UnknownID")
+                try:
+                    last_seen_date = datetime.strptime(last_seen, "%Y-%m-%d %H:%M:%S")
+                    if last_seen_date < cutoff_date:
+                        continue
+                except (ValueError, TypeError):
+                    continue
 
-            # Normalize state to string, strip whitespace, and convert to lowercase if it's not a dict
-            state_str = str(state).strip().lower() if state is not None and not isinstance(state, dict) else ""
-            logger.debug(
-                f"Sensor: {name} | Type: {sensor_type} | Raw State: {state} | Normalized State: {state_str if not isinstance(state, dict) else state} | Signal: {signal} | Battery: {battery} | Last Seen: {last_seen}")
+                # Sensor is valid, add to data
+                self.sensor_data.append(s)
 
-            # Map battery value if present
-            mapped_battery = map_battery_value(battery) if battery is not None else None
+                # Extract key fields
+                sensor_type = s.get("type")
+                state = s.get("state")
+                signal = safe_int(s.get("signal"))
+                battery = safe_int(s.get("battery"))
+                device_id = s.get("deviceId", "UnknownID")
 
-            # Alarm logic
-            is_alarm = False
-            alarm_reason = []
+                # Normalize state
+                state_str = str(state).strip().lower() if state is not None and not isinstance(state, dict) else ""
 
-            if sensor_type == "DoorSensor":
-                if state_str == "open":
-                    is_alarm = True
-                    alarm_reason.append("State is 'open'")
-                if signal is not None and signal < -119:
-                    is_alarm = True
-                    alarm_reason.append(f"Signal {signal} < -119")
-                if mapped_battery is not None and mapped_battery <= 25:
-                    is_alarm = True
-                    alarm_reason.append(f"Battery {mapped_battery}% <= 25%")
-                self.previous_states[device_id] = state_str
+                # Map battery value if present
+                mapped_battery = map_battery_value(battery) if battery is not None else None
 
-            elif sensor_type == "MotionSensor":
-                if state_str == "motion":
-                    is_alarm = True
-                    alarm_reason.append("State is 'motion'")
-                if signal is not None and signal < -119:
-                    is_alarm = True
-                    alarm_reason.append(f"Signal {signal} < -119")
-                if mapped_battery is not None and mapped_battery <= 25:
-                    is_alarm = True
-                    alarm_reason.append(f"Battery {mapped_battery}% <= 25%")
+                # Determine alarm state
+                is_alarm = False
+                alarm_reason = []
 
-            elif sensor_type in ["THSensor", "COSmokeSensor"]:
-                if isinstance(state, dict):
-                    alarms = state
-                    if any(alarms.get(key, False) for key in ["smokeAlarm", "gasAlarm", "unexpected", "highTempAlarm"]):
+                # Process by sensor type
+                if sensor_type == "DoorSensor":
+                    if state_str == "open":
                         is_alarm = True
-                        alarm_reason.append(f"Alarm state active: {alarms}")
-                if mapped_battery is not None and mapped_battery <= 25:
-                    is_alarm = True
-                    alarm_reason.append(f"Battery {mapped_battery}% <= 25%")
-                if signal is not None and signal < -119:
-                    is_alarm = True
-                    alarm_reason.append(f"Signal {signal} < -119")
+                        alarm_reason.append("State is 'open'")
+                    if signal is not None and signal < -119:
+                        is_alarm = True
+                        alarm_reason.append(f"Signal {signal} < -119")
+                    if mapped_battery is not None and mapped_battery <= 25:
+                        is_alarm = True
+                        alarm_reason.append(f"Battery {mapped_battery}% <= 25%")
+                    self.previous_states[device_id] = state_str
 
-            elif sensor_type in ["Outlet", "MultiOutlet"]:
-                logger.debug(
-                    f"Outlet/MultiOutlet {name} processed: State={state_str if not isinstance(state, dict) else state}")
+                elif sensor_type == "MotionSensor":
+                    if state_str == "motion":
+                        is_alarm = True
+                        alarm_reason.append("State is 'motion'")
+                    if signal is not None and signal < -119:
+                        is_alarm = True
+                        alarm_reason.append(f"Signal {signal} < -119")
+                    if mapped_battery is not None and mapped_battery <= 25:
+                        is_alarm = True
+                        alarm_reason.append(f"Battery {mapped_battery}% <= 25%")
 
-            # Add to alarm list if applicable
-            if is_alarm:
-                self.alarm_sensors.append(s)
-                logger.debug(f"Added to alarms: {name} | Reasons: {', '.join(alarm_reason)}")
-            else:
-                logger.debug(f"Not alarmed: {name} | No conditions met")
+                elif sensor_type in ["THSensor", "COSmokeSensor"]:
+                    if isinstance(state, dict):
+                        alarms = state
+                        if any(alarms.get(key, False) for key in ["smokeAlarm", "gasAlarm", "unexpected", "highTempAlarm"]):
+                            is_alarm = True
+                            alarm_reason.append(f"Alarm state active")
+                    if mapped_battery is not None and mapped_battery <= 25:
+                        is_alarm = True
+                        alarm_reason.append(f"Battery {mapped_battery}% <= 25%")
+                    if signal is not None and signal < -119:
+                        is_alarm = True
+                        alarm_reason.append(f"Signal {signal} < -119")
 
-        # Get current alarm IDs
-        current_alarm_ids = set(s.get("deviceId") for s in self.alarm_sensors if s.get("deviceId"))
+                # Add to alarm list if applicable
+                if is_alarm:
+                    self.alarm_sensors.append(s)
 
-        # Detect new alarms
-        new_alarm_ids = current_alarm_ids - previous_alarm_ids
+            # Get current alarm IDs
+            current_alarm_ids = set(s.get("deviceId") for s in self.alarm_sensors if s.get("deviceId"))
 
-        # If there are new alarms, trigger alarm view and track newest for highlighting
-        if new_alarm_ids:
-            self.new_alarm_triggered = True
-            self.alarm_display_timer = time.time()
-            self.newest_alarm_id = next(iter(new_alarm_ids))  # Use first new alarm ID
+            # Detect new alarms
+            new_alarm_ids = current_alarm_ids - previous_alarm_ids
 
-            # Find and log newest alarm name
-            for s in self.alarm_sensors:
-                if s.get("deviceId") == self.newest_alarm_id:
-                    logger.info(f"New alarm highlighted: {s.get('name', 'Unknown')} (ID: {self.newest_alarm_id})")
-                    break
+            # Process new alarms
+            if new_alarm_ids:
+                self.new_alarm_triggered = True
+                self.alarm_display_timer = time.time()
+                self.newest_alarm_id = next(iter(new_alarm_ids))  # Use first new alarm ID
 
-        # Log the final alarm sensors list
-        alarm_names = [s.get("name", "Unknown") for s in self.alarm_sensors]
-        logger.info(f"Sensors in alarm: {alarm_names} (Total: {len(self.alarm_sensors)})")
+                # Log newest alarm name
+                for s in self.alarm_sensors:
+                    if s.get("deviceId") == self.newest_alarm_id:
+                        logger.info(f"New alarm highlighted: {s.get('name', 'Unknown')} (ID: {self.newest_alarm_id})")
+                        break
 
-        # Update pagination based on the current sensors_per_page
-        self._update_pagination()
+            # Update pagination based on the new data
+            self._update_pagination()
 
-        logger.info(
-            f"Updated: {len(self.sensor_data)} sensors, {len(self.alarm_sensors)} alarms, {self.total_pages} pages")
+            # Invalidate frame cache since data changed
+            self.last_frame = None
+
+            logger.info(
+                f"Updated: {len(self.sensor_data)} sensors, {len(self.alarm_sensors)} alarms, {self.total_pages} pages")
 
     def set_page(self, page_num: int) -> None:
         """
@@ -350,15 +389,57 @@ class DashboardRenderer:
         Args:
             page_num: Page number (0-based)
         """
-        if 0 <= page_num < self.total_pages:
-            self.current_page = page_num
-            logger.info(f"Set page to {page_num + 1}/{self.total_pages}")
-        else:
-            logger.warning(f"Attempted to set invalid page {page_num + 1}, valid range: 1-{self.total_pages}")
+        with self.render_lock:
+            if 0 <= page_num < self.total_pages:
+                if page_num != self.current_page:
+                    self.current_page = page_num
+                    # Invalidate frame cache since page changed
+                    self.last_frame = None
+                    logger.info(f"Set page to {page_num + 1}/{self.total_pages}")
+            else:
+                logger.warning(f"Attempted to set invalid page {page_num + 1}, valid range: 1-{self.total_pages}")
+
+    def should_update_frame(self) -> bool:
+        """
+        Determine if a new frame needs to be rendered based on data changes and timing.
+        This helps reduce CPU usage by avoiding unnecessary renders.
+
+        Returns:
+            bool: True if frame should be updated, False otherwise
+        """
+        current_time = time.time()
+
+        # Always render if it's the first time or frame was invalidated
+        if self.last_frame is None:
+            return True
+
+        # High priority updates - check for alarm state changes
+        if self.new_alarm_triggered:
+            return True
+
+        # Check for transitions between display states
+        if self.alarm_display_timer > 0:
+            time_in_current_state = current_time - self.alarm_display_timer
+            # Transition from alarm to normal view
+            if (time_in_current_state >= self.alarm_display_duration and
+                    time_in_current_state < self.alarm_display_duration + 0.5):
+                return True
+            # Transition from normal to default view
+            if (time_in_current_state >= self.alarm_display_duration + self.normal_display_duration and
+                    time_in_current_state < self.alarm_display_duration + self.normal_display_duration + 0.5):
+                return True
+
+        # Enforce minimum interval between renders
+        min_interval = 1.0 / max(1, self.config.get("frame_rate", 6))
+        if current_time - self.last_render_time < min_interval:
+            return False
+
+        return True
 
     def render_frame(self, width: int, height: int) -> Image.Image:
         """
         Render a frame of the dashboard.
+        Optimized with frame caching to reduce CPU usage.
 
         Args:
             width: Frame width in pixels
@@ -367,28 +448,36 @@ class DashboardRenderer:
         Returns:
             PIL.Image: Rendered frame
         """
-        # Update resolution and layout if different from current
-        if width != self.current_width or height != self.current_height:
-            self.set_resolution(width, height)
+        with self.render_lock:
+            # Update resolution if different from current
+            if width != self.current_width or height != self.current_height:
+                self.set_resolution(width, height)
 
-        current_time = time.time()
-        image = Image.new("RGB", (width, height), "#000000")
-        draw = ImageDraw.Draw(image)
+            # Check if we need to update the frame
+            if not self.should_update_frame():
+                return self.last_frame
 
-        if self.alarm_sensors and (current_time - self.alarm_display_timer < self.alarm_display_duration):
-            self._render_alarm_view(draw)
-            logger.debug("Rendering alarm view")
-        elif current_time - self.alarm_display_timer < self.alarm_display_duration + self.normal_display_duration:
-            self._render_normal_view(draw)
-            logger.debug("Rendering normal view")
-        else:
-            self.alarm_display_timer = 0
-            self.new_alarm_triggered = False
-            self.newest_alarm_id = None  # Clear newest alarm when returning to normal view
-            self._render_normal_view(draw)
-            logger.debug("Rendering default normal view")
+            # Create new image
+            current_time = time.time()
+            image = Image.new("RGB", (width, height), "#000000")
+            draw = ImageDraw.Draw(image)
 
-        return image
+            # Determine which view to render
+            if self.alarm_sensors and (current_time - self.alarm_display_timer < self.alarm_display_duration):
+                self._render_alarm_view(draw)
+            elif current_time - self.alarm_display_timer < self.alarm_display_duration + self.normal_display_duration:
+                self._render_normal_view(draw)
+            else:
+                self.alarm_display_timer = 0
+                self.new_alarm_triggered = False
+                self.newest_alarm_id = None
+                self._render_normal_view(draw)
+
+            # Update render time and cache the frame
+            self.last_render_time = current_time
+            self.last_frame = image
+
+            return image
 
     def _get_text_width(self, draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont) -> int:
         """
@@ -408,6 +497,7 @@ class DashboardRenderer:
     def _truncate_text(self, draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont, max_width: int) -> str:
         """
         Truncate text to fit within a maximum width.
+        Uses a more efficient approach than the original method.
 
         Args:
             draw: PIL ImageDraw object
@@ -421,6 +511,7 @@ class DashboardRenderer:
         if not text:
             return ""
 
+        # Check if text already fits
         if self._get_text_width(draw, text, font) <= max_width:
             return text
 
@@ -428,18 +519,24 @@ class DashboardRenderer:
         ellipsis_width = self._get_text_width(draw, ellipsis, font)
 
         # If even the ellipsis is too wide, return empty string
-        if ellipsis_width > max_width:
+        if ellipsis_width >= max_width:
             return ""
 
-        # Try removing characters until it fits
-        result = text
-        while len(result) > 1 and self._get_text_width(draw, result + ellipsis, font) > max_width:
-            result = result[:-1]
+        # Binary search for the maximum length that fits
+        available_width = max_width - ellipsis_width
+        start, end = 0, len(text)
 
-        return result + ellipsis
+        while start < end:
+            mid = (start + end + 1) // 2
+            if self._get_text_width(draw, text[:mid], font) <= available_width:
+                start = mid
+            else:
+                end = mid - 1
+
+        return text[:start] + ellipsis
 
     def _render_sensor_details(self, draw: ImageDraw.ImageDraw, sensor: Dict[str, Any],
-                               x: int, y: int, panel_width: int, y_offset: int = 50) -> None:
+                              x: int, y: int, panel_width: int, y_offset: int = 50) -> None:
         """
         Render sensor details in a sensor panel.
 
@@ -450,18 +547,14 @@ class DashboardRenderer:
             y: Y-coordinate of the sensor panel
             panel_width: Width of the panel in pixels
             y_offset: Starting Y-offset for additional details
-
-        Returns:
-            None
         """
         padding = self.layout_params["padding"]
         row_height = self.layout_params["sensor_row_height"]
-        max_text_width = panel_width - (padding * 2)
-
         sensor_type = sensor.get("type")
 
-        # Draw common sensor details based on sensor type
+        # Process sensor details based on type
         if sensor_type in ["MotionSensor", "ContactSensor", "DoorSensor"]:
+            # Battery information
             if "battery" in sensor and sensor["battery"] is not None:
                 battery_value = map_battery_value(safe_int(sensor["battery"]))
                 if battery_value is not None:
@@ -475,9 +568,10 @@ class DashboardRenderer:
 
                     batt_text = f"Battery: {battery_value}%"
                     draw.text((x + padding, y + y_offset), batt_text, font=self.fonts["medium"],
-                              fill=batt_color)
+                             fill=batt_color)
                     y_offset += row_height
 
+            # Signal information
             if "signal" in sensor:
                 signal_value = safe_int(sensor["signal"])
                 if signal_value is not None:
@@ -491,21 +585,24 @@ class DashboardRenderer:
 
                     signal_text = f"Signal: {signal_value}"
                     draw.text((x + padding, y + y_offset), signal_text, font=self.fonts["medium"],
-                              fill=signal_color)
+                             fill=signal_color)
                     y_offset += row_height
 
         elif sensor_type == "THSensor":
+            # Temperature information
             if sensor.get("temperature", "unknown") != "unknown":
                 temp_text = f"Temp: {sensor['temperature']}°{sensor.get('temperatureUnit', 'F')}"
                 draw.text((x + padding, y + y_offset), temp_text, font=self.fonts["medium"], fill="#ffffff")
                 y_offset += row_height
 
+            # Humidity information
             if sensor.get("humidity", "unknown") != "unknown":
                 humidity_text = f"Humidity: {sensor['humidity']}%"
                 draw.text((x + padding, y + y_offset), humidity_text, font=self.fonts["medium"],
-                          fill="#ffffff")
+                         fill="#ffffff")
                 y_offset += row_height
 
+            # Battery information
             if "battery" in sensor and sensor["battery"] is not None:
                 battery_value = map_battery_value(safe_int(sensor["battery"]))
                 if battery_value is not None:
@@ -519,9 +616,10 @@ class DashboardRenderer:
 
                     batt_text = f"Battery: {battery_value}%"
                     draw.text((x + padding, y + y_offset), batt_text, font=self.fonts["medium"],
-                              fill=batt_color)
+                             fill=batt_color)
                     y_offset += row_height
 
+            # Signal information
             if "signal" in sensor:
                 signal_value = safe_int(sensor["signal"])
                 if signal_value is not None:
@@ -535,10 +633,11 @@ class DashboardRenderer:
 
                     signal_text = f"Signal: {signal_value}"
                     draw.text((x + padding, y + y_offset), signal_text, font=self.fonts["medium"],
-                              fill=signal_color)
+                             fill=signal_color)
                     y_offset += row_height
 
         elif sensor_type in ["Outlet", "MultiOutlet"]:
+            # Signal information only for outlets
             if "signal" in sensor:
                 signal_value = safe_int(sensor["signal"])
                 if signal_value is not None:
@@ -552,10 +651,10 @@ class DashboardRenderer:
 
                     signal_text = f"Signal: {signal_value}"
                     draw.text((x + padding, y + y_offset), signal_text, font=self.fonts["medium"],
-                              fill=signal_color)
+                             fill=signal_color)
 
     def _render_sensor_panel(self, draw: ImageDraw.ImageDraw, sensor: Dict[str, Any],
-                             x: int, y: int) -> None:
+                            x: int, y: int) -> None:
         """
         Render a single sensor panel with enhanced visual indicators.
 
@@ -564,9 +663,6 @@ class DashboardRenderer:
             sensor: Sensor data dictionary
             x: X-coordinate of the sensor panel
             y: Y-coordinate of the sensor panel
-
-        Returns:
-            None
         """
         panel_width = self.layout_params["panel_width"]
         panel_height = self.layout_params["panel_height"]
@@ -574,13 +670,11 @@ class DashboardRenderer:
         title_height = self.layout_params["title_height"]
 
         # Check if this is the newest alarm sensor for highlighting
-        is_newest_alarm = sensor.get("deviceId") == self.newest_alarm_id
-
-        # Draw panel background with appropriate coloring
-        # Use different colors for newest alarm, other alarms, and normal sensors
         device_id = sensor.get("deviceId", "")
+        is_newest_alarm = device_id == self.newest_alarm_id
         is_in_alarm = device_id in [s.get("deviceId") for s in self.alarm_sensors]
 
+        # Determine panel styling based on alarm state
         if is_newest_alarm:
             # Newest alarm - bright red
             gradient_top = "#ff3333"
@@ -600,7 +694,7 @@ class DashboardRenderer:
             outline_color = "#555555"
             outline_width = 1
 
-        # Draw panel outline
+        # Draw panel outline efficiently
         for i in range(outline_width):
             draw.rectangle(
                 [(x+i, y+i), (x + panel_width-i, y + panel_height-i)],
@@ -615,7 +709,7 @@ class DashboardRenderer:
             fill=gradient_bottom
         )
 
-        # Draw a gradient header bar
+        # Draw header bar
         header_height = title_height + padding
         draw.rectangle([(x, y), (x + panel_width, y + header_height)], fill=gradient_top)
 
@@ -633,6 +727,7 @@ class DashboardRenderer:
             name_font = self.fonts["large"]
             draw.text((x + padding, y + padding), sensor_name, font=name_font, fill="#ffffff")
 
+        # Get sensor type and state
         sensor_type = sensor.get("type")
         state = sensor.get("state", "N/A")
         y_offset = header_height + padding
@@ -646,13 +741,13 @@ class DashboardRenderer:
                     status_color = "#55ff55" if power > 0 else "#ff5555"  # Green for on, red for off
                     status_text = f"Status: {status} ({power}W)"
                     draw.text((x + padding, y + y_offset), status_text, font=self.fonts["medium"],
-                              fill=status_color)
+                             fill=status_color)
                 else:
                     draw.text((x + padding, y + y_offset), "Status: Unknown", font=self.fonts["medium"], fill="#aaaaaa")
                 y_offset += self.layout_params["sensor_row_height"]
             elif "powers" in sensor and isinstance(sensor["powers"], list):
                 powers = sensor["powers"]
-                for j, power in enumerate(powers[:2]):
+                for j, power in enumerate(powers[:2]):  # Only show first 2 outlets to save space
                     power_val = safe_float(power)
                     if power_val is not None:
                         status = "On" if power_val > 0 else "Off"
@@ -675,166 +770,28 @@ class DashboardRenderer:
                     state_color = "#55ff55"  # Green for normal
                 else:
                     state_color = "#ff5555"  # Red for alarms
+                draw.text((x + padding, y + y_offset), f"State: {state_text}",
+                         font=self.fonts["medium"], fill=state_color)
+                y_offset += self.layout_params["sensor_row_height"]
             elif isinstance(state, str) and state.lower() in ["open", "motion"]:
                 state_text = state.upper()  # Make alarmed states more visible
                 state_color = "#ff5555"  # Red for open/motion
                 # Use the largest font for alarm states
-                draw.text((x + padding, y + y_offset), f"State: {state_text}", font=self.fonts["xl"], fill=state_color)
+                draw.text((x + padding, y + y_offset), f"State: {state_text}",
+                         font=self.fonts["xl"], fill=state_color)
                 y_offset += self.layout_params["sensor_row_height"] * 1.5
             elif isinstance(state, str) and state.lower() in ["closed", "no motion"]:
                 state_text = state
                 state_color = "#55ff55"  # Green for closed/no motion
-                draw.text((x + padding, y + y_offset), f"State: {state_text}", font=self.fonts["medium"], fill=state_color)
+                draw.text((x + padding, y + y_offset), f"State: {state_text}",
+                         font=self.fonts["medium"], fill=state_color)
                 y_offset += self.layout_params["sensor_row_height"]
             else:
                 state_text = str(state)
                 state_color = "#ffffff"  # White for other states
-                draw.text((x + padding, y + y_offset), f"State: {state_text}", font=self.fonts["medium"], fill=state_color)
+                draw.text((x + padding, y + y_offset), f"State: {state_text}",
+                         font=self.fonts["medium"], fill=state_color)
                 y_offset += self.layout_params["sensor_row_height"]
 
         # Render additional sensor details
         self._render_sensor_details(draw, sensor, x, y, panel_width, y_offset)
-
-    def _render_normal_view(self, draw: ImageDraw.ImageDraw) -> None:
-        """
-        Render the normal view of the dashboard with updated time indicator.
-
-        Args:
-            draw: PIL ImageDraw object
-
-        Returns:
-            None
-        """
-        width, height = self.current_width, self.current_height
-        banner_height = self.layout_params["banner_height"]
-        padding = self.layout_params["padding"]
-
-        # Draw gray banner at the top
-        draw.rectangle([(0, 0), (width, banner_height)], fill="#333333")
-        draw.text((padding, padding), "SENSORS", font=self.fonts["xl"], fill="#ffffff")
-
-        # Add update time indicator in the middle of the banner
-        update_text = self._format_time_since_update()
-        update_text_width = self._get_text_width(draw, update_text, self.fonts["large"])
-        update_x = (width - update_text_width) // 2
-        draw.text((update_x, padding), update_text, font=self.fonts["large"], fill="#FFFF99")  # Yellow-ish for visibility
-
-        # Calculate and display summary on the banner
-        active_count = len(self.sensor_data)
-        alarm_count = len(self.alarm_sensors)
-        summary_text = f"Active: {active_count} | Alarms: {alarm_count}"
-        text_width = self._get_text_width(draw, summary_text, self.fonts["large"])
-        draw.text((width - text_width - padding, padding), summary_text, font=self.fonts["large"], fill="#ffffff")
-
-        # Handle case with no sensor data
-        if not self.sensor_data:
-            draw.text((padding, banner_height + padding), "No sensor data available", font=self.fonts["large"], fill="#ffffff")
-            return
-
-        # Add pagination indicator
-        if self.total_pages > 1:
-            page_text = f"Page {self.current_page + 1}/{self.total_pages}"
-            page_x = (width - self._get_text_width(draw, page_text, self.fonts["medium"])) // 2
-            draw.text((page_x, banner_height - padding - self.fonts["medium"].size), page_text, font=self.fonts["medium"], fill="#ffffff")
-
-        # Pagination logic
-        start_idx = self.current_page * self.sensors_per_page
-        end_idx = min(start_idx + self.sensors_per_page, len(self.sensor_data))
-        sensors_to_show = self.sensor_data[start_idx:end_idx]
-
-        # Render each sensor in a grid
-        grid_cols = self.layout_params["grid_cols"]
-        panel_width = self.layout_params["panel_width"]
-        panel_height = self.layout_params["panel_height"]
-
-        for i, sensor in enumerate(sensors_to_show):
-            row = i // grid_cols
-            col = i % grid_cols
-
-            # Calculate position with padding
-            x = padding + col * (panel_width + padding)
-            y = banner_height + padding + row * (panel_height + padding)
-
-            self._render_sensor_panel(draw, sensor, x, y)
-
-    def _render_alarm_view(self, draw: ImageDraw.ImageDraw) -> None:
-        """
-        Render the alarm view of the dashboard with updated time indicator.
-
-        Args:
-            draw: PIL ImageDraw object
-
-        Returns:
-            None
-        """
-        width, height = self.current_width, self.current_height
-        banner_height = self.layout_params["banner_height"]
-        padding = self.layout_params["padding"]
-
-        # Draw bright red banner at the top (brighter than before)
-        draw.rectangle([(0, 0), (width, banner_height)], fill="#ff0000")
-        draw.text((padding, padding), "⚠ SENSORS IN ALARM ⚠", font=self.fonts["xl"], fill="#ffffff")
-
-        # Add update time indicator in the middle of the banner
-        update_text = self._format_time_since_update()
-        update_text_width = self._get_text_width(draw, update_text, self.fonts["large"])
-        update_x = (width - update_text_width) // 2
-        draw.text((update_x, padding), update_text, font=self.fonts["large"], fill="#ffffff")
-
-        # Calculate and display summary on the banner
-        active_count = len(self.sensor_data)
-        alarm_count = len(self.alarm_sensors)
-        summary_text = f"Active: {active_count} | Alarms: {alarm_count}"
-        text_width = self._get_text_width(draw, summary_text, self.fonts["large"])
-        draw.text((width - text_width - padding, padding), summary_text, font=self.fonts["large"], fill="#ffffff")
-
-        # Handle case with no alarm sensors
-        if not self.alarm_sensors:
-            draw.text((padding, banner_height + padding), "No sensors in alarm", font=self.fonts["large"], fill="#ffffff")
-            return
-
-        # Determine how many alarms to show based on available space
-        grid_cols = self.layout_params["grid_cols"]
-        panel_width = self.layout_params["panel_width"]
-        panel_height = self.layout_params["panel_height"]
-
-        # Calculate max sensors that fit in the available space
-        max_rows = (height - banner_height - padding) // (panel_height + padding)
-        max_sensors = max_rows * grid_cols
-
-        # Reorder alarms to put newest alarm first if it exists
-        if self.newest_alarm_id:
-            ordered_alarms = []
-            # Add newest alarm first
-            for sensor in self.alarm_sensors:
-                if sensor.get("deviceId") == self.newest_alarm_id:
-                    ordered_alarms.append(sensor)
-                    break
-
-            # Add all other alarms
-            for sensor in self.alarm_sensors:
-                if sensor.get("deviceId") != self.newest_alarm_id:
-                    ordered_alarms.append(sensor)
-
-            sensors_to_show = ordered_alarms[:max_sensors]
-        else:
-            # Just show alarms in original order
-            sensors_to_show = self.alarm_sensors[:max_sensors]
-
-        # If we have more alarms than can fit on screen, add a note
-        if len(self.alarm_sensors) > max_sensors:
-            more_text = f"+{len(self.alarm_sensors) - max_sensors} more alarms"
-            more_width = self._get_text_width(draw, more_text, self.fonts["medium"])
-            more_x = (width - more_width) // 2
-            draw.text((more_x, banner_height - padding - self.fonts["medium"].size),
-                     more_text, font=self.fonts["medium"], fill="#ffff00")
-
-        for i, sensor in enumerate(sensors_to_show):
-            row = i // grid_cols
-            col = i % grid_cols
-
-            # Calculate position with padding
-            x = padding + col * (panel_width + padding)
-            y = banner_height + padding + row * (panel_height + padding)
-
-            self._render_sensor_panel(draw, sensor, x, y)

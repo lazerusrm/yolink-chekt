@@ -38,7 +38,7 @@ COPY mediamtx.yml /opt/mediamtx.yml
 COPY requirements.txt .
 
 # Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt psutil
 
 # Copy the entire rtsp-streamer directory (including package structure)
 COPY . .

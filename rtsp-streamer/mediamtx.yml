@@ -1,16 +1,28 @@
 logLevel: info
 rtspAddress: :8554
-readTimeout: 120s
-writeTimeout: 120s
+readTimeout: 30s  # Reduced from 120s
+writeTimeout: 30s # Reduced from 120s
 api: yes
 apiAddress: :9997
 
+# Add global settings for paths
 paths:
+  all:
+    # These apply to all paths
+    readBufferCount: 2  # Reduced buffer size
+    readBufferSize: 1048576  # 1MB buffer (default is 4MB)
+    runOnDemand: yes
+    runOnDemandCloseAfter: 10s
+
+  # Path-specific configurations
   yolink-dashboard:
     source: publisher
 
   yolink-dashboard_main:
     source: publisher
 
-  yolink-dashboard_low:
+  yolink-dashboard_sub:
+    source: publisher
+
+  yolink-dashboard_mobile:
     source: publisher
