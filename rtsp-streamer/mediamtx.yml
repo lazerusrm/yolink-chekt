@@ -1,14 +1,23 @@
-logLevel: info
+logLevel: debug
 rtspAddress: ":8554"
 readTimeout: 120s
 writeTimeout: 120s
+rtmpDisable: false
+hlsDisable: true
+webrtcDisable: true
+protocols: [tcp]
 
-# Main profile - full resolution
+# Configure paths
 paths:
+  all:
+    readUser: ""
+    readPass: ""
+    publishUser: ""
+    publishPass: ""
+
   yolink-dashboard:
     source: publisher
 
-  # Add paths for additional resolution profiles
   yolink-dashboard_main:
     source: publisher
 
