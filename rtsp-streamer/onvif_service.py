@@ -13,6 +13,8 @@ import http.server
 import socketserver
 import xml.etree.ElementTree as ET
 import time
+import os
+from config import MAC_ADDRESS
 import weakref
 import ipaddress
 import re
@@ -40,7 +42,6 @@ NS = {
 # Register namespace prefixes for pretty XML output
 for prefix, uri in NS.items():
     ET.register_namespace(prefix, uri)
-
 
 # Security utility functions
 @lru_cache(maxsize=128)  # Cache digest computations to save CPU
@@ -425,12 +426,15 @@ class OnvifService(threading.Thread):
         self.password = config.get("onvif_password", "123456")
 
         self.device_uuid = str(uuid.uuid4())
+        self.mac_address = os.getenv("MAC_ADDRESS")
+        if not self.mac_address:
+            self.mac_address = generate_random_mac()
         self.device_info = {
-            "Manufacturer": config.get("manufacturer", "YoLink"),
+            "Manufacturer": config.get("manufacturer", "Industrial Camera Systems"),
             "Model": config.get("model", "Dashboard-RTSP"),
-            "FirmwareVersion": config.get("firmware_version", "1.0.0"),
+            "FirmwareVersion": config.get("firmware_version", "1.0.1"),
             "SerialNumber": self.device_uuid,
-            "HardwareId": config.get("hardware_id", "YOLINK-DASHBOARD-1")
+            "HardwareId": config.get("hardware_id", "YLK-Dashboard")
         }
 
         self.device_service_url = f"http://{self.server_ip}:{self.onvif_port}/onvif/device_service"
@@ -447,7 +451,7 @@ class OnvifService(threading.Thread):
         self.media_profiles = [
             ProfileInfo(
                 token="profile1",
-                name="YoLink Main Stream",
+                name="Dashboard Main Stream",
                 width=config.get("width", 1920),
                 height=config.get("height", 1080),
                 fps=config.get("frame_rate", 6),
@@ -455,7 +459,7 @@ class OnvifService(threading.Thread):
             ),
             ProfileInfo(
                 token="profile2",
-                name="YoLink Low Stream",
+                name="Dashboard Low Stream",
                 width=1280,
                 height=720,
                 fps=6,
@@ -463,7 +467,7 @@ class OnvifService(threading.Thread):
             ),
             ProfileInfo(
                 token="profile3",
-                name="YoLink Mobile Stream",
+                name="Dashboard Mobile Stream",
                 width=640,
                 height=360,
                 fps=6,
@@ -1583,7 +1587,7 @@ class OnvifService(threading.Thread):
     <tt:Enabled>true</tt:Enabled>
     <tt:Info>
       <tt:Name>eth0</tt:Name>
-      <tt:HwAddress>{self.device_uuid[:17]}</tt:HwAddress>
+      <tt:HwAddress>{MAC_ADDRESS}</tt:HwAddress>
     </tt:Info>
     <tt:IPv4>
       <tt:Enabled>true</tt:Enabled>

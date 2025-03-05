@@ -8,6 +8,7 @@ import base64
 import datetime
 import xml.etree.ElementTree as ET
 from typing import Dict, Any, Optional, List, Tuple
+from config import MAC_ADDRESS
 
 from flask import Flask, request, Response
 
@@ -1135,7 +1136,7 @@ def handle_get_network_interfaces(config: Dict[str, Any]) -> str:
     <tt:Enabled>true</tt:Enabled>
     <tt:Info>
       <tt:Name>eth0</tt:Name>
-      <tt:HwAddress>00:11:22:33:44:55</tt:HwAddress>
+      <tt:HwAddress>{MAC_ADDRESS}</tt:HwAddress>
       <tt:MTU>1500</tt:MTU>
     </tt:Info>
     <tt:IPv4>
