@@ -14,7 +14,7 @@ import socketserver
 import xml.etree.ElementTree as ET
 import time
 import os
-from config import MAC_ADDRESS
+from config import MAC_ADDRESS, generate_random_mac
 import weakref
 import ipaddress
 import re
