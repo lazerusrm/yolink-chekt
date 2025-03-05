@@ -287,4 +287,62 @@ class WebSocketClient(threading.Thread):
         except json.JSONDecodeError as e:
             logger.error(f"Invalid JSON in WebSocket message: {e}. Raw message: {message[:100]}...")
         except Exception as e:
-            logger.error(f"Error handling WebSocket message: {e
+            logger.error(f"Error handling WebSocket message: {e}")
+
+    def _check_connection_health(self) -> None:
+        """
+        Monitor connection health and trigger reconnection if needed.
+        """
+        logger.debug("Health checker thread started")
+
+        while self.running:
+            try:
+                time.sleep(self.health_check_interval)
+
+                # Check if connection is healthy
+                current_time = time.time()
+                time_since_last_message = current_time - self.last_message_time
+
+                # If no message received for too long and we're supposedly connected
+                if self.connected and time_since_last_message > self.health_check_interval * 2:
+                    logger.warning(f"No messages received for {time_since_last_message:.1f} seconds, reconnecting...")
+                    self._force_reconnect()
+            except Exception as e:
+                logger.error(f"Error in health checker: {e}")
+
+        logger.debug("Health checker thread stopped")
+
+    def _force_reconnect(self) -> None:
+        """
+        Force a reconnection by closing the current connection.
+        """
+        with self.connect_lock:
+            if self.ws:
+                logger.info("Forcing reconnection...")
+                try:
+                    self.ws.close()
+                except Exception as e:
+                    logger.error(f"Error closing WebSocket for reconnect: {e}")
+
+    def close(self) -> None:
+        """
+        Close the WebSocket connection and stop all threads.
+        """
+        logger.info("Closing WebSocket client")
+        self.running = False
+        self.should_reconnect = False
+
+        # Close WebSocket connection
+        if self.ws:
+            try:
+                self.ws.close()
+            except Exception as e:
+                logger.error(f"Error closing WebSocket: {e}")
+
+        # Wait for processor thread to finish
+        if self.processor and self.processor.is_alive():
+            logger.debug("Waiting for processor thread to finish")
+            try:
+                self.processor.join(timeout=2)
+            except Exception as e:
+                logger.error(f"Error joining processor thread: {e}")
