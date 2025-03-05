@@ -49,7 +49,7 @@ class MultiProfileRtspStreamer(RtspStreamer):
                 "width": self.config.get("width", 1920),
                 "height": self.config.get("height", 1080),
                 "fps": self.config.get("frame_rate", 6),
-                "bitrate": self.config.get("bitrate", 4000),
+                "bitrate": self.config.get("bitrate", 500),
                 "pipe_path": "/tmp/streams/dashboard_pipe_main",
                 "stream_name": f"{self.config.get('stream_name', 'yolink-dashboard')}_main",
                 "sensors_per_page": self.config.get("sensors_per_page", 20)
@@ -62,7 +62,7 @@ class MultiProfileRtspStreamer(RtspStreamer):
                 "width": self.config.get("low_res_width", self.config.get("width", 1920) // 2),
                 "height": self.config.get("low_res_height", self.config.get("height", 1080) // 2),
                 "fps": self.config.get("low_res_fps", min(self.config.get("frame_rate", 6), 4)),
-                "bitrate": self.config.get("low_res_bitrate", self.config.get("bitrate", 4000) // 4),
+                "bitrate": self.config.get("low_res_bitrate", self.config.get("bitrate", 500) // 4),
                 "pipe_path": "/tmp/streams/dashboard_pipe_low",
                 "stream_name": f"{self.config.get('stream_name', 'yolink-dashboard')}_low",
                 "sensors_per_page": self.config.get("low_res_sensors_per_page", 6)
@@ -74,7 +74,7 @@ class MultiProfileRtspStreamer(RtspStreamer):
                 "width": self.config.get("mobile_width", self.config.get("width", 1920) // 4),
                 "height": self.config.get("mobile_height", self.config.get("height", 1080) // 4),
                 "fps": self.config.get("mobile_fps", 2),
-                "bitrate": self.config.get("mobile_bitrate", self.config.get("bitrate", 4000) // 10),
+                "bitrate": self.config.get("mobile_bitrate", self.config.get("bitrate", 500) // 10),
                 "pipe_path": "/tmp/streams/dashboard_pipe_mobile",
                 "stream_name": f"{self.config.get('stream_name', 'yolink-dashboard')}_mobile",
                 "sensors_per_page": self.config.get("mobile_sensors_per_page", 4)

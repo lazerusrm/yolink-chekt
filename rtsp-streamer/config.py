@@ -56,13 +56,13 @@ def get_config() -> Dict[str, Any]:
         "stream_name": os.environ.get("STREAM_NAME", "yolink-dashboard"),
 
         # RTSP stream quality settings
-        "bitrate": safe_int(os.environ.get("BITRATE"), 4000, 100, 20000, "BITRATE"),  # RTSP bitrate in kbps (100-20000)
+        "bitrate": safe_int(os.environ.get("BITRATE"), 500, 100, 1000, "BITRATE"),  # RTSP bitrate in kbps (100-20000)
         "quality": safe_int(os.environ.get("QUALITY"), 5, 1, 10, "QUALITY"),  # RTSP quality (1-10)
         "gop": safe_int(os.environ.get("GOP"), 30, 1, 300, "GOP"),  # Group of Pictures length (1-300)
         "h264_profile": os.environ.get("H264_PROFILE", "High"),  # H.264 profile (Baseline, Main, High)
 
         # Rendering configuration
-        "frame_rate": safe_int(os.environ.get("FRAME_RATE"), 6, 1, 60, "FRAME_RATE"),
+        "frame_rate": safe_int(os.environ.get("FRAME_RATE"), 6, 1, 10, "FRAME_RATE"),
         "width": safe_int(os.environ.get("WIDTH"), 1920, 320, 3840, "WIDTH"),
         "height": safe_int(os.environ.get("HEIGHT"), 1080, 240, 2160, "HEIGHT"),
         "cycle_interval": safe_int(os.environ.get("CYCLE_INTERVAL"), 10000, 1000, 3600000, "CYCLE_INTERVAL"),
@@ -124,7 +124,7 @@ def get_config() -> Dict[str, Any]:
         "enable_mobile_profile": os.environ.get("ENABLE_MOBILE_PROFILE", "false").lower() == "true",
         "mobile_width": safe_int(os.environ.get("MOBILE_WIDTH"), primary_width // 4, 160, None, "MOBILE_WIDTH"),
         "mobile_height": safe_int(os.environ.get("MOBILE_HEIGHT"), primary_height // 4, 120, None, "MOBILE_HEIGHT"),
-        "mobile_fps": safe_int(os.environ.get("MOBILE_FPS"), 2, 1, 15, "MOBILE_FPS"),
+        "mobile_fps": safe_int(os.environ.get("MOBILE_FPS"), 6, 1, 15, "MOBILE_FPS"),
         "mobile_bitrate": safe_int(os.environ.get("MOBILE_BITRATE"), primary_bitrate // 10, 50, None, "MOBILE_BITRATE"),
         "mobile_sensors_per_page": safe_int(os.environ.get("MOBILE_SENSORS_PER_PAGE"), 4, 1, 10, "MOBILE_SENSORS_PER_PAGE"),
 

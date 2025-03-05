@@ -1,7 +1,7 @@
 logLevel: info
 rtspAddress: :8554
-readTimeout: 10s
-writeTimeout: 10s
+readTimeout: 120s
+writeTimeout: 120s
 api: yes
 apiAddress: :9997
 
