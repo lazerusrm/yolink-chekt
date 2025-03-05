@@ -21,6 +21,18 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 load_dotenv()
 
+
+def generate_random_mac() -> str:
+    """Generate a random, valid MAC address in XX:XX:XX:XX:XX:XX format."""
+    return ":".join("{:02X}".format(random.randint(0, 255)) for _ in range(6))
+    # Retrieve the MAC address from the environment; generate one if not provided.
+
+
+MAC_ADDRESS = os.getenv("MAC_ADDRESS")
+if not MAC_ADDRESS:
+    MAC_ADDRESS = generate_random_mac()
+    
+
 class ConfigValidator:
     """
     Validates configuration settings and provides defaults.
@@ -124,14 +136,6 @@ class Configuration:
 
         # Register default validators
         self._register_default_validators()
-
-    def generate_random_mac() -> str:
-        """Generate a random, valid MAC address in XX:XX:XX:XX:XX:XX format."""
-        return ":".join("{:02X}".format(random.randint(0, 255)) for _ in range(6))
-        # Retrieve the MAC address from the environment; generate one if not provided.
-    MAC_ADDRESS = os.getenv("MAC_ADDRESS")
-    if not MAC_ADDRESS:
-        MAC_ADDRESS = generate_random_mac()
 
     def _register_default_validators(self) -> None:
         """Register default validators for common configuration parameters."""
