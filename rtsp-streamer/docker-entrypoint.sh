@@ -36,7 +36,7 @@ if [ -z "$SERVER_IP" ]; then
 fi
 
 # Check if MediaMTX config exists
-if [ ! -f /opt/mediamtx.yml ]; then
+if [ ! -f /etc/mediamtx/mediamtx.yml ]; then
     echo "$(date '+%Y-%m-%d %H:%M:%S') - ERROR: MediaMTX configuration file not found at /opt/mediamtx.yml"
     exit 1
 fi
@@ -47,7 +47,7 @@ echo "$(date '+%Y-%m-%d %H:%M:%S') - Starting MediaMTX RTSP server"
 mkdir -p /var/log/mediamtx
 
 # Start MediaMTX with output redirection
-mediamtx /opt/mediamtx.yml > /var/log/mediamtx/stdout.log 2> /var/log/mediamtx/stderr.log &
+mediamtx /etc/mediamtx/mediamtx.yml > /var/log/mediamtx/stdout.log 2> /var/log/mediamtx/stderr.log &
 MEDIAMTX_PID=$!
 
 # Wait for MediaMTX to initialize
