@@ -2,6 +2,7 @@
 Configuration management for the YoLink Dashboard RTSP Server.
 Provides flexible configuration loading, validation, and update mechanisms.
 """
+
 import os
 import random
 from dotenv import load_dotenv
@@ -9,7 +10,7 @@ import socket
 import logging
 import json
 import threading
-from typing import Dict, Any, Optional, List, Tuple, Set, Union
+from typing import Dict, Any, Optional, List
 from pathlib import Path
 
 # Configure basic logging until proper configuration is loaded
@@ -25,13 +26,13 @@ load_dotenv()
 def generate_random_mac() -> str:
     """Generate a random, valid MAC address in XX:XX:XX:XX:XX:XX format."""
     return ":".join("{:02X}".format(random.randint(0, 255)) for _ in range(6))
-    # Retrieve the MAC address from the environment; generate one if not provided.
 
 
+# Retrieve the MAC address from the environment; generate one if not provided.
 MAC_ADDRESS = os.getenv("MAC_ADDRESS")
 if not MAC_ADDRESS:
     MAC_ADDRESS = generate_random_mac()
-    
+
 
 class ConfigValidator:
     """
@@ -40,19 +41,9 @@ class ConfigValidator:
 
     @staticmethod
     def safe_int(value: Any, default: int, min_val: Optional[int] = None,
-                max_val: Optional[int] = None, name: Optional[str] = None) -> int:
+                 max_val: Optional[int] = None, name: Optional[str] = None) -> int:
         """
         Convert value to int safely with range validation.
-
-        Args:
-            value: Value to convert to integer
-            default: Default value if conversion fails
-            min_val: Minimum allowed value
-            max_val: Maximum allowed value
-            name: Parameter name for logging
-
-        Returns:
-            int: Validated integer value
         """
         try:
             result = int(value)
@@ -72,14 +63,6 @@ class ConfigValidator:
     def safe_bool(value: Any, default: bool = False, name: Optional[str] = None) -> bool:
         """
         Convert value to boolean safely.
-
-        Args:
-            value: Value to convert to boolean
-            default: Default value if conversion fails
-            name: Parameter name for logging
-
-        Returns:
-            bool: Validated boolean value
         """
         if isinstance(value, bool):
             return value
@@ -90,7 +73,6 @@ class ConfigValidator:
             if value.lower() in ('false', 'no', '0', 'n', 'off'):
                 return False
 
-        # If we get here, use default
         if name:
             logger.warning(f"Invalid {name} boolean value: {value}, using default: {default}")
         return default
@@ -99,15 +81,6 @@ class ConfigValidator:
     def safe_enum(value: Any, allowed_values: List[Any], default: Any, name: Optional[str] = None) -> Any:
         """
         Validate value against an enumeration of allowed values.
-
-        Args:
-            value: Value to validate
-            allowed_values: List of allowed values
-            default: Default value if validation fails
-            name: Parameter name for logging
-
-        Returns:
-            Any: Validated value
         """
         if value in allowed_values:
             return value
@@ -125,9 +98,6 @@ class Configuration:
     def __init__(self, initial_config: Dict[str, Any] = None):
         """
         Initialize the configuration manager.
-
-        Args:
-            initial_config: Initial configuration dictionary
         """
         self._config = initial_config or {}
         self._lock = threading.RLock()
@@ -163,15 +133,9 @@ class Configuration:
         self.register_validator("gop",
             lambda v: ConfigValidator.safe_int(v, 30, 1, 300, "GOP"))
 
-        # Feature flags
+        # Feature flag for ONVIF remains validated
         self.register_validator("enable_onvif",
             lambda v: ConfigValidator.safe_bool(v, True, "ENABLE_ONVIF"))
-        self.register_validator("enable_low_res_profile",
-            lambda v: ConfigValidator.safe_bool(v, False, "ENABLE_LOW_RES_PROFILE"))
-        self.register_validator("enable_mobile_profile",
-            lambda v: ConfigValidator.safe_bool(v, False, "ENABLE_MOBILE_PROFILE"))
-        self.register_validator("enable_resource_monitoring",
-            lambda v: ConfigValidator.safe_bool(v, True, "ENABLE_RESOURCE_MONITORING"))
 
         # H.264 profile validation
         self.register_validator("h264_profile",
@@ -184,10 +148,6 @@ class Configuration:
     def register_validator(self, key: str, validator_func: callable) -> None:
         """
         Register a validation function for a configuration key.
-
-        Args:
-            key: Configuration key
-            validator_func: Function that takes a value and returns a validated value
         """
         with self._lock:
             self._validators[key] = validator_func
@@ -195,9 +155,6 @@ class Configuration:
     def register_watcher(self, watcher_func: callable) -> None:
         """
         Register a function to be called when configuration changes.
-
-        Args:
-            watcher_func: Function that takes the new configuration dictionary
         """
         with self._lock:
             self._watchers.append(watcher_func)
@@ -205,13 +162,6 @@ class Configuration:
     def get(self, key: str, default: Any = None) -> Any:
         """
         Get a configuration value with an optional default.
-
-        Args:
-            key: Configuration key
-            default: Default value if key not found
-
-        Returns:
-            Any: Configuration value or default
         """
         with self._lock:
             return self._config.get(key, default)
@@ -219,23 +169,16 @@ class Configuration:
     def set(self, key: str, value: Any) -> None:
         """
         Set a configuration value with validation.
-
-        Args:
-            key: Configuration key
-            value: Value to set
         """
         with self._lock:
-            # Apply validation if available
             if key in self._validators:
                 validated_value = self._validators[key](value)
                 self._config[key] = validated_value
             else:
                 self._config[key] = value
 
-            # Notify watchers
             config_copy = self._config.copy()
 
-        # Call watchers outside the lock to prevent deadlocks
         for watcher in self._watchers:
             try:
                 watcher(config_copy)
@@ -245,23 +188,17 @@ class Configuration:
     def update(self, new_config: Dict[str, Any]) -> None:
         """
         Update multiple configuration values at once.
-
-        Args:
-            new_config: Dictionary of new configuration values
         """
         with self._lock:
             for key, value in new_config.items():
-                # Apply validation if available
                 if key in self._validators:
                     validated_value = self._validators[key](value)
                     self._config[key] = validated_value
                 else:
                     self._config[key] = value
 
-            # Notify watchers
             config_copy = self._config.copy()
 
-        # Call watchers outside the lock to prevent deadlocks
         for watcher in self._watchers:
             try:
                 watcher(config_copy)
@@ -271,9 +208,6 @@ class Configuration:
     def to_dict(self) -> Dict[str, Any]:
         """
         Get a copy of the entire configuration.
-
-        Returns:
-            Dict[str, Any]: Configuration dictionary
         """
         with self._lock:
             return self._config.copy()
@@ -281,12 +215,6 @@ class Configuration:
     def load_from_file(self, file_path: str) -> bool:
         """
         Load configuration from a JSON file.
-
-        Args:
-            file_path: Path to the configuration file
-
-        Returns:
-            bool: True if successful, False otherwise
         """
         try:
             path = Path(file_path)
@@ -308,18 +236,11 @@ class Configuration:
     def save_to_file(self, file_path: str) -> bool:
         """
         Save current configuration to a JSON file.
-
-        Args:
-            file_path: Path to the configuration file
-
-        Returns:
-            bool: True if successful, False otherwise
         """
         try:
             with self._lock:
                 config_copy = self._config.copy()
 
-            # Ensure directory exists
             path = Path(file_path)
             path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -334,7 +255,7 @@ class Configuration:
             return False
 
 
-# Global configuration instance
+# Global configuration instance and lock
 _config = None
 _config_lock = threading.Lock()
 
@@ -343,21 +264,16 @@ def get_config() -> Dict[str, Any]:
     """
     Load application configuration from environment variables with sensible defaults.
     Uses a singleton pattern to avoid reloading multiple times.
-
-    Returns:
-        Dict[str, Any]: Configuration dictionary
     """
     global _config
 
     with _config_lock:
-        # Return existing config if already loaded
         if _config:
             return _config.to_dict()
 
-        # Create new configuration instance
         _config = Configuration()
 
-        # Try to load configuration from file first
+        # Attempt to load configuration from a file if specified
         config_file = os.environ.get("CONFIG_FILE")
         if config_file:
             _config.load_from_file(config_file)
@@ -422,9 +338,7 @@ def get_config() -> Dict[str, Any]:
             # Resource monitoring
             "enable_resource_monitoring": os.environ.get("ENABLE_RESOURCE_MONITORING", "true"),
 
-            # Multi-profile configuration
-            "enable_low_res_profile": os.environ.get("ENABLE_LOW_RES_PROFILE", "false"),
-            "enable_mobile_profile": os.environ.get("ENABLE_MOBILE_PROFILE", "false"),
+            # Profile name for the dashboard
             "profile_name": os.environ.get("PROFILE_NAME", "YoLink Dashboard"),
 
             # Store primary values for derived calculations
@@ -437,14 +351,14 @@ def get_config() -> Dict[str, Any]:
         # Update configuration with values from environment
         _config.update(config)
 
-        # Calculate dependent values for low-res profile
+        # Calculate dependent values for profiles
         primary_width = _config.get("width")
         primary_height = _config.get("height")
         primary_bitrate = _config.get("bitrate")
         primary_fps = _config.get("frame_rate")
 
-        # Update low-res profile settings
-        low_res_config = {
+        # Configure low-resolution and mobile profiles unconditionally
+        profile_config = {
             # Low resolution profile settings
             "low_res_width": os.environ.get("LOW_RES_WIDTH", primary_width // 2),
             "low_res_height": os.environ.get("LOW_RES_HEIGHT", primary_height // 2),
@@ -463,24 +377,27 @@ def get_config() -> Dict[str, Any]:
             "sensors_per_page": os.environ.get("SENSORS_PER_PAGE", 20),
         }
 
-        # Update configuration with low-res profile settings
-        _config.update(low_res_config)
+        # Update configuration with profile settings
+        _config.update(profile_config)
 
         # Log configuration summary
-        logger.info(f"Configuration loaded:"
-                    f"\n - Server: {_config.get('server_ip')}"
-                    f"\n - RTSP: Port={_config.get('rtsp_port')}, Stream={_config.get('stream_name')}"
-                    f"\n - RTSP Quality: Bitrate={_config.get('bitrate')}kbps, Quality={_config.get('quality')}, GOP={_config.get('gop')}"
-                    f"\n - Video: {_config.get('width')}x{_config.get('height')} @ {_config.get('frame_rate')}fps"
-                    f"\n - HTTP API: Port={_config.get('http_port')}"
-                    f"\n - ONVIF: Enabled={_config.get('enable_onvif')}, Port={_config.get('onvif_port')}")
+        logger.info(
+            f"Configuration loaded:"
+            f"\n - Server: {_config.get('server_ip')}"
+            f"\n - RTSP: Port={_config.get('rtsp_port')}, Stream={_config.get('stream_name')}"
+            f"\n - RTSP Quality: Bitrate={_config.get('bitrate')}kbps, Quality={_config.get('quality')}, GOP={_config.get('gop')}"
+            f"\n - Video: {_config.get('width')}x{_config.get('height')} @ {_config.get('frame_rate')}fps"
+            f"\n - HTTP API: Port={_config.get('http_port')}"
+            f"\n - ONVIF: Enabled={_config.get('enable_onvif')}, Port={_config.get('onvif_port')}"
+        )
 
-        # Log multi-profile configuration if enabled
-        if _config.get("enable_low_res_profile"):
-            logger.info(f"Low-resolution profile enabled: {_config.get('low_res_width')}x{_config.get('low_res_height')} @ {_config.get('low_res_fps')}fps")
-
-        if _config.get("enable_mobile_profile"):
-            logger.info(f"Mobile profile enabled: {_config.get('mobile_width')}x{_config.get('mobile_height')} @ {_config.get('mobile_fps')}fps")
+        # Log profile configurations (always enabled now)
+        logger.info(
+            f"Low-resolution profile: {_config.get('low_res_width')}x{_config.get('low_res_height')} @ {_config.get('low_res_fps')}fps"
+        )
+        logger.info(
+            f"Mobile profile: {_config.get('mobile_width')}x{_config.get('mobile_height')} @ {_config.get('mobile_fps')}fps"
+        )
 
         return _config.to_dict()
 
@@ -489,29 +406,17 @@ def reload_config() -> Dict[str, Any]:
     """
     Reload configuration from environment variables.
     Useful for runtime configuration updates.
-
-    Returns:
-        Dict[str, Any]: Updated configuration dictionary
     """
     global _config
 
     with _config_lock:
-        # Clear existing configuration
         _config = None
-
-        # Reload configuration
         return get_config()
 
 
 def save_config(file_path: str) -> bool:
     """
     Save current configuration to a file.
-
-    Args:
-        file_path: Path to save the configuration to
-
-    Returns:
-        bool: True if successful, False otherwise
     """
     global _config
 

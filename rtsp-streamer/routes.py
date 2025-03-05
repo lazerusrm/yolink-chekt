@@ -71,7 +71,7 @@ def create_api_routes(app: Flask, config: Dict[str, Any],
             "lastUpdate": datetime.datetime.now().isoformat()
         })
 
-    @app.route('/snapshot')
+    @app.route('/onvif/snapshot')
     def snapshot():
         """
         Generate and return a snapshot image of the current dashboard view.

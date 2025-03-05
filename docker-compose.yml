@@ -71,6 +71,7 @@ services:
       - LOW_RES_BITRATE=256
       - LOW_RES_SENSORS_PER_PAGE=6
       - SENSORS_PER_PAGE=20
+      - MAC_ADDRESS=51:12:56:73:D6:AA
     ports:
       - "8554:8554"
       - "8555:8555"

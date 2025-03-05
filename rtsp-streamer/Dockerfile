@@ -63,6 +63,7 @@ ENV ONVIF_PORT=8555
 ENV SERVER_IP=10.250.250.2
 ENV RTSP_API_PORT=3001
 ENV WS_PORT=9999
+MAC_ADDRESS=51:12:56:73:D6:AA
 
 # Run the entrypoint script, which starts both MediaMTX and the YoLink RTSP server
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]

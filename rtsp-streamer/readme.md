@@ -143,7 +143,7 @@ rtsp://192.168.1.100:8554/yolink-dashboard
 ### API Endpoints
 
 - `GET /status`: Service status and stream information
-- `GET /snapshot`: Current dashboard image
+- `GET /onvif/snapshot`: Current dashboard image
 - `GET /sensors`: List of all sensors and their states
 - `POST /page/<number>`: Set current page number (1-based)
 - `POST /restart-stream`: Restart RTSP stream

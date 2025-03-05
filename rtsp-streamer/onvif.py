@@ -684,15 +684,9 @@ def handle_get_service_capabilities(config: Dict[str, Any], service_type: str) -
 def handle_get_profiles(config: Dict[str, Any], onvif_service) -> str:
     """
     Handle GetProfiles request.
-
-    Args:
-        config: Application configuration
-        onvif_service: OnvifService instance
-
-    Returns:
-        str: SOAP response XML
+    Assumes that all profiles (main, low, and mobile) are always present.
     """
-    # Use media profiles from onvif_service if available, otherwise use defaults
+    # Always use the full list of profiles
     if onvif_service and hasattr(onvif_service, 'media_profiles'):
         profiles = onvif_service.media_profiles
     else:
@@ -703,9 +697,24 @@ def handle_get_profiles(config: Dict[str, Any], onvif_service) -> str:
                 "resolution": {"width": config.get("width", 1920), "height": config.get("height", 1080)},
                 "fps": config.get("frame_rate", 6),
                 "encoding": "H264"
+            },
+            {
+                "token": "profile2",
+                "name": "YoLink Low Stream",
+                "resolution": {"width": int(config.get("width", 1920)) // 2,
+                               "height": int(config.get("height", 1080)) // 2},
+                "fps": min(int(config.get("frame_rate", 6)), 4),
+                "encoding": "H264"
+            },
+            {
+                "token": "profile3",
+                "name": "YoLink Mobile Stream",
+                "resolution": {"width": int(config.get("width", 1920)) // 4,
+                               "height": int(config.get("height", 1080)) // 4},
+                "fps": 2,
+                "encoding": "H264"
             }
         ]
-
     profiles_xml = ""
     for profile in profiles:
         profiles_xml += f"""
@@ -748,7 +757,6 @@ def handle_get_profiles(config: Dict[str, Any], onvif_service) -> str:
   </tt:VideoEncoderConfiguration>
 </trt:Profiles>
 """
-
     response = f"""
 <trt:GetProfilesResponse>
 {profiles_xml}
@@ -763,16 +771,8 @@ def handle_get_profiles(config: Dict[str, Any], onvif_service) -> str:
 def handle_get_profile(config: Dict[str, Any], onvif_service, token: str) -> str:
     """
     Handle GetProfile request.
-
-    Args:
-        config: Application configuration
-        onvif_service: OnvifService instance
-        token: Profile token
-
-    Returns:
-        str: SOAP response XML
+    Assumes that the requested profile exists.
     """
-    # Use media profiles from onvif_service if available, otherwise use defaults
     if onvif_service and hasattr(onvif_service, 'media_profiles'):
         profiles = onvif_service.media_profiles
     else:
@@ -783,20 +783,26 @@ def handle_get_profile(config: Dict[str, Any], onvif_service, token: str) -> str
                 "resolution": {"width": config.get("width", 1920), "height": config.get("height", 1080)},
                 "fps": config.get("frame_rate", 6),
                 "encoding": "H264"
+            },
+            {
+                "token": "profile2",
+                "name": "YoLink Low Stream",
+                "resolution": {"width": int(config.get("width", 1920)) // 2,
+                               "height": int(config.get("height", 1080)) // 2},
+                "fps": min(int(config.get("frame_rate", 6)), 4),
+                "encoding": "H264"
+            },
+            {
+                "token": "profile3",
+                "name": "YoLink Mobile Stream",
+                "resolution": {"width": int(config.get("width", 1920)) // 4,
+                               "height": int(config.get("height", 1080)) // 4},
+                "fps": 2,
+                "encoding": "H264"
             }
         ]
-
-    # Find the requested profile
-    profile = None
-    for p in profiles:
-        if p['token'] == token:
-            profile = p
-            break
-
-    if profile is None:
-        # If token not found, use the first profile
-        profile = profiles[0]
-
+    # Assume the requested profile is present; if not, default to the first profile.
+    profile = next((p for p in profiles if p['token'] == token), profiles[0])
     response = f"""
 <trt:GetProfileResponse>
   <trt:Profile fixed="true" token="{profile['token']}">
@@ -887,31 +893,20 @@ def handle_get_stream_uri(config: Dict[str, Any], onvif_service, token: str) -> 
 
 def handle_get_snapshot_uri(config: Dict[str, Any], token: str) -> str:
     """
-    Handle GetSnapshotUri request with authentication support.
-
-    Args:
-        config: Application configuration
-        token: Profile token
-
-    Returns:
-        str: SOAP response XML
+    Handle GetSnapshotUri request.
+    Assumes that all profiles are present.
     """
     server_ip = config.get("server_ip")
     http_port = config.get("http_port", 3001)
-
-    # Add authentication parameters to snapshot URL if auth is required
     auth_part = ""
     if config.get("onvif_auth_required", True):
         username = config.get("onvif_username", "admin")
         password = config.get("onvif_password", "123456")
         auth_part = f"{username}:{password}@"
-
-    # Return HTTP URI for snapshot with proper auth if needed
     snapshot_url = f"http://{auth_part}{server_ip}:{http_port}/onvif/snapshot"
-
     logger.info(
-        f"Providing snapshot URI for profile {token}: {snapshot_url.replace(auth_part, '***:***@' if auth_part else '')}")
-
+        f"Providing snapshot URI for profile {token}: {snapshot_url.replace(auth_part, '***:***@' if auth_part else '')}"
+    )
     response = f"""
 <trt:GetSnapshotUriResponse>
   <trt:MediaUri>

@@ -268,7 +268,7 @@ def setup_integration(config: Dict[str, Any], onvif_service, rtsp_streamer, rend
     OnvifStreamingIntegration]:
     """
     Set up the integration between ONVIF service and RTSP streamer.
-    This function validates the components are compatible before creating the integration.
+    This function validates that the required methods are available and creates the integration.
 
     Args:
         config: Application configuration
@@ -279,27 +279,16 @@ def setup_integration(config: Dict[str, Any], onvif_service, rtsp_streamer, rend
     Returns:
         Optional[OnvifStreamingIntegration]: Integration instance or None if not supported
     """
-    # Only set up integration if we have multi-profile support
-    multi_profile_enabled = (
-            config.get("enable_low_res_profile", False) or
-            config.get("enable_mobile_profile", False)
-    )
-
-    if not multi_profile_enabled:
-        logger.info("Multi-profile streaming not enabled in configuration")
-        return None
-
-    # Check if the rtsp_streamer supports multi-profile streaming
+    # Verify that rtsp_streamer supports multi-profile streaming
     if not hasattr(rtsp_streamer, 'start_profile_stream'):
         logger.warning("RTSP streamer does not support multi-profile streaming")
         return None
 
-    # Check if the onvif_service has callback registration
+    # Verify that onvif_service supports profile callbacks
     if not hasattr(onvif_service, 'register_profile_callback'):
         logger.warning("ONVIF service does not support profile callbacks")
         return None
 
-    # Create integration instance
     try:
         integration = OnvifStreamingIntegration(config, onvif_service, rtsp_streamer, renderer)
         logger.info("ONVIF integration with multi-profile streaming enabled")

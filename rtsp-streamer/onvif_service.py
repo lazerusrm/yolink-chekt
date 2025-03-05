@@ -448,7 +448,8 @@ class OnvifService(threading.Thread):
         self.announce_interval = 300
 
         self.profiles_lock = threading.RLock()
-        self.media_profiles = [
+        self.media_profiles = []
+        self.media_profiles.append(
             ProfileInfo(
                 token="profile1",
                 name="Dashboard Main Stream",
@@ -456,24 +457,28 @@ class OnvifService(threading.Thread):
                 height=config.get("height", 1080),
                 fps=config.get("frame_rate", 6),
                 sensors_per_page=config.get("sensors_per_page", 20)
-            ),
+            )
+        )
+        self.media_profiles.append(
             ProfileInfo(
                 token="profile2",
                 name="Dashboard Low Stream",
-                width=1280,
-                height=720,
-                fps=6,
-                sensors_per_page=6
-            ),
+                width=config.get("low_res_width", config.get("width", 1920) // 2),
+                height=config.get("low_res_height", config.get("height", 1080) // 2),
+                fps=config.get("low_res_fps", min(config.get("frame_rate", 6), 4)),
+                sensors_per_page=config.get("low_res_sensors_per_page", 6)
+            )
+        )
+        self.media_profiles.append(
             ProfileInfo(
                 token="profile3",
                 name="Dashboard Mobile Stream",
-                width=640,
-                height=360,
-                fps=6,
-                sensors_per_page=4
+                width=config.get("mobile_width", config.get("width", 1920) // 4),
+                height=config.get("mobile_height", config.get("height", 1080) // 4),
+                fps=config.get("mobile_fps", 2),
+                sensors_per_page=config.get("mobile_sensors_per_page", 4)
             )
-        ]
+        )
 
         self.profile_callbacks = {}
         self.running = True
@@ -764,14 +769,8 @@ class OnvifService(threading.Thread):
 
     def _handle_get_stream_uri(self, request: ET.Element) -> str:
         """
-        Handle GetStreamUri request with comprehensive protocol extraction
-        according to ONVIF Profile S standards.
-
-        Args:
-            request: Request XML root
-
-        Returns:
-            str: SOAP response XML
+        Handle GetStreamUri request with comprehensive protocol extraction.
+        Assumes that all profiles are always present.
         """
         try:
             body = request.find('.//soap:Body', NS)
@@ -786,44 +785,20 @@ class OnvifService(threading.Thread):
             if profile_token_elem is None:
                 return XMLGenerator.generate_fault_response("Missing ProfileToken")
 
-            # Extract protocol from the nested StreamSetup/Transport element
-            protocol = "RTSP"  # default value
-            stream_setup = get_stream_uri.find('.//tt:StreamSetup', NS)
-            if stream_setup is None:
-                stream_setup = get_stream_uri.find('.//{http://www.onvif.org/ver10/schema}StreamSetup')
-            if stream_setup is not None:
-                transport = stream_setup.find('.//tt:Transport', NS)
-                if transport is None:
-                    transport = stream_setup.find('.//{http://www.onvif.org/ver10/schema}Transport')
-                if transport is not None:
-                    protocol_elem = transport.find('.//tt:Protocol', NS)
-                    if protocol_elem is None:
-                        protocol_elem = transport.find('.//{http://www.onvif.org/ver10/schema}Protocol')
-                    if protocol_elem is not None and protocol_elem.text:
-                        protocol = protocol_elem.text
-
-            logger.info(f"GetStreamUri requested with protocol: {protocol}")
-
             token = profile_token_elem.text
-            profile_found = False
+            # Activate the matching profile (assumes profile exists)
             with self.profiles_lock:
                 for profile_info in self.media_profiles:
                     if profile_info.token == token:
-                        profile_found = True
                         profile_info.activate()
                         break
-
-            if not profile_found:
-                return XMLGenerator.generate_fault_response(
-                    f"Profile not found: {token}",
-                    "ter:InvalidArgVal/ter:NoProfile"
-                )
 
             if token in self.profile_callbacks:
                 self.profile_callbacks[token](token)
             elif "default" in self.profile_callbacks:
                 self.profile_callbacks["default"](token)
 
+            # Determine stream name based on profile token
             stream_name = self.stream_name
             if token == "profile1":
                 stream_name = f"{self.stream_name}_main"
@@ -852,9 +827,6 @@ class OnvifService(threading.Thread):
       </trt:MediaUri>
     </trt:GetStreamUriResponse>
     """
-            logger.info(
-                f"Providing stream URI for profile {token}: {stream_url.replace(auth_part, '***:***@' if auth_part else '')}")
-
             return XMLGenerator.generate_soap_response(
                 "http://www.onvif.org/ver10/media/wsdl/GetStreamUriResponse",
                 response,
@@ -1087,12 +1059,7 @@ class OnvifService(threading.Thread):
     def _handle_get_profile(self, request: ET.Element) -> str:
         """
         Handle GetProfile request.
-
-        Args:
-            request: Request XML root
-
-        Returns:
-            str: SOAP response XML
+        Since all profiles are always created, no fallback fault is returned if a profile isn’t found.
         """
         body = request.find('.//soap:Body', NS)
         if body is None:
@@ -1107,18 +1074,12 @@ class OnvifService(threading.Thread):
             return XMLGenerator.generate_fault_response("Missing ProfileToken")
 
         token = profile_token_elem.text
-        profile = None
         with self.profiles_lock:
+            # Unconditionally assume the profile exists as all profiles are always added
             for profile_info in self.media_profiles:
                 if profile_info.token == token:
                     profile = profile_info.to_dict()
                     break
-
-        if profile is None:
-            return XMLGenerator.generate_fault_response(
-                f"Profile not found: {token}",
-                "ter:InvalidArgVal/ter:NoProfile"
-            )
 
         if token in self.profile_callbacks:
             self.profile_callbacks[token](token)
@@ -1126,77 +1087,77 @@ class OnvifService(threading.Thread):
             self.profile_callbacks["default"](token)
 
         response = f"""
-<trt:GetProfileResponse>
-  <trt:Profile fixed="true" token="{profile['token']}">
-    <tt:Name>{profile['name']}</tt:Name>
-    <tt:VideoSourceConfiguration token="VideoSourceConfig">
-      <tt:Name>VideoSourceConfig</tt:Name>
-      <tt:UseCount>1</tt:UseCount>
-      <tt:SourceToken>VideoSource</tt:SourceToken>
-      <tt:Bounds height="{profile['resolution']['height']}" width="{profile['resolution']['width']}" y="0" x="0"/>
-    </tt:VideoSourceConfiguration>
-    <tt:VideoEncoderConfiguration token="VideoEncoder_{profile['token']}">
-      <tt:Name>VideoEncoder</tt:Name>
-      <tt:UseCount>1</tt:UseCount>
-      <tt:Encoding>{profile['encoding']}</tt:Encoding>
-      <tt:Resolution>
-        <tt:Width>{profile['resolution']['width']}</tt:Width>
-        <tt:Height>{profile['resolution']['height']}</tt:Height>
-      </tt:Resolution>
-      <tt:Quality>5</tt:Quality>
-      <tt:RateControl>
-        <tt:FrameRateLimit>{profile['fps']}</tt:FrameRateLimit>
-        <tt:EncodingInterval>1</tt:EncodingInterval>
-        <tt:BitrateLimit>4096</tt:BitrateLimit>
-      </tt:RateControl>
-      <tt:H264>
-        <tt:GovLength>30</tt:GovLength>
-        <tt:H264Profile>High</tt:H264Profile>
-      </tt:H264>
-      <tt:Multicast>
-        <tt:Address>
-          <tt:Type>IPv4</tt:Type>
-          <tt:IPv4Address>0.0.0.0</tt:IPv4Address>
-        </tt:Address>
-        <tt:Port>0</tt:Port>
-        <tt:TTL>1</tt:TTL>
-        <tt:AutoStart>false</tt:AutoStart>
-      </tt:Multicast>
-      <tt:SessionTimeout>PT60S</tt:SessionTimeout>
-    </tt:VideoEncoderConfiguration>
-    <tt:PTZConfiguration token="PTZConfig_{profile['token']}">
-      <tt:Name>PTZConfig</tt:Name>
-      <tt:UseCount>1</tt:UseCount>
-      <tt:NodeToken>PTZNode</tt:NodeToken>
-      <tt:DefaultAbsolutePantTiltPositionSpace>http://www.onvif.org/ver10/tptz/PanTiltSpaces/PositionGenericSpace</tt:DefaultAbsolutePantTiltPositionSpace>
-      <tt:DefaultAbsoluteZoomPositionSpace>http://www.onvif.org/ver10/tptz/ZoomSpaces/PositionGenericSpace</tt:DefaultAbsoluteZoomPositionSpace>
-      <tt:DefaultPTZTimeout>PT5S</tt:DefaultPTZTimeout>
-      <tt:PanTiltLimits>
-        <tt:Range>
-          <tt:URI>http://www.onvif.org/ver10/tptz/PanTiltSpaces/PositionGenericSpace</tt:URI>
-          <tt:XRange>
-            <tt:Min>-1.0</tt:Min>
-            <tt:Max>1.0</tt:Max>
-          </tt:XRange>
-          <tt:YRange>
-            <tt:Min>-1.0</tt:Min>
-            <tt:Max>1.0</tt:Max>
-          </tt:YRange>
-        </tt:Range>
-      </tt:PanTiltLimits>
-      <tt:ZoomLimits>
-        <tt:Range>
-          <tt:URI>http://www.onvif.org/ver10/tptz/ZoomSpaces/PositionGenericSpace</tt:URI>
-          <tt:XRange>
-            <tt:Min>0.0</tt:Min>
-            <tt:Max>1.0</tt:Max>
-          </tt:XRange>
-        </tt:Range>
-      </tt:ZoomLimits>
-    </tt:PTZConfiguration>
-  </trt:Profile>
-</trt:GetProfileResponse>
-"""
+    <trt:GetProfileResponse>
+      <trt:Profile fixed="true" token="{profile['token']}">
+        <tt:Name>{profile['name']}</tt:Name>
+        <tt:VideoSourceConfiguration token="VideoSourceConfig">
+          <tt:Name>VideoSourceConfig</tt:Name>
+          <tt:UseCount>1</tt:UseCount>
+          <tt:SourceToken>VideoSource</tt:SourceToken>
+          <tt:Bounds height="{profile['resolution']['height']}" width="{profile['resolution']['width']}" y="0" x="0"/>
+        </tt:VideoSourceConfiguration>
+        <tt:VideoEncoderConfiguration token="VideoEncoder_{profile['token']}">
+          <tt:Name>VideoEncoder</tt:Name>
+          <tt:UseCount>1</tt:UseCount>
+          <tt:Encoding>{profile['encoding']}</tt:Encoding>
+          <tt:Resolution>
+            <tt:Width>{profile['resolution']['width']}</tt:Width>
+            <tt:Height>{profile['resolution']['height']}</tt:Height>
+          </tt:Resolution>
+          <tt:Quality>5</tt:Quality>
+          <tt:RateControl>
+            <tt:FrameRateLimit>{profile['fps']}</tt:FrameRateLimit>
+            <tt:EncodingInterval>1</tt:EncodingInterval>
+            <tt:BitrateLimit>4096</tt:BitrateLimit>
+          </tt:RateControl>
+          <tt:H264>
+            <tt:GovLength>30</tt:GovLength>
+            <tt:H264Profile>High</tt:H264Profile>
+          </tt:H264>
+          <tt:Multicast>
+            <tt:Address>
+              <tt:Type>IPv4</tt:Type>
+              <tt:IPv4Address>0.0.0.0</tt:IPv4Address>
+            </tt:Address>
+            <tt:Port>0</tt:Port>
+            <tt:TTL>1</tt:TTL>
+            <tt:AutoStart>false</tt:AutoStart>
+          </tt:Multicast>
+          <tt:SessionTimeout>PT60S</tt:SessionTimeout>
+        </tt:VideoEncoderConfiguration>
+        <tt:PTZConfiguration token="PTZConfig_{profile['token']}">
+          <tt:Name>PTZConfig</tt:Name>
+          <tt:UseCount>1</tt:UseCount>
+          <tt:NodeToken>PTZNode</tt:NodeToken>
+          <tt:DefaultAbsolutePantTiltPositionSpace>http://www.onvif.org/ver10/tptz/PanTiltSpaces/PositionGenericSpace</tt:DefaultAbsolutePantTiltPositionSpace>
+          <tt:DefaultAbsoluteZoomPositionSpace>http://www.onvif.org/ver10/tptz/ZoomSpaces/PositionGenericSpace</tt:DefaultAbsoluteZoomPositionSpace>
+          <tt:DefaultPTZTimeout>PT5S</tt:DefaultPTZTimeout>
+          <tt:PanTiltLimits>
+            <tt:Range>
+              <tt:URI>http://www.onvif.org/ver10/tptz/PanTiltSpaces/PositionGenericSpace</tt:URI>
+              <tt:XRange>
+                <tt:Min>-1.0</tt:Min>
+                <tt:Max>1.0</tt:Max>
+              </tt:XRange>
+              <tt:YRange>
+                <tt:Min>-1.0</tt:Min>
+                <tt:Max>1.0</tt:Max>
+              </tt:YRange>
+            </tt:Range>
+          </tt:PanTiltLimits>
+          <tt:ZoomLimits>
+            <tt:Range>
+              <tt:URI>http://www.onvif.org/ver10/tptz/ZoomSpaces/PositionGenericSpace</tt:URI>
+              <tt:XRange>
+                <tt:Min>0.0</tt:Min>
+                <tt:Max>1.0</tt:Max>
+              </tt:XRange>
+            </tt:Range>
+          </tt:ZoomLimits>
+        </tt:PTZConfiguration>
+      </trt:Profile>
+    </trt:GetProfileResponse>
+    """
         return XMLGenerator.generate_soap_response(
             "http://www.onvif.org/ver10/media/wsdl/GetProfileResponse",
             response

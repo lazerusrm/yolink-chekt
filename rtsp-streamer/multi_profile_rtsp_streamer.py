@@ -3,6 +3,7 @@ Multi-profile RTSP streaming service for the YoLink Dashboard RTSP Server.
 Supports multiple resolution profiles via MediaMTX paths.
 Optimized for resource usage and stability.
 """
+
 import os
 import io
 import time
@@ -17,6 +18,7 @@ from collections import defaultdict
 from rtsp_streamer import RtspStreamer
 
 logger = logging.getLogger(__name__)
+
 
 class ProfileStreamMonitor:
     """Helper class to monitor a single profile stream and its resources."""
@@ -62,6 +64,7 @@ class ProfileStreamMonitor:
                     logger.error(f"Error terminating FFmpeg for {self.profile_id}: {e}")
                 self.ffmpeg_process = None
 
+
 class MultiProfileRtspStreamer(RtspStreamer):
     """
     Multi-profile RTSP streaming service that supports different resolution outputs.
@@ -87,7 +90,7 @@ class MultiProfileRtspStreamer(RtspStreamer):
         # Active worker threads
         self.worker_threads = set()
 
-        # Configure profiles
+        # Configure profiles unconditionally for main, low resolution, and mobile streams.
         self.profile_configs = self._prepare_profile_configs()
 
         # Create FIFO pipes for each profile
@@ -112,7 +115,6 @@ class MultiProfileRtspStreamer(RtspStreamer):
 
         while self.running:
             time.sleep(check_interval)
-
             with self.lock:
                 current_time = time.time()
                 self.last_watchdog_time = current_time
@@ -120,12 +122,12 @@ class MultiProfileRtspStreamer(RtspStreamer):
                 # Check profile monitors for stalled processes
                 for profile_id, monitor in list(self.profile_monitors.items()):
                     if monitor.is_active():
-                        # Check if FFmpeg process is still running
+                        # Restart if FFmpeg process is no longer running
                         if monitor.ffmpeg_process and monitor.ffmpeg_process.poll() is not None:
                             logger.warning(f"Watchdog detected stopped FFmpeg for {profile_id}, restarting")
                             self._restart_profile_stream(profile_id)
 
-            # Prune any dead worker threads
+            # Prune dead worker threads
             live_threads = {t for t in self.worker_threads if t.is_alive()}
             dead_count = len(self.worker_threads) - len(live_threads)
             if dead_count > 0:
@@ -135,42 +137,43 @@ class MultiProfileRtspStreamer(RtspStreamer):
     def _prepare_profile_configs(self) -> Dict[str, Dict[str, Any]]:
         """
         Prepare configuration for each supported profile.
+        All profiles (main, low resolution, and mobile) are always enabled.
+        All numeric values are cast to integers.
         """
-        profiles = {
-            "profile1": {
-                "width": self.config.get("width", 1920),
-                "height": self.config.get("height", 1080),
-                "fps": self.config.get("frame_rate", 6),
-                "bitrate": self.config.get("bitrate", 500),
-                "pipe_path": "/tmp/streams/dashboard_pipe_main",
-                "stream_name": f"{self.config.get('stream_name', 'yolink-dashboard')}_main",
-                "sensors_per_page": self.config.get("sensors_per_page", 20)
-            }
+        profiles = {}
+
+        # Main profile configuration
+        profiles["profile1"] = {
+            "width": int(self.config.get("width", 1920)),
+            "height": int(self.config.get("height", 1080)),
+            "fps": int(self.config.get("frame_rate", 6)),
+            "bitrate": int(self.config.get("bitrate", 1000)),
+            "pipe_path": "/tmp/streams/dashboard_pipe_main",
+            "stream_name": f"{self.config.get('stream_name', 'yolink-dashboard')}_main",
+            "sensors_per_page": int(self.config.get("sensors_per_page", 20))
         }
 
-        # Add low-resolution profile if enabled
-        if self.config.get("enable_low_res_profile", False):
-            profiles["profile2"] = {
-                "width": self.config.get("low_res_width", self.config.get("width", 1920) // 2),
-                "height": self.config.get("low_res_height", self.config.get("height", 1080) // 2),
-                "fps": self.config.get("low_res_fps", min(self.config.get("frame_rate", 6), 4)),
-                "bitrate": self.config.get("low_res_bitrate", self.config.get("bitrate", 500) // 4),
-                "pipe_path": "/tmp/streams/dashboard_pipe_low",
-                "stream_name": f"{self.config.get('stream_name', 'yolink-dashboard')}_low",
-                "sensors_per_page": self.config.get("low_res_sensors_per_page", 6)
-            }
+        # Low-resolution profile configuration
+        profiles["profile2"] = {
+            "width": int(self.config.get("low_res_width", int(self.config.get("width", 1920)) // 2)),
+            "height": int(self.config.get("low_res_height", int(self.config.get("height", 1080)) // 2)),
+            "fps": int(self.config.get("low_res_fps", min(int(self.config.get("frame_rate", 6)), 4))),
+            "bitrate": int(self.config.get("low_res_bitrate", int(self.config.get("bitrate", 500)) // 4)),
+            "pipe_path": "/tmp/streams/dashboard_pipe_low",
+            "stream_name": f"{self.config.get('stream_name', 'yolink-dashboard')}_low",
+            "sensors_per_page": int(self.config.get("low_res_sensors_per_page", 6))
+        }
 
-        # Add mobile profile if enabled
-        if self.config.get("enable_mobile_profile", False):
-            profiles["profile3"] = {
-                "width": self.config.get("mobile_width", self.config.get("width", 1920) // 4),
-                "height": self.config.get("mobile_height", self.config.get("height", 1080) // 4),
-                "fps": self.config.get("mobile_fps", 2),
-                "bitrate": self.config.get("mobile_bitrate", self.config.get("bitrate", 500) // 10),
-                "pipe_path": "/tmp/streams/dashboard_pipe_mobile",
-                "stream_name": f"{self.config.get('stream_name', 'yolink-dashboard')}_mobile",
-                "sensors_per_page": self.config.get("mobile_sensors_per_page", 4)
-            }
+        # Mobile profile configuration
+        profiles["profile3"] = {
+            "width": int(self.config.get("mobile_width", int(self.config.get("width", 1920)) // 4)),
+            "height": int(self.config.get("mobile_height", int(self.config.get("height", 1080)) // 4)),
+            "fps": int(self.config.get("mobile_fps", 2)),
+            "bitrate": int(self.config.get("mobile_bitrate", int(self.config.get("bitrate", 250)) // 10)),
+            "pipe_path": "/tmp/streams/dashboard_pipe_mobile",
+            "stream_name": f"{self.config.get('stream_name', 'yolink-dashboard')}_mobile",
+            "sensors_per_page": int(self.config.get("mobile_sensors_per_page", 4))
+        }
 
         return profiles
 
@@ -178,26 +181,25 @@ class MultiProfileRtspStreamer(RtspStreamer):
         """
         Create FIFO pipes for each profile.
         """
-        if not os.path.exists("/tmp/streams"):
-            os.makedirs("/tmp/streams")
+        streams_dir = "/tmp/streams"
+        if not os.path.exists(streams_dir):
+            os.makedirs(streams_dir)
             logger.info("Created streams directory")
 
         for profile_id, profile_config in self.profile_configs.items():
             pipe_path = profile_config["pipe_path"]
 
-            # If path exists but is not a FIFO, recreate it
+            # If the pipe exists but is not a FIFO, recreate it
             if os.path.exists(pipe_path):
-                # Check if it's a FIFO
                 if not stat.S_ISFIFO(os.stat(pipe_path).st_mode):
                     os.remove(pipe_path)
                     os.mkfifo(pipe_path)
                     logger.info(f"Recreated FIFO for {profile_id} at {pipe_path}")
             else:
-                # Create new FIFO
                 os.mkfifo(pipe_path)
                 logger.info(f"Created FIFO for {profile_id} at {pipe_path}")
 
-            # Initialize profile monitor
+            # Initialize the profile monitor
             self.profile_monitors[profile_id] = ProfileStreamMonitor(
                 profile_id,
                 pipe_path,
@@ -210,15 +212,13 @@ class MultiProfileRtspStreamer(RtspStreamer):
         Additional profiles are started on demand when requested through ONVIF.
         """
         try:
-            # Always start the main profile
+            # Always start the main profile stream
             self.start_profile_stream("profile1")
 
-            # Main monitoring loop
+            # Main loop: monitor and restart profiles as needed
             while self.running:
                 time.sleep(1)
-
                 with self.lock:
-                    # Check if any active profiles need restart
                     for profile_id, monitor in self.profile_monitors.items():
                         if monitor.is_active() and monitor.ffmpeg_process and monitor.ffmpeg_process.poll() is not None:
                             logger.warning(f"FFmpeg process for {profile_id} exited unexpectedly, restarting")
@@ -226,7 +226,6 @@ class MultiProfileRtspStreamer(RtspStreamer):
         except Exception as e:
             logger.error(f"Error in main streamer thread: {e}")
         finally:
-            # Ensure we clean up
             self.stop()
 
     def start_profile_stream(self, profile_id: str) -> bool:
@@ -234,7 +233,7 @@ class MultiProfileRtspStreamer(RtspStreamer):
         Start streaming for a specific profile.
 
         Args:
-            profile_id: Profile identifier (e.g., "profile1", "profile2")
+            profile_id: Profile identifier (e.g., "profile1", "profile2", "profile3")
 
         Returns:
             bool: True if started successfully, False otherwise
@@ -253,8 +252,6 @@ class MultiProfileRtspStreamer(RtspStreamer):
                 logger.info(f"Profile {profile_id} is already streaming")
                 return True
 
-            profile_config = self.profile_configs[profile_id]
-
             if not self._start_ffmpeg_for_profile(profile_id):
                 logger.debug(f"FFmpeg failed to start for {profile_id}")
                 monitor.active = False
@@ -269,18 +266,17 @@ class MultiProfileRtspStreamer(RtspStreamer):
             self.worker_threads.add(feed_thread)
             logger.debug(f"Starting feed thread for {profile_id}")
             feed_thread.start()
-            monitor.feed_thread = feed_thread
-            self.worker_threads.add(feed_thread)
-            logger.debug(f"Started feed thread for {profile_id}")
 
-            # Wait longer to ensure thread initializes
+            # Allow time for the feed thread to initialize
             time.sleep(0.1)
-            logger.debug(f"Post-start state for {profile_id}: running={self.running}, active={monitor.active}")
             if not monitor.active:
                 logger.warning(f"Monitor for {profile_id} became inactive immediately after start")
 
+            profile_config = self.profile_configs[profile_id]
             logger.info(
-                f"Started streaming for {profile_id} at {profile_config['width']}x{profile_config['height']} with {profile_config['sensors_per_page']} sensors per page")
+                f"Started streaming for {profile_id} at {profile_config['width']}x{profile_config['height']} "
+                f"with {profile_config['sensors_per_page']} sensors per page"
+            )
             return True
 
     def _start_ffmpeg_for_profile(self, profile_id: str) -> bool:
@@ -293,16 +289,14 @@ class MultiProfileRtspStreamer(RtspStreamer):
         Returns:
             bool: True if started successfully, False otherwise
         """
-        # Get monitor for this profile
         monitor = self.profile_monitors.get(profile_id)
         if not monitor:
             logger.error(f"No monitor found for profile: {profile_id}")
             return False
 
-        # Clean up any existing process first
+        # Clean up any existing process
         monitor.cleanup()
 
-        # Get profile configuration
         profile_config = self.profile_configs[profile_id]
         pipe_path = profile_config["pipe_path"]
         stream_name = profile_config["stream_name"]
@@ -332,7 +326,7 @@ class MultiProfileRtspStreamer(RtspStreamer):
             "-pix_fmt", "yuv420p",
             "-threads", "2",
             "-s", f"{width}x{height}",
-            "-timeout", "30000000",  # Increased to 30 seconds
+            "-timeout", "30000000",  # 30-second timeout
             "-reconnect", "1",
             "-reconnect_at_eof", "1",
             "-reconnect_streamed", "1",
@@ -345,7 +339,6 @@ class MultiProfileRtspStreamer(RtspStreamer):
         logger.info(f"Starting FFmpeg for {profile_id}: {' '.join(cmd)}")
 
         try:
-            # Start FFmpeg process
             ffmpeg_process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
@@ -353,16 +346,12 @@ class MultiProfileRtspStreamer(RtspStreamer):
                 universal_newlines=True,
                 bufsize=1
             )
-
-            # Store in monitor
             monitor.ffmpeg_process = ffmpeg_process
 
-            # Read initial output to check for immediate errors
             stderr_line = ffmpeg_process.stderr.readline().strip()
             if stderr_line:
                 logger.info(f"FFmpeg initial output for {profile_id}: {stderr_line}")
 
-            # Start monitoring thread using a lambda to ensure the method is bound correctly
             monitor_thread = threading.Thread(
                 target=lambda: self._monitor_ffmpeg_for_profile(profile_id),
                 daemon=True
@@ -372,7 +361,6 @@ class MultiProfileRtspStreamer(RtspStreamer):
             self.worker_threads.add(monitor_thread)
 
             return True
-
         except Exception as e:
             logger.error(f"Failed to start FFmpeg for {profile_id}: {e}")
             monitor.active = False
@@ -414,10 +402,9 @@ class MultiProfileRtspStreamer(RtspStreamer):
                 monitor.pipe_handle = fifo
                 logger.info(f"Opened FIFO {pipe_path} for writing to {profile_id}")
                 with self.lock:
-                    logger.debug(f"Setting monitor.active to True inside feed thread for {profile_id}")
                     monitor.active = True
 
-                # Write an initial frame immediately to keep FFmpeg alive
+                # Write an initial frame to keep FFmpeg alive
                 if hasattr(self.renderer, 'set_resolution'):
                     self.renderer.set_resolution(width, height, profile_config["sensors_per_page"])
                 initial_frame = self.renderer.render_frame(width, height)
@@ -428,19 +415,12 @@ class MultiProfileRtspStreamer(RtspStreamer):
                 fifo.flush()
                 logger.debug(f"Wrote initial frame to FIFO for {profile_id}")
 
-                logger.debug(
-                    f"Starting frame feed loop for {profile_id}, running={self.running}, active={monitor.active}")
-
                 while self.running and monitor.active:
                     try:
                         current_time = time.time()
                         if current_time - last_frame_time >= frame_interval:
                             if hasattr(self.renderer, 'set_resolution'):
-                                self.renderer.set_resolution(
-                                    width,
-                                    height,
-                                    profile_config["sensors_per_page"]
-                                )
+                                self.renderer.set_resolution(width, height, profile_config["sensors_per_page"])
                             frame = self.renderer.render_frame(width, height)
                             buffer.seek(0)
                             buffer.truncate(0)
@@ -452,29 +432,22 @@ class MultiProfileRtspStreamer(RtspStreamer):
                             if current_time - last_stats_time > 60:
                                 elapsed = current_time - last_stats_time
                                 fps_actual = frames_sent / elapsed
-                                logger.info(
-                                    f"Profile {profile_id} stats: {fps_actual:.2f} FPS, {frames_sent} frames sent")
+                                logger.info(f"Profile {profile_id} stats: {fps_actual:.2f} FPS, {frames_sent} frames sent")
                                 frames_sent = 0
                                 last_stats_time = current_time
                         time.sleep(min(0.01, frame_interval / 10))
-                    except IOError as e:
-                        logger.error(f"IOError writing to FIFO for {profile_id}: {e}, likely pipe closed, restarting")
-                        self._restart_profile_stream(profile_id)
-                        break
-                    except BrokenPipeError as e:
-                        logger.error(f"Broken pipe for {profile_id}: {e}, restarting FFmpeg")
+                    except (IOError, BrokenPipeError) as e:
+                        logger.error(f"Error writing to FIFO for {profile_id}: {e}, restarting stream")
                         self._restart_profile_stream(profile_id)
                         break
                     except Exception as e:
                         logger.error(f"Error writing to FIFO for {profile_id}: {e}")
                         time.sleep(0.5)
-                logger.debug(
-                    f"Frame feed loop exited for {profile_id}, running={self.running}, active={monitor.active}")
+                logger.debug(f"Frame feed loop exited for {profile_id}, running={self.running}, active={monitor.active}")
         except Exception as e:
             logger.error(f"Failed to open or maintain FIFO for {profile_id}: {e}")
         finally:
             logger.info(f"Stopped feeding frames to {profile_id}")
-
 
     def _monitor_ffmpeg_for_profile(self, profile_id: str) -> None:
         """
@@ -493,7 +466,7 @@ class MultiProfileRtspStreamer(RtspStreamer):
                 stderr_line = monitor.ffmpeg_process.stderr.readline().strip()
                 if stderr_line:
                     logger.debug(f"FFmpeg output for {profile_id}: {stderr_line}")
-                time.sleep(0.1)  # Small sleep to prevent tight loop
+                time.sleep(0.1)
             if monitor.active:
                 logger.warning(f"FFmpeg for {profile_id} exited with code {monitor.ffmpeg_process.returncode}")
                 self._restart_profile_stream(profile_id)
@@ -514,9 +487,7 @@ class MultiProfileRtspStreamer(RtspStreamer):
             monitor = self.profile_monitors.get(profile_id)
             if monitor and monitor.is_active():
                 logger.info(f"Restarting stream for {profile_id}")
-                logger.debug(f"Pre-cleanup state for {profile_id}: active={monitor.active}")
                 monitor.cleanup()
-                logger.debug(f"Post-cleanup state for {profile_id}: active={monitor.active}")
                 if monitor.feed_thread and monitor.feed_thread.is_alive():
                     monitor.feed_thread.join(timeout=1.0)
                 self.start_profile_stream(profile_id)
