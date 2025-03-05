@@ -354,6 +354,9 @@ class MultiProfileRtspStreamer(RtspStreamer):
             try:
                 self.ffmpeg_processes[profile_id].terminate()
                 self.ffmpeg_processes[profile_id].wait(timeout=5)
+            finally:
+                if profile_id in self.ffmpeg_processes:
+                    del self.ffmpeg_processes[profile_id]
             except subprocess.TimeoutExpired:
                 self.ffmpeg_processes[profile_id].kill()
                 logger.warning(f"FFmpeg process for {profile_id} killed after termination timeout")
