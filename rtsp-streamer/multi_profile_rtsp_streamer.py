@@ -253,17 +253,13 @@ class MultiProfileRtspStreamer(RtspStreamer):
                 logger.info(f"Profile {profile_id} is already streaming")
                 return True
 
-            logger.debug(f"Setting monitor.active to True for {profile_id}")
-            monitor.active = True
-
             profile_config = self.profile_configs[profile_id]
 
             if not self._start_ffmpeg_for_profile(profile_id):
-                logger.debug(f"Resetting monitor.active to False for {profile_id} due to FFmpeg failure")
+                logger.debug(f"FFmpeg failed to start for {profile_id}")
                 monitor.active = False
                 return False
 
-            # Store the thread instance to track the current active thread
             feed_thread = threading.Thread(
                 target=self._feed_frames_to_profile,
                 args=(profile_id,),
@@ -271,10 +267,11 @@ class MultiProfileRtspStreamer(RtspStreamer):
             )
             monitor.feed_thread = feed_thread
             self.worker_threads.add(feed_thread)
+            logger.debug(f"Starting feed thread for {profile_id}")
             feed_thread.start()
 
-            # Increase delay to ensure thread starts with active=True
-            time.sleep(0.5)  # Extended delay to mitigate race condition
+            # Wait longer to ensure thread initializes
+            time.sleep(1.0)  # Extended to 1 second
             logger.debug(f"Post-start state for {profile_id}: running={self.running}, active={monitor.active}")
             if not monitor.active:
                 logger.warning(f"Monitor for {profile_id} became inactive immediately after start")
@@ -413,6 +410,10 @@ class MultiProfileRtspStreamer(RtspStreamer):
             with open(pipe_path, "wb") as fifo:
                 monitor.pipe_handle = fifo
                 logger.info(f"Opened FIFO {pipe_path} for writing to {profile_id}")
+                # Set active here to ensure it’s True when the loop starts
+                with self.lock:
+                    logger.debug(f"Setting monitor.active to True inside feed thread for {profile_id}")
+                    monitor.active = True
                 logger.debug(
                     f"Starting frame feed loop for {profile_id}, running={self.running}, active={monitor.active}")
 
@@ -455,14 +456,6 @@ class MultiProfileRtspStreamer(RtspStreamer):
             logger.error(f"Failed to open or maintain FIFO for {profile_id}: {e}")
         finally:
             logger.info(f"Stopped feeding frames to {profile_id}")
-            with self.lock:
-                if profile_id in self.profile_monitors and self.profile_monitors[profile_id] == monitor:
-                    # Only reset active if this thread is still the current one
-                    if monitor.feed_thread == threading.current_thread():
-                        logger.debug(f"Resetting monitor.active to False for {profile_id} in finally block")
-                        monitor.active = False
-                    else:
-                        logger.debug(f"Skipping reset of monitor.active for {profile_id} as thread is outdated")
 
 
     def _monitor_ffmpeg_for_profile(self, profile_id: str) -> None:
@@ -506,7 +499,6 @@ class MultiProfileRtspStreamer(RtspStreamer):
                 logger.debug(f"Pre-cleanup state for {profile_id}: active={monitor.active}")
                 monitor.cleanup()
                 logger.debug(f"Post-cleanup state for {profile_id}: active={monitor.active}")
-                # Wait for previous thread to fully exit
                 if monitor.feed_thread and monitor.feed_thread.is_alive():
                     monitor.feed_thread.join(timeout=1.0)
                 self.start_profile_stream(profile_id)
