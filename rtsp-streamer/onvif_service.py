@@ -3771,81 +3771,76 @@ class OnvifService(threading.Thread):
         Returns:
             str: SOAP response XML
         """
-        # Get profiles from media_profiles attribute or create default ones
-        if hasattr(self, 'media_profiles') and self.media_profiles:
-            profiles = []
-            for profile in self.media_profiles:
-                if hasattr(profile, 'to_dict'):
-                    profile_dict = profile.to_dict()
-                    profiles.append(profile_dict)
-                else:
-                    profiles.append(profile)
-        else:
-            # Create default profiles
-            profiles = [
-                {
-                    "token": "profile1",
-                    "name": "YoLink Main Stream",
-                    "resolution": {"width": self.config.get("width", 1920), "height": self.config.get("height", 1080)},
-                    "fps": self.config.get("frame_rate", 6),
-                    "encoding": "H264",
-                    "gop": self.config.get("gop", 30),
-                    "bitrate": self.config.get("bitrate", 4000),
-                    "quality": self.config.get("quality", 5)
-                },
-                {
-                    "token": "profile2",
-                    "name": "YoLink Low Stream",
-                    "resolution": {"width": int(self.config.get("width", 1920)) // 2,
-                                   "height": int(self.config.get("height", 1080)) // 2},
-                    "fps": min(int(self.config.get("frame_rate", 6)), 4),
-                    "encoding": "H264",
-                    "gop": self.config.get("gop", 30),
-                    "bitrate": self.config.get("bitrate", 4000) // 2,
-                    "quality": self.config.get("quality", 5)
-                },
-                {
-                    "token": "profile3",
-                    "name": "YoLink Mobile Stream",
-                    "resolution": {"width": int(self.config.get("width", 1920)) // 4,
-                                   "height": int(self.config.get("height", 1080)) // 4},
-                    "fps": 2,
-                    "encoding": "H264",
-                    "gop": self.config.get("gop", 30),
-                    "bitrate": self.config.get("bitrate", 4000) // 4,
-                    "quality": self.config.get("quality", 5)
-                }
-            ]
-
-        profiles_xml = ""
-        for profile in profiles:
-            # Handle different profile data structures
-            token = profile.get("token", "")
-            name = profile.get("name", "")
-
-            # Handle nested resolution dict or direct width/height keys
-            if "resolution" in profile:
-                width = profile["resolution"].get("width", 1920)
-                height = profile["resolution"].get("height", 1080)
+        logger.info("Handling GetProfiles request")
+        try:
+            # Fetch or generate profiles
+            if hasattr(self, 'media_profiles') and self.media_profiles:
+                profiles = []
+                for profile in self.media_profiles:
+                    if hasattr(profile, 'to_dict'):
+                        profiles.append(profile.to_dict())
+                    else:
+                        profiles.append(profile)
+                logger.debug(f"Using {len(profiles)} profiles from media_profiles attribute")
             else:
-                width = profile.get("width", 1920)
-                height = profile.get("height", 1080)
+                # Default profiles with config-based values
+                base_width = self.config.get("width", 1920)
+                base_height = self.config.get("height", 1080)
+                base_fps = self.config.get("frame_rate", 6)
+                base_bitrate = self.config.get("bitrate", 4000)
+                profiles = [
+                    {
+                        "token": "profile1",
+                        "name": "YoLink Main Stream",
+                        "resolution": {"width": base_width, "height": base_height},
+                        "fps": base_fps,
+                        "encoding": "H264",
+                        "gop": self.config.get("gop", 30),
+                        "bitrate": base_bitrate,
+                        "quality": self.config.get("quality", 5)
+                    },
+                    {
+                        "token": "profile2",
+                        "name": "YoLink Low Stream",
+                        "resolution": {"width": base_width // 2, "height": base_height // 2},
+                        "fps": min(base_fps, 4),
+                        "encoding": "H264",
+                        "gop": self.config.get("gop", 30),
+                        "bitrate": base_bitrate // 2,
+                        "quality": self.config.get("quality", 5)
+                    },
+                    {
+                        "token": "profile3",
+                        "name": "YoLink Mobile Stream",
+                        "resolution": {"width": base_width // 4, "height": base_height // 4},
+                        "fps": 2,
+                        "encoding": "H264",
+                        "gop": self.config.get("gop", 30),
+                        "bitrate": base_bitrate // 4,
+                        "quality": self.config.get("quality", 5)
+                    }
+                ]
+                logger.debug("Generated default profiles")
 
-            fps = profile.get("fps", 6)
-            encoding = profile.get("encoding", "H264")
-            gop = profile.get("gop", 30)
-            bitrate = profile.get("bitrate", 4000)
-            quality = profile.get("quality", 5)
+            # Build profiles XML dynamically
+            profiles_xml = ""
+            for profile in profiles:
+                token = profile.get("token", "unknown")
+                name = profile.get("name", f"Profile_{token}")
+                resolution = profile.get("resolution", {"width": 1920, "height": 1080})
+                width = resolution.get("width", 1920)
+                height = resolution.get("height", 1080)
+                fps = profile.get("fps", 6)
+                encoding = profile.get("encoding", "H264")
+                gop = profile.get("gop", 30)
+                bitrate = profile.get("bitrate", 4000)
+                quality = profile.get("quality", 5)
 
-            # H264 profile selection based on resolution
-            h264_profile = "High"
-            if width <= 640 or height <= 480:
-                h264_profile = "Baseline"
-            elif width <= 1280 or height <= 720:
-                h264_profile = "Main"
+                # Determine H264 profile based on resolution
+                h264_profile = "High" if width > 1280 or height > 720 else "Main" if width > 640 or height > 480 else "Baseline"
 
-            # More comprehensive profile XML with all required elements for Profile S
-            profiles_xml += f"""
+                # Profile S compliant XML
+                profiles_xml += f"""
     <trt:Profiles fixed="true" token="{token}">
       <tt:Name>{name}</tt:Name>
       <tt:VideoSourceConfiguration token="VideoSourceConfig_{token}">
@@ -3875,7 +3870,7 @@ class OnvifService(threading.Thread):
         <tt:Multicast>
           <tt:Address>
             <tt:Type>IPv4</tt:Type>
-            <tt:IPv4Address>0.0.0.0</tt:IPv4Address>
+            <tt:IPv4Address>224.0.0.0</tt:IPv4Address>
           </tt:Address>
           <tt:Port>0</tt:Port>
           <tt:TTL>1</tt:TTL>
@@ -3886,20 +3881,11 @@ class OnvifService(threading.Thread):
       <tt:MetadataConfiguration token="MetadataConfig_{token}">
         <tt:Name>MetadataConfig_{token}</tt:Name>
         <tt:UseCount>1</tt:UseCount>
-        <tt:PTZStatus>
-          <tt:Status>false</tt:Status>
-          <tt:Position>false</tt:Position>
-        </tt:PTZStatus>
-        <tt:Events>
-          <tt:Filter>
-            <tt:TopicExpression>tns1:VideoSource/MotionAlarm</tt:TopicExpression>
-          </tt:Filter>
-        </tt:Events>
         <tt:Analytics>false</tt:Analytics>
         <tt:Multicast>
           <tt:Address>
             <tt:Type>IPv4</tt:Type>
-            <tt:IPv4Address>0.0.0.0</tt:IPv4Address>
+            <tt:IPv4Address>224.0.0.0</tt:IPv4Address>
           </tt:Address>
           <tt:Port>0</tt:Port>
           <tt:TTL>1</tt:TTL>
@@ -3907,56 +3893,22 @@ class OnvifService(threading.Thread):
         </tt:Multicast>
         <tt:SessionTimeout>PT60S</tt:SessionTimeout>
       </tt:MetadataConfiguration>
-      <tt:PTZConfiguration token="PTZConfig_{token}">
-        <tt:Name>PTZConfig_{token}</tt:Name>
-        <tt:UseCount>1</tt:UseCount>
-        <tt:NodeToken>PTZNodeToken</tt:NodeToken>
-        <tt:DefaultAbsolutePantTiltPositionSpace>http://www.onvif.org/ver10/tptz/PanTiltSpaces/PositionGenericSpace</tt:DefaultAbsolutePantTiltPositionSpace>
-        <tt:DefaultAbsoluteZoomPositionSpace>http://www.onvif.org/ver10/tptz/ZoomSpaces/PositionGenericSpace</tt:DefaultAbsoluteZoomPositionSpace>
-        <tt:DefaultRelativePanTiltTranslationSpace>http://www.onvif.org/ver10/tptz/PanTiltSpaces/TranslationGenericSpace</tt:DefaultRelativePanTiltTranslationSpace>
-        <tt:DefaultRelativeZoomTranslationSpace>http://www.onvif.org/ver10/tptz/ZoomSpaces/TranslationGenericSpace</tt:DefaultRelativeZoomTranslationSpace>
-        <tt:DefaultContinuousPanTiltVelocitySpace>http://www.onvif.org/ver10/tptz/PanTiltSpaces/VelocityGenericSpace</tt:DefaultContinuousPanTiltVelocitySpace>
-        <tt:DefaultContinuousZoomVelocitySpace>http://www.onvif.org/ver10/tptz/ZoomSpaces/VelocityGenericSpace</tt:DefaultContinuousZoomVelocitySpace>
-        <tt:DefaultPTZSpeed>
-          <tt:PanTilt x="0.0" y="0.0" space="http://www.onvif.org/ver10/tptz/PanTiltSpaces/GenericSpeedSpace"/>
-          <tt:Zoom x="0.0" space="http://www.onvif.org/ver10/tptz/ZoomSpaces/ZoomGenericSpeedSpace"/>
-        </tt:DefaultPTZSpeed>
-        <tt:DefaultPTZTimeout>PT5S</tt:DefaultPTZTimeout>
-        <tt:PanTiltLimits>
-          <tt:Range>
-            <tt:URI>http://www.onvif.org/ver10/tptz/PanTiltSpaces/PositionGenericSpace</tt:URI>
-            <tt:XRange>
-              <tt:Min>-1.0</tt:Min>
-              <tt:Max>1.0</tt:Max>
-            </tt:XRange>
-            <tt:YRange>
-              <tt:Min>-1.0</tt:Min>
-              <tt:Max>1.0</tt:Max>
-            </tt:YRange>
-          </tt:Range>
-        </tt:PanTiltLimits>
-        <tt:ZoomLimits>
-          <tt:Range>
-            <tt:URI>http://www.onvif.org/ver10/tptz/ZoomSpaces/PositionGenericSpace</tt:URI>
-            <tt:XRange>
-              <tt:Min>0.0</tt:Min>
-              <tt:Max>1.0</tt:Max>
-            </tt:XRange>
-          </tt:Range>
-        </tt:ZoomLimits>
-      </tt:PTZConfiguration>
     </trt:Profiles>
     """
+            # Log the generated profiles for diagnostics
+            logger.debug(f"Generated profiles XML: {profiles_xml[:500]}...")
 
-        response = f"""
-    <trt:GetProfilesResponse>
-    {profiles_xml}
-    </trt:GetProfilesResponse>
-    """
-        return XMLGenerator.generate_soap_response(
-            "http://www.onvif.org/ver10/media/wsdl/GetProfilesResponse",
-            response
-        )
+            response = f"<trt:GetProfilesResponse>{profiles_xml}</trt:GetProfilesResponse>"
+            return generate_soap_response(
+                "http://www.onvif.org/ver10/media/wsdl/GetProfilesResponse",
+                response
+            )
+
+        except Exception as e:
+            logger.error(f"Error handling GetProfiles: {e}", exc_info=True)
+            return generate_fault_response(f"Internal error: {str(e)}", "ter:InternalError")
+
+        
 
     def _handle_get_presets(self, request: ET.Element) -> str:
         """
