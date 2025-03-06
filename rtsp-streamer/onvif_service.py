@@ -1670,6 +1670,38 @@ class OnvifService(threading.Thread):
             logger.error(f"Error handling GetSystemDateAndTime: {e}", exc_info=True)
             return XMLGenerator.generate_fault_response(f"Error getting system date and time: {str(e)}")
 
+
+
+    def _handle_get_hostname(self, request: ET.Element) -> str:
+        """
+        Handle GetHostname request.
+        Returns the hostname of the ONVIF device.
+
+        Args:
+            request: Request XML element
+
+        Returns:
+            str: SOAP response XML
+        """
+        try:
+            # Use server_ip as a fallback hostname, or get from socket if preferred
+            hostname = self.server_ip  # Simple fallback; could use socket.gethostname() if needed
+            response = f"""
+    <tds:GetHostnameResponse>
+      <tds:HostnameInformation>
+        <tt:FromDHCP>false</tt:FromDHCP>
+        <tt:Name>{hostname}</tt:Name>
+      </tds:HostnameInformation>
+    </tds:GetHostnameResponse>
+    """
+            return XMLGenerator.generate_soap_response(
+                "http://www.onvif.org/ver10/device/wsdl/GetHostnameResponse",
+                response
+            )
+        except Exception as e:
+            logger.error(f"Error handling GetHostname: {e}", exc_info=True)
+            return XMLGenerator.generate_fault_response(f"Error getting hostname: {str(e)}")
+
     def handle_media_service(self, soap_request: str) -> str:
         """
         Handle ONVIF Media service requests with enhanced protocol support.
