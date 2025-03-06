@@ -1,6 +1,7 @@
 """
 Configuration management for the YoLink Dashboard RTSP Server.
 Provides flexible configuration loading, validation, and update mechanisms.
+Enhanced with ONVIF Profile S compliance options.
 """
 
 import os
@@ -118,6 +119,10 @@ class Configuration:
             lambda v: ConfigValidator.safe_int(v, 8000, 1, 65535, "ONVIF_PORT"))
         self.register_validator("ws_port",
             lambda v: ConfigValidator.safe_int(v, 9999, 1, 65535, "WS_PORT"))
+        self.register_validator("multicast_port",
+            lambda v: ConfigValidator.safe_int(v, 5004, 1, 65535, "MULTICAST_PORT"))
+        self.register_validator("multicast_ttl",
+            lambda v: ConfigValidator.safe_int(v, 5, 1, 255, "MULTICAST_TTL"))
 
         # Video settings
         self.register_validator("width",
@@ -132,18 +137,34 @@ class Configuration:
             lambda v: ConfigValidator.safe_int(v, 5, 1, 10, "QUALITY"))
         self.register_validator("gop",
             lambda v: ConfigValidator.safe_int(v, 30, 1, 300, "GOP"))
+        self.register_validator("event_queue_size",
+            lambda v: ConfigValidator.safe_int(v, 100, 10, 10000, "EVENT_QUEUE_SIZE"))
 
-        # Feature flag for ONVIF remains validated
+        # Feature flags
         self.register_validator("enable_onvif",
             lambda v: ConfigValidator.safe_bool(v, True, "ENABLE_ONVIF"))
+        self.register_validator("enable_multicast",
+            lambda v: ConfigValidator.safe_bool(v, False, "ENABLE_MULTICAST"))
+        self.register_validator("events_enabled",
+            lambda v: ConfigValidator.safe_bool(v, True, "EVENTS_ENABLED"))
+        self.register_validator("metadata_enabled",
+            lambda v: ConfigValidator.safe_bool(v, True, "METADATA_ENABLED"))
+        self.register_validator("onvif_auth_required",
+            lambda v: ConfigValidator.safe_bool(v, True, "ONVIF_AUTH_REQUIRED"))
+        self.register_validator("onvif_digest_auth",
+            lambda v: ConfigValidator.safe_bool(v, True, "ONVIF_DIGEST_AUTH"))
+        self.register_validator("onvif_wssecurity",
+            lambda v: ConfigValidator.safe_bool(v, True, "ONVIF_WSSECURITY"))
 
-        # H.264 profile validation
+        # Enums
         self.register_validator("h264_profile",
             lambda v: ConfigValidator.safe_enum(v, ["Baseline", "Main", "High"], "High", "H264_PROFILE"))
-
-        # ONVIF auth method validation
         self.register_validator("onvif_auth_method",
             lambda v: ConfigValidator.safe_enum(v, ["basic", "ws-security", "both", "none"], "both", "ONVIF_AUTH_METHOD"))
+        self.register_validator("rtsp_transport",
+            lambda v: ConfigValidator.safe_enum(v, ["tcp", "udp"], "tcp", "RTSP_TRANSPORT"))
+        self.register_validator("device_type",
+            lambda v: ConfigValidator.safe_enum(v, ["NetworkVideoTransmitter", "Device"], "NetworkVideoTransmitter", "DEVICE_TYPE"))
 
     def register_validator(self, key: str, validator_func: callable) -> None:
         """
@@ -346,6 +367,30 @@ def get_config() -> Dict[str, Any]:
             "_primary_height": os.environ.get("HEIGHT", 1080),
             "_primary_bitrate": os.environ.get("BITRATE", 500),
             "_primary_fps": os.environ.get("FRAME_RATE", 6),
+
+            # *** ONVIF Profile S Enhancements ***
+
+            # RTSP Streaming Options
+            "rtsp_transport": os.environ.get("RTSP_TRANSPORT", "tcp"),  # 'tcp' or 'udp'
+            "enable_multicast": os.environ.get("ENABLE_MULTICAST", "false").lower() in ["true", "1", "yes"],
+            "multicast_address": os.environ.get("MULTICAST_ADDRESS", "239.0.0.1"),
+            "multicast_port": int(os.environ.get("MULTICAST_PORT", "5004")),
+            "multicast_ttl": int(os.environ.get("MULTICAST_TTL", "5")),
+
+            # Event Settings
+            "events_enabled": os.environ.get("EVENTS_ENABLED", "true").lower() in ["true", "1", "yes"],
+            "event_queue_size": int(os.environ.get("EVENT_QUEUE_SIZE", "100")),
+
+            # Advanced Authentication
+            "onvif_digest_auth": os.environ.get("ONVIF_DIGEST_AUTH", "true").lower() in ["true", "1", "yes"],
+            "onvif_wssecurity": os.environ.get("ONVIF_WSSECURITY", "true").lower() in ["true", "1", "yes"],
+
+            # Metadata support
+            "metadata_enabled": os.environ.get("METADATA_ENABLED", "true").lower() in ["true", "1", "yes"],
+
+            # Additional Profile S requirements
+            "onvif_version": os.environ.get("ONVIF_VERSION", "2.5"),  # ONVIF version
+            "device_type": os.environ.get("DEVICE_TYPE", "NetworkVideoTransmitter"),
         }
 
         # Update configuration with values from environment
@@ -380,6 +425,17 @@ def get_config() -> Dict[str, Any]:
         # Update configuration with profile settings
         _config.update(profile_config)
 
+        # Build ONVIF scopes list
+        scopes = [
+            "onvif://www.onvif.org/type/video_encoder",
+            "onvif://www.onvif.org/Profile/Streaming",
+            "onvif://www.onvif.org/Profile/S",
+            f"onvif://www.onvif.org/name/{_config.get('model')}",
+            f"onvif://www.onvif.org/location/Dashboard",
+            f"onvif://www.onvif.org/hardware/{_config.get('hardware_id')}"
+        ]
+        _config.update({"scopes": scopes})
+
         # Log configuration summary
         logger.info(
             f"Configuration loaded:"
@@ -391,12 +447,19 @@ def get_config() -> Dict[str, Any]:
             f"\n - ONVIF: Enabled={_config.get('enable_onvif')}, Port={_config.get('onvif_port')}"
         )
 
-        # Log profile configurations (always enabled now)
+        # Log profile configurations
         logger.info(
             f"Low-resolution profile: {_config.get('low_res_width')}x{_config.get('low_res_height')} @ {_config.get('low_res_fps')}fps"
         )
         logger.info(
             f"Mobile profile: {_config.get('mobile_width')}x{_config.get('mobile_height')} @ {_config.get('mobile_fps')}fps"
+        )
+
+        # Log ONVIF Profile S configurations
+        logger.info(
+            f"ONVIF Profile S: Version={_config.get('onvif_version')}, "
+            f"Transport={_config.get('rtsp_transport')}, "
+            f"Multicast={_config.get('enable_multicast')}"
         )
 
         return _config.to_dict()

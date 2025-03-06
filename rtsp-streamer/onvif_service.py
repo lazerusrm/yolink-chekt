@@ -1596,39 +1596,73 @@ class OnvifService(threading.Thread):
     def _handle_get_event_properties(self, request: ET.Element) -> str:
         """
         Handle GetEventProperties request.
-        Required for Profile S compliance.
+        Enhanced with more comprehensive event topics for Profile S compliance.
         """
         response = """
-<tev:GetEventPropertiesResponse>
-  <tev:TopicNamespaceLocation>http://www.onvif.org/ver10/topics/topicns.xml</tev:TopicNamespaceLocation>
-  <wsnt:FixedTopicSet>true</wsnt:FixedTopicSet>
-  <wstop:TopicSet>
-    <tns1:Device xmlns:tns1="http://www.onvif.org/ver10/topics">
-      <tns1:Trigger>
-        <tns1:DigitalInput wstop:topic="true">
-          <tns1:State wstop:topic="true"/>
-        </tns1:DigitalInput>
-        <tns1:Status wstop:topic="true"/>
-      </tns1:Trigger>
-    </tns1:Device>
-    <tns1:VideoSource xmlns:tns1="http://www.onvif.org/ver10/topics">
-      <tns1:VideoStream wstop:topic="true">
-        <tns1:Status wstop:topic="true"/>
-      </tns1:VideoStream>
-      <tns1:VideoMotion wstop:topic="true"/>
-    </tns1:VideoSource>
-    <tns1:VideoAnalytics xmlns:tns1="http://www.onvif.org/ver10/topics">
-      <tns1:Motion wstop:topic="true">
-        <tns1:Motion wstop:topic="true"/>
-      </tns1:Motion>
-    </tns1:VideoAnalytics>
-  </wstop:TopicSet>
-  <wsnt:TopicExpressionDialect>http://www.onvif.org/ver10/tev/topicExpression/ConcreteSet</wsnt:TopicExpressionDialect>
-  <wsnt:TopicExpressionDialect>http://docs.oasis-open.org/wsn/t-1/TopicExpression/Concrete</wsnt:TopicExpressionDialect>
-  <wsnt:MessageContentFilterDialect>http://www.onvif.org/ver10/tev/messageContentFilter/ItemFilter</wsnt:MessageContentFilterDialect>
-  <tt:MessageContentSchemaLocation>http://www.onvif.org/ver10/schema/onvif.xsd</tt:MessageContentSchemaLocation>
-</tev:GetEventPropertiesResponse>
-"""
+    <tev:GetEventPropertiesResponse>
+      <tev:TopicNamespaceLocation>http://www.onvif.org/ver10/topics/topicns.xml</tev:TopicNamespaceLocation>
+      <wsnt:FixedTopicSet>true</wsnt:FixedTopicSet>
+      <wstop:TopicSet>
+        <!-- Device management events -->
+        <tns1:Device xmlns:tns1="http://www.onvif.org/ver10/topics">
+          <tns1:Trigger>
+            <tns1:DigitalInput wstop:topic="true">
+              <tns1:State wstop:topic="true"/>
+            </tns1:DigitalInput>
+            <tns1:Status wstop:topic="true"/>
+          </tns1:Trigger>
+          <tns1:IO>
+            <tns1:RelayOutput wstop:topic="true">
+              <tns1:LogicalState wstop:topic="true"/>
+            </tns1:RelayOutput>
+          </tns1:IO>
+          <tns1:Management>
+            <tns1:ConnectionLost wstop:topic="true"/>
+            <tns1:ConnectionRestored wstop:topic="true"/>
+          </tns1:Management>
+        </tns1:Device>
+
+        <!-- Video source events -->
+        <tns1:VideoSource xmlns:tns1="http://www.onvif.org/ver10/topics">
+          <tns1:VideoStream wstop:topic="true">
+            <tns1:Status wstop:topic="true"/>
+          </tns1:VideoStream>
+          <tns1:VideoMotion wstop:topic="true"/>
+          <tns1:TamperDetection wstop:topic="true"/>
+          <tns1:ImageTooBlurry wstop:topic="true"/>
+          <tns1:ImageTooDark wstop:topic="true"/>
+          <tns1:ImageTooBright wstop:topic="true"/>
+        </tns1:VideoSource>
+
+        <!-- Analytics events -->
+        <tns1:VideoAnalytics xmlns:tns1="http://www.onvif.org/ver10/topics">
+          <tns1:Motion wstop:topic="true">
+            <tns1:Motion wstop:topic="true"/>
+          </tns1:Motion>
+          <tns1:ObjectDetection wstop:topic="true">
+            <tns1:Object wstop:topic="true"/>
+          </tns1:ObjectDetection>
+        </tns1:VideoAnalytics>
+
+        <!-- Recording and media events -->
+        <tns1:Recording xmlns:tns1="http://www.onvif.org/ver10/topics">
+          <tns1:RecordingStarted wstop:topic="true"/>
+          <tns1:RecordingStopped wstop:topic="true"/>
+        </tns1:Recording>
+
+        <!-- Configuration events -->
+        <tns1:Configuration xmlns:tns1="http://www.onvif.org/ver10/topics">
+          <tns1:ProfileChanged wstop:topic="true"/>
+          <tns1:VideoSourceConfigurationChanged wstop:topic="true"/>
+          <tns1:VideoEncoderConfigurationChanged wstop:topic="true"/>
+        </tns1:Configuration>
+      </wstop:TopicSet>
+      <wsnt:TopicExpressionDialect>http://www.onvif.org/ver10/tev/topicExpression/ConcreteSet</wsnt:TopicExpressionDialect>
+      <wsnt:TopicExpressionDialect>http://docs.oasis-open.org/wsn/t-1/TopicExpression/Concrete</wsnt:TopicExpressionDialect>
+      <wsnt:MessageContentFilterDialect>http://www.onvif.org/ver10/tev/messageContentFilter/ItemFilter</wsnt:MessageContentFilterDialect>
+      <tt:MessageContentSchemaLocation>http://www.onvif.org/ver10/schema/onvif.xsd</tt:MessageContentSchemaLocation>
+    </tev:GetEventPropertiesResponse>
+    """
         return XMLGenerator.generate_soap_response(
             "http://www.onvif.org/ver10/events/wsdl/GetEventPropertiesResponse",
             response
@@ -2726,6 +2760,204 @@ class OnvifService(threading.Thread):
             logger.error(f"Error getting PTZ status: {e}", exc_info=True)
             return XMLGenerator.generate_fault_response(f"Error getting PTZ status: {str(e)}")
 
+    def _handle_get_profiles(self, request: ET.Element) -> str:
+        """
+        Handle GetProfiles request with enhanced profile configuration.
+        Returns information about all available profiles with Profile S compliant configuration.
+
+        Args:
+            request: Request XML element
+
+        Returns:
+            str: SOAP response XML
+        """
+        # Get profiles from media_profiles attribute or create default ones
+        if hasattr(self, 'media_profiles') and self.media_profiles:
+            profiles = []
+            for profile in self.media_profiles:
+                if hasattr(profile, 'to_dict'):
+                    profile_dict = profile.to_dict()
+                    profiles.append(profile_dict)
+                else:
+                    profiles.append(profile)
+        else:
+            # Create default profiles
+            profiles = [
+                {
+                    "token": "profile1",
+                    "name": "YoLink Main Stream",
+                    "resolution": {"width": self.config.get("width", 1920), "height": self.config.get("height", 1080)},
+                    "fps": self.config.get("frame_rate", 6),
+                    "encoding": "H264",
+                    "gop": self.config.get("gop", 30),
+                    "bitrate": self.config.get("bitrate", 4000),
+                    "quality": self.config.get("quality", 5)
+                },
+                {
+                    "token": "profile2",
+                    "name": "YoLink Low Stream",
+                    "resolution": {"width": int(self.config.get("width", 1920)) // 2,
+                                   "height": int(self.config.get("height", 1080)) // 2},
+                    "fps": min(int(self.config.get("frame_rate", 6)), 4),
+                    "encoding": "H264",
+                    "gop": self.config.get("gop", 30),
+                    "bitrate": self.config.get("bitrate", 4000) // 2,
+                    "quality": self.config.get("quality", 5)
+                },
+                {
+                    "token": "profile3",
+                    "name": "YoLink Mobile Stream",
+                    "resolution": {"width": int(self.config.get("width", 1920)) // 4,
+                                   "height": int(self.config.get("height", 1080)) // 4},
+                    "fps": 2,
+                    "encoding": "H264",
+                    "gop": self.config.get("gop", 30),
+                    "bitrate": self.config.get("bitrate", 4000) // 4,
+                    "quality": self.config.get("quality", 5)
+                }
+            ]
+
+        profiles_xml = ""
+        for profile in profiles:
+            # Handle different profile data structures
+            token = profile.get("token", "")
+            name = profile.get("name", "")
+
+            # Handle nested resolution dict or direct width/height keys
+            if "resolution" in profile:
+                width = profile["resolution"].get("width", 1920)
+                height = profile["resolution"].get("height", 1080)
+            else:
+                width = profile.get("width", 1920)
+                height = profile.get("height", 1080)
+
+            fps = profile.get("fps", 6)
+            encoding = profile.get("encoding", "H264")
+            gop = profile.get("gop", 30)
+            bitrate = profile.get("bitrate", 4000)
+            quality = profile.get("quality", 5)
+
+            # H264 profile selection based on resolution
+            h264_profile = "High"
+            if width <= 640 or height <= 480:
+                h264_profile = "Baseline"
+            elif width <= 1280 or height <= 720:
+                h264_profile = "Main"
+
+            # More comprehensive profile XML with all required elements for Profile S
+            profiles_xml += f"""
+    <trt:Profiles fixed="true" token="{token}">
+      <tt:Name>{name}</tt:Name>
+      <tt:VideoSourceConfiguration token="VideoSourceConfig_{token}">
+        <tt:Name>VideoSourceConfig_{token}</tt:Name>
+        <tt:UseCount>1</tt:UseCount>
+        <tt:SourceToken>VideoSource</tt:SourceToken>
+        <tt:Bounds height="{height}" width="{width}" y="0" x="0"/>
+      </tt:VideoSourceConfiguration>
+      <tt:VideoEncoderConfiguration token="VideoEncoder_{token}">
+        <tt:Name>VideoEncoder_{token}</tt:Name>
+        <tt:UseCount>1</tt:UseCount>
+        <tt:Encoding>{encoding}</tt:Encoding>
+        <tt:Resolution>
+          <tt:Width>{width}</tt:Width>
+          <tt:Height>{height}</tt:Height>
+        </tt:Resolution>
+        <tt:Quality>{quality}</tt:Quality>
+        <tt:RateControl>
+          <tt:FrameRateLimit>{fps}</tt:FrameRateLimit>
+          <tt:EncodingInterval>1</tt:EncodingInterval>
+          <tt:BitrateLimit>{bitrate}</tt:BitrateLimit>
+        </tt:RateControl>
+        <tt:H264>
+          <tt:GovLength>{gop}</tt:GovLength>
+          <tt:H264Profile>{h264_profile}</tt:H264Profile>
+        </tt:H264>
+        <tt:Multicast>
+          <tt:Address>
+            <tt:Type>IPv4</tt:Type>
+            <tt:IPv4Address>0.0.0.0</tt:IPv4Address>
+          </tt:Address>
+          <tt:Port>0</tt:Port>
+          <tt:TTL>1</tt:TTL>
+          <tt:AutoStart>false</tt:AutoStart>
+        </tt:Multicast>
+        <tt:SessionTimeout>PT60S</tt:SessionTimeout>
+      </tt:VideoEncoderConfiguration>
+      <tt:MetadataConfiguration token="MetadataConfig_{token}">
+        <tt:Name>MetadataConfig_{token}</tt:Name>
+        <tt:UseCount>1</tt:UseCount>
+        <tt:PTZStatus>
+          <tt:Status>false</tt:Status>
+          <tt:Position>false</tt:Position>
+        </tt:PTZStatus>
+        <tt:Events>
+          <tt:Filter>
+            <tt:TopicExpression>tns1:VideoSource/MotionAlarm</tt:TopicExpression>
+          </tt:Filter>
+        </tt:Events>
+        <tt:Analytics>false</tt:Analytics>
+        <tt:Multicast>
+          <tt:Address>
+            <tt:Type>IPv4</tt:Type>
+            <tt:IPv4Address>0.0.0.0</tt:IPv4Address>
+          </tt:Address>
+          <tt:Port>0</tt:Port>
+          <tt:TTL>1</tt:TTL>
+          <tt:AutoStart>false</tt:AutoStart>
+        </tt:Multicast>
+        <tt:SessionTimeout>PT60S</tt:SessionTimeout>
+      </tt:MetadataConfiguration>
+      <tt:PTZConfiguration token="PTZConfig_{token}">
+        <tt:Name>PTZConfig_{token}</tt:Name>
+        <tt:UseCount>1</tt:UseCount>
+        <tt:NodeToken>PTZNodeToken</tt:NodeToken>
+        <tt:DefaultAbsolutePantTiltPositionSpace>http://www.onvif.org/ver10/tptz/PanTiltSpaces/PositionGenericSpace</tt:DefaultAbsolutePantTiltPositionSpace>
+        <tt:DefaultAbsoluteZoomPositionSpace>http://www.onvif.org/ver10/tptz/ZoomSpaces/PositionGenericSpace</tt:DefaultAbsoluteZoomPositionSpace>
+        <tt:DefaultRelativePanTiltTranslationSpace>http://www.onvif.org/ver10/tptz/PanTiltSpaces/TranslationGenericSpace</tt:DefaultRelativePanTiltTranslationSpace>
+        <tt:DefaultRelativeZoomTranslationSpace>http://www.onvif.org/ver10/tptz/ZoomSpaces/TranslationGenericSpace</tt:DefaultRelativeZoomTranslationSpace>
+        <tt:DefaultContinuousPanTiltVelocitySpace>http://www.onvif.org/ver10/tptz/PanTiltSpaces/VelocityGenericSpace</tt:DefaultContinuousPanTiltVelocitySpace>
+        <tt:DefaultContinuousZoomVelocitySpace>http://www.onvif.org/ver10/tptz/ZoomSpaces/VelocityGenericSpace</tt:DefaultContinuousZoomVelocitySpace>
+        <tt:DefaultPTZSpeed>
+          <tt:PanTilt x="0.0" y="0.0" space="http://www.onvif.org/ver10/tptz/PanTiltSpaces/GenericSpeedSpace"/>
+          <tt:Zoom x="0.0" space="http://www.onvif.org/ver10/tptz/ZoomSpaces/ZoomGenericSpeedSpace"/>
+        </tt:DefaultPTZSpeed>
+        <tt:DefaultPTZTimeout>PT5S</tt:DefaultPTZTimeout>
+        <tt:PanTiltLimits>
+          <tt:Range>
+            <tt:URI>http://www.onvif.org/ver10/tptz/PanTiltSpaces/PositionGenericSpace</tt:URI>
+            <tt:XRange>
+              <tt:Min>-1.0</tt:Min>
+              <tt:Max>1.0</tt:Max>
+            </tt:XRange>
+            <tt:YRange>
+              <tt:Min>-1.0</tt:Min>
+              <tt:Max>1.0</tt:Max>
+            </tt:YRange>
+          </tt:Range>
+        </tt:PanTiltLimits>
+        <tt:ZoomLimits>
+          <tt:Range>
+            <tt:URI>http://www.onvif.org/ver10/tptz/ZoomSpaces/PositionGenericSpace</tt:URI>
+            <tt:XRange>
+              <tt:Min>0.0</tt:Min>
+              <tt:Max>1.0</tt:Max>
+            </tt:XRange>
+          </tt:Range>
+        </tt:ZoomLimits>
+      </tt:PTZConfiguration>
+    </trt:Profiles>
+    """
+
+        response = f"""
+    <trt:GetProfilesResponse>
+    {profiles_xml}
+    </trt:GetProfilesResponse>
+    """
+        return XMLGenerator.generate_soap_response(
+            "http://www.onvif.org/ver10/media/wsdl/GetProfilesResponse",
+            response
+        )
+
     def _handle_get_presets(self, request: ET.Element) -> str:
         """
         Handle GetPresets request.
@@ -3513,6 +3745,105 @@ Hardware ID: {self.device_info['HardwareId']}
             logger.error(f"Error handling system reboot: {e}", exc_info=True)
             return XMLGenerator.generate_fault_response(f"Error handling system reboot: {str(e)}")
 
+    def _handle_get_stream_uri(self, request: ET.Element) -> str:
+        """
+        Handle GetStreamUri request with support for metadata streams.
+        Returns the RTSP URI for a specific profile.
+
+        Args:
+            request: Request XML element
+
+        Returns:
+            str: SOAP response XML
+        """
+        try:
+            # Extract parameters
+            get_stream_uri = request.find('.//trt:GetStreamUri', NS)
+            if get_stream_uri is None:
+                return XMLGenerator.generate_fault_response(
+                    "Missing GetStreamUri element",
+                    "ter:InvalidArgVal"
+                )
+
+            # Extract profile token
+            profile_token_elem = get_stream_uri.find('.//trt:ProfileToken', NS)
+            if profile_token_elem is None:
+                return XMLGenerator.generate_fault_response(
+                    "Missing ProfileToken",
+                    "ter:InvalidArgVal"
+                )
+
+            profile_token = profile_token_elem.text
+
+            # Extract stream setup details
+            stream_setup = get_stream_uri.find('.//trt:StreamSetup', NS)
+            if stream_setup is None:
+                return XMLGenerator.generate_fault_response(
+                    "Missing StreamSetup",
+                    "ter:InvalidArgVal"
+                )
+
+            # Check if this is a metadata stream request
+            stream_type_elem = stream_setup.find('.//tt:Stream', NS)
+            is_metadata = (stream_type_elem is not None and stream_type_elem.text == "Metadata")
+
+            # Get transport protocol (default to RTSP)
+            transport_elem = stream_setup.find('.//tt:Transport/tt:Protocol', NS)
+            transport = transport_elem.text if transport_elem is not None else "RTSP"
+
+            # First, check the integration layer if available
+            if hasattr(self, 'get_stream_uri'):
+                uri = self.get_stream_uri(profile_token)
+                if uri:
+                    return self._generate_stream_uri_response(uri, is_metadata)
+
+            # Try the integration API
+            if hasattr(self, 'onvif_integration') and hasattr(self.onvif_integration, 'get_stream_uri'):
+                uri = self.onvif_integration.get_stream_uri(profile_token)
+                if uri:
+                    return self._generate_stream_uri_response(uri, is_metadata)
+
+            # Fallback to building the URI manually
+            server_ip = self.config.get("server_ip", "127.0.0.1")
+            rtsp_port = self.config.get("rtsp_port", 554)
+            stream_name = self.config.get("stream_name", "yolink-dashboard")
+
+            # Add profile-specific suffix
+            if profile_token == "profile1":
+                stream_suffix = "_main"
+            elif profile_token == "profile2":
+                stream_suffix = "_sub"
+            elif profile_token == "profile3":
+                stream_suffix = "_mobile"
+            else:
+                stream_suffix = ""
+
+            # Add the suffix to the stream name
+            stream_name = f"{stream_name}{stream_suffix}"
+
+            # Add metadata suffix if requested
+            if is_metadata:
+                stream_name = f"{stream_name}_metadata"
+
+            # Get auth parameters for URL
+            auth_part = ""
+            if self.authentication_required:
+                auth_part = f"{self.username}:{self.password}@"
+
+            # Create the URI based on transport protocol
+            if transport == "HTTP":
+                # HTTP tunneled URI
+                uri = f"http://{auth_part}{server_ip}:{rtsp_port}/{stream_name}"
+            else:
+                # Standard RTSP URI
+                uri = f"rtsp://{auth_part}{server_ip}:{rtsp_port}/{stream_name}"
+
+            return self._generate_stream_uri_response(uri, is_metadata)
+
+        except Exception as e:
+            logger.error(f"Error handling GetStreamUri: {e}", exc_info=True)
+            return XMLGenerator.generate_fault_response(f"Internal error: {str(e)}")
+
     def _handle_get_service_capabilities(self, request: ET.Element, service_type: str) -> str:
         """
         Handle GetServiceCapabilities request for different services.
@@ -3577,6 +3908,31 @@ Hardware ID: {self.device_info['HardwareId']}
 
         return XMLGenerator.generate_soap_response(action, response)
 
+    def _generate_stream_uri_response(self, uri: str, is_metadata: bool = False) -> str:
+        """
+        Generate a SOAP response for GetStreamUri with optional metadata indicator.
+
+        Args:
+            uri: Stream URI
+            is_metadata: Flag indicating if this is a metadata stream
+
+        Returns:
+            str: SOAP response XML
+        """
+        response = f"""
+    <trt:GetStreamUriResponse>
+      <trt:MediaUri>
+        <tt:Uri>{uri}</tt:Uri>
+        <tt:InvalidAfterConnect>false</tt:InvalidAfterConnect>
+        <tt:InvalidAfterReboot>false</tt:InvalidAfterReboot>
+        <tt:Timeout>PT60S</tt:Timeout>
+      </trt:MediaUri>
+    </trt:GetStreamUriResponse>
+    """
+        return XMLGenerator.generate_soap_response(
+            "http://www.onvif.org/ver10/media/wsdl/GetStreamUriResponse",
+            response
+        )
     def _generate_probe_match_response(self) -> str:
         """
         Generate a WS-Discovery ProbeMatch response.
