@@ -26,8 +26,8 @@ class OnvifService(threading.Thread):
         super().__init__()
         self.config = config
         self.server_ip = config.get("server_ip")
-        self.onvif_port = config.get("onvif_port", 8555)
-        self.rtsp_port = config.get("rtsp_port", 8554)
+        self.onvif_port = config.get("onvif_port", 80)
+        self.rtsp_port = config.get("rtsp_port", 554)
         self.stream_name = config.get("stream_name", "yolink-dashboard")
 
         # Generate unique device identifiers

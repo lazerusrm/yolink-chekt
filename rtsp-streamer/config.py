@@ -294,7 +294,7 @@ def get_config() -> Dict[str, Any]:
             "dashboard_url": os.environ.get("DASHBOARD_URL", "http://websocket-proxy:3000"),
 
             # RTSP configuration
-            "rtsp_port": os.environ.get("RTSP_PORT", 8554),
+            "rtsp_port": os.environ.get("RTSP_PORT", 554),
             "stream_name": os.environ.get("STREAM_NAME", "yolink-dashboard"),
 
             # RTSP stream quality settings
@@ -317,14 +317,14 @@ def get_config() -> Dict[str, Any]:
 
             # ONVIF configuration
             "enable_onvif": os.environ.get("ENABLE_ONVIF", "true"),
-            "onvif_port": os.environ.get("ONVIF_PORT", 8555),
+            "onvif_port": os.environ.get("ONVIF_PORT", 80),
             "onvif_username": os.environ.get("ONVIF_USERNAME", "admin"),
             "onvif_password": os.environ.get("ONVIF_PASSWORD", "123456"),
             "onvif_auth_required": os.environ.get("ONVIF_AUTH_REQUIRED", "true"),
             "onvif_auth_method": os.environ.get("ONVIF_AUTH_METHOD", "both"),
 
             # Device information
-            "manufacturer": os.environ.get("MANUFACTURER", "YoLink"),
+            "manufacturer": os.environ.get("MANUFACTURER", "Industrial Camera Systems"),
             "model": os.environ.get("MODEL", "Dashboard-RTSP"),
             "firmware_version": os.environ.get("FIRMWARE_VERSION", "1.0.0"),
             "hardware_id": os.environ.get("HARDWARE_ID", "YOLINK-DASHBOARD-1"),

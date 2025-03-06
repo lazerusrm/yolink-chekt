@@ -58,8 +58,8 @@ The application is configured through environment variables:
 
 ### Core Settings
 - `SERVER_IP`: IP address to bind to (defaults to auto-detected IP)
-- `RTSP_PORT`: RTSP stream port (default: 8554)
-- `RTSP_API_PORT`: HTTP API port (default: 3001)
+- `RTSP_PORT`: RTSP stream port (default: 554)
+- `RTSP_API_PORT`: HTTP API port (default: 80)
 - `STREAM_NAME`: Name of the RTSP stream (default: "yolink-dashboard")
 
 ### Video Quality Settings
@@ -73,7 +73,7 @@ The application is configured through environment variables:
 
 ### ONVIF Settings
 - `ENABLE_ONVIF`: Enable ONVIF service (default: true)
-- `ONVIF_PORT`: ONVIF service port (default: 8555)
+- `ONVIF_PORT`: ONVIF service port (default: 80)
 - `ONVIF_USERNAME`: Authentication username (default: "admin")
 - `ONVIF_PASSWORD`: Authentication password (default: "123456")
 - `ONVIF_AUTH_REQUIRED`: Require authentication (default: true)

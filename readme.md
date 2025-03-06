@@ -13,10 +13,10 @@ This release adds RTSP streaming capabilities to the YoLink-Chekt dashboard, all
 
 ### Accessing the Stream
 
-- **RTSP Stream**: `rtsp://[your-host-ip]:8554/yolink-dashboard`
-- **ONVIF Device**: `onvif://[your-host-ip]:8555`
-- **HTTP API**: `http://[your-host-ip]:3001/status`
-- **Snapshot**: `http://[your-host-ip]:3001/snapshot`
+- **RTSP Stream**: `rtsp://[your-host-ip]:554/yolink-dashboard`
+- **ONVIF Device**: `onvif://[your-host-ip]:80`
+- **HTTP API**: `http://[your-host-ip]:80/status`
+- **Snapshot**: `http://[your-host-ip]:80/onvif/snapshot`
 
 ### Key Features
 
@@ -48,9 +48,9 @@ Edit your `.env` file to customize the RTSP streamer:
 
 ```
 # RTSP Streamer Configuration
-RTSP_PORT=8554
-RTSP_API_PORT=3001
-ONVIF_PORT=8555
+RTSP_PORT=554
+RTSP_API_PORT=80
+ONVIF_PORT=80
 STREAM_NAME=yolink-dashboard
 FRAME_RATE=1
 WIDTH=1920

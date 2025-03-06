@@ -411,7 +411,7 @@ def handle_get_services(config: Dict[str, Any], onvif_service, request_elem) -> 
 
     # Base URLs
     server_ip = config.get("server_ip")
-    onvif_port = config.get("onvif_port", 8555)
+    onvif_port = config.get("onvif_port", 80)
     device_service_url = f"http://{server_ip}:{onvif_port}/onvif/device_service"
     media_service_url = f"http://{server_ip}:{onvif_port}/onvif/media_service"
 
@@ -584,7 +584,7 @@ def handle_get_capabilities(config: Dict[str, Any], onvif_service) -> str:
 
     # Default implementation if onvif_service is not available or has no get_capabilities method
     server_ip = config.get("server_ip")
-    onvif_port = config.get("onvif_port", 8555)
+    onvif_port = config.get("onvif_port", 80)
     device_service_url = f"http://{server_ip}:{onvif_port}/onvif/device_service"
     media_service_url = f"http://{server_ip}:{onvif_port}/onvif/media_service"
 
@@ -1163,9 +1163,9 @@ def handle_get_network_protocols(config: Dict[str, Any]) -> str:
     Returns:
         str: SOAP response XML
     """
-    onvif_port = config.get("onvif_port", 8555)
-    rtsp_port = config.get("rtsp_port", 8554)
-    http_port = config.get("http_port", 3001)
+    onvif_port = config.get("onvif_port", 80)
+    rtsp_port = config.get("rtsp_port", 554)
+    http_port = config.get("http_port", 80)
 
     response = f"""
 <tds:GetNetworkProtocolsResponse>

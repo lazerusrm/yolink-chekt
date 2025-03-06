@@ -48,7 +48,7 @@ COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # Expose ports for RTSP, API, ONVIF, and WebSocket
-EXPOSE 3001 8554 8555 3702/udp
+EXPOSE 554 80 3702/udp
 
 # Set environment variables (can be overridden by docker-compose)
 ENV DASHBOARD_URL=http://websocket-proxy:3000

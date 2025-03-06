@@ -431,9 +431,10 @@ class OnvifService(threading.Thread):
         super().__init__(daemon=True)
         self.config = config
 
-        self.server_ip = config.get("server_ip", "127.0.0.1")
-        self.onvif_port = int(config.get("onvif_port", 8555))
-        self.rtsp_port = int(config.get("rtsp_port", 8554))
+        self.server_ip = config.get("server_ip", "0.0.0.0")
+        self.announce_ip = config.get("announce_ip", self.server_ip)
+        self.onvif_port = int(config.get("onvif_port", 80))
+        self.rtsp_port = int(config.get("rtsp_port", 554))
         self.stream_name = config.get("stream_name", "yolink-dashboard")
 
         self.authentication_required = config.get("onvif_auth_required", True)
