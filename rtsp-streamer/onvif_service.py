@@ -1622,6 +1622,54 @@ class OnvifService(threading.Thread):
             logger.error(f"Error handling GetScopes: {e}", exc_info=True)
             return XMLGenerator.generate_fault_response(f"Error getting scopes: {str(e)}")
 
+    def _handle_get_system_date_and_time(self, request: ET.Element) -> str:
+        """
+        Handle GetSystemDateAndTime request.
+        Returns the current system date and time of the ONVIF device in UTC.
+
+        Args:
+            request: Request XML element
+
+        Returns:
+            str: SOAP response XML
+        """
+        try:
+            # Get current UTC time
+            utc_now = datetime.datetime.utcnow()
+            utc_time_str = utc_now.strftime('%Y-%m-%dT%H:%M:%S.%fZ')
+
+            # Since this is a simple implementation, assume no local time or DST
+            response = f"""
+    <tds:GetSystemDateAndTimeResponse>
+      <tds:SystemDateAndTime>
+        <tt:DateTimeType>Manual</tt:DateTimeType>
+        <tt:DaylightSavings>false</tt:DaylightSavings>
+        <tt:TimeZone>
+          <tt:TZ>UTC</tt:TZ>
+        </tt:TimeZone>
+        <tt:UTCDateTime>
+          <tt:Time>
+            <tt:Hour>{utc_now.hour}</tt:Hour>
+            <tt:Minute>{utc_now.minute}</tt:Minute>
+            <tt:Second>{utc_now.second}</tt:Second>
+          </tt:Time>
+          <tt:Date>
+            <tt:Year>{utc_now.year}</tt:Year>
+            <tt:Month>{utc_now.month}</tt:Month>
+            <tt:Day>{utc_now.day}</tt:Day>
+          </tt:Date>
+        </tt:UTCDateTime>
+      </tds:SystemDateAndTime>
+    </tds:GetSystemDateAndTimeResponse>
+    """
+            return XMLGenerator.generate_soap_response(
+                "http://www.onvif.org/ver10/device/wsdl/GetSystemDateAndTimeResponse",
+                response
+            )
+        except Exception as e:
+            logger.error(f"Error handling GetSystemDateAndTime: {e}", exc_info=True)
+            return XMLGenerator.generate_fault_response(f"Error getting system date and time: {str(e)}")
+
     def handle_media_service(self, soap_request: str) -> str:
         """
         Handle ONVIF Media service requests with enhanced protocol support.
