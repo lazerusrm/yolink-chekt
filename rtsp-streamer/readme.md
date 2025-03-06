@@ -73,7 +73,7 @@ The application is configured through environment variables:
 
 ### ONVIF Settings
 - `ENABLE_ONVIF`: Enable ONVIF service (default: true)
-- `ONVIF_PORT`: ONVIF service port (default: 80)
+- `ONVIF_PORT`: ONVIF service port (default: 8000)
 - `ONVIF_USERNAME`: Authentication username (default: "admin")
 - `ONVIF_PASSWORD`: Authentication password (default: "123456")
 - `ONVIF_AUTH_REQUIRED`: Require authentication (default: true)

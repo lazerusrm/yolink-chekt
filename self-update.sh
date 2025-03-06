@@ -158,7 +158,7 @@ if [ -f "$ENV_FILE" ]; then
 # RTSP Streamer Configuration
 RTSP_PORT=554
 RTSP_API_PORT=80
-ONVIF_PORT=80
+ONVIF_PORT=8000
 STREAM_NAME=yolink-dashboard
 FRAME_RATE=1
 WIDTH=1920

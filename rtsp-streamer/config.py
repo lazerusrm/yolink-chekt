@@ -115,7 +115,7 @@ class Configuration:
         self.register_validator("http_port",
             lambda v: ConfigValidator.safe_int(v, 80, 1, 65535, "HTTP_PORT"))
         self.register_validator("onvif_port",
-            lambda v: ConfigValidator.safe_int(v, 80, 1, 65535, "ONVIF_PORT"))
+            lambda v: ConfigValidator.safe_int(v, 8000, 1, 65535, "ONVIF_PORT"))
         self.register_validator("ws_port",
             lambda v: ConfigValidator.safe_int(v, 9999, 1, 65535, "WS_PORT"))
 
@@ -317,7 +317,7 @@ def get_config() -> Dict[str, Any]:
 
             # ONVIF configuration
             "enable_onvif": os.environ.get("ENABLE_ONVIF", "true"),
-            "onvif_port": os.environ.get("ONVIF_PORT", 80),
+            "onvif_port": os.environ.get("ONVIF_PORT", 8000),
             "onvif_username": os.environ.get("ONVIF_USERNAME", "admin"),
             "onvif_password": os.environ.get("ONVIF_PASSWORD", "123456"),
             "onvif_auth_required": os.environ.get("ONVIF_AUTH_REQUIRED", "true"),

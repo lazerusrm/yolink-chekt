@@ -433,7 +433,7 @@ class OnvifService(threading.Thread):
 
         self.server_ip = config.get("server_ip", "0.0.0.0")
         self.announce_ip = config.get("announce_ip", self.server_ip)
-        self.onvif_port = int(config.get("onvif_port", 80))
+        self.onvif_port = int(config.get("onvif_port", 8000))
         self.rtsp_port = int(config.get("rtsp_port", 554))
         self.stream_name = config.get("stream_name", "yolink-dashboard")
 

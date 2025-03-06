@@ -218,7 +218,7 @@ class DashboardApp:
             "fps": 6,
             "rtsp_port": 554,
             "http_port": 80,
-            "onvif_port": 80,
+            "onvif_port": 8000,
             "cycle_interval": 10000
         }
 
