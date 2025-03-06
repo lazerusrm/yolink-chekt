@@ -877,132 +877,90 @@ class OnvifService(threading.Thread):
             logger.error(f"Error in GetStreamUri handler: {e}", exc_info=True)
             return XMLGenerator.generate_fault_response(f"Internal error: {str(e)}")
 
-    def _handle_get_video_encoder_configuration_options(self, request: ET.Element) -> str:
+    def _handle_get_stream_uri(self, request: ET.Element) -> str:
         """
-        Handler for GetVideoEncoderConfigurationOptions with enhanced support for ONVIF Profile S.
-        This function extracts the ProfileToken (if provided) and uses the corresponding profile's
-        settings to adjust the available options (such as resolution and frame rate). If no valid
-        profile is found, default options are used.
+        Handler for GetStreamUri requests with enhanced logging and RTSP URL construction.
+        If authentication is required, credentials are included in the URL.
+        This version also ensures that the proper stream name is used based on the profile token.
 
         Args:
             request: Request XML element
 
         Returns:
-            str: SOAP response XML containing video encoder configuration options.
+            str: SOAP response XML containing the RTSP stream URI.
         """
-        logger.info("Processing GetVideoEncoderConfigurationOptions request with Profile S support")
         try:
-            # Extract ProfileToken from the request, if available.
-            profile_token = None
-            profile_token_elem = request.find('.//trt:ProfileToken', NS)
-            if profile_token_elem is not None and profile_token_elem.text:
-                profile_token = profile_token_elem.text.strip()
-                logger.info(f"Extracted ProfileToken: {profile_token}")
-            else:
-                logger.info("No ProfileToken provided in request; using default options")
+            logger.info("Processing GetStreamUri request")
+            body = request.find('.//soap:Body', NS)
+            if body is None:
+                return XMLGenerator.generate_fault_response("Invalid SOAP request: missing Body")
 
-            # Default option values.
-            options = {
-                "resolutions": [(640, 480), (1280, 720), (1920, 1080)],
-                "frame_rate": (1, 30),
-                "bitrate": (256, 8192),  # in kbps
-                "quality": (1, 100),
-                "gov_length": (1, 60),
-                "encoding_interval": (1, 30),
-            }
+            get_stream_uri = body.find('.//trt:GetStreamUri', NS)
+            if get_stream_uri is None:
+                return XMLGenerator.generate_fault_response("Missing GetStreamUri element")
 
-            # If a valid ProfileToken is provided, adjust options based on the profile.
-            if profile_token:
-                with self.profiles_lock:
-                    profile = next((p for p in self.media_profiles if p.token == profile_token), None)
-                if profile:
-                    options["resolutions"] = [(profile.width, profile.height)]
-                    options["frame_rate"] = (1, profile.fps)
-                    logger.info(f"Using profile settings for token {profile_token}: "
-                                f"resolution {profile.width}x{profile.height}, fps {profile.fps}")
-                else:
-                    logger.warning(f"Profile with token {profile_token} not found. Using default options.")
+            profile_token_elem = get_stream_uri.find('.//trt:ProfileToken', NS)
+            if profile_token_elem is None or not profile_token_elem.text:
+                return XMLGenerator.generate_fault_response("Missing ProfileToken")
 
-            # Build XML for available resolutions.
-            resolutions_xml = ""
-            for width, height in options["resolutions"]:
-                resolutions_xml += f"""
-                <tt:ResolutionsAvailable>
-                    <tt:Width>{width}</tt:Width>
-                    <tt:Height>{height}</tt:Height>
-                </tt:ResolutionsAvailable>"""
+            token = profile_token_elem.text.strip()
+            logger.info(f"GetStreamUri requested for profile token: {token}")
 
-            # Construct the complete response XML.
-            response_xml = f"""
-    <trt:GetVideoEncoderConfigurationOptionsResponse xmlns:trt="http://www.onvif.org/ver10/media/wsdl" xmlns:tt="http://www.onvif.org/ver10/schema">
-        <trt:Options>
-            <tt:QualityRange>
-                <tt:Min>{options["quality"][0]}</tt:Min>
-                <tt:Max>{options["quality"][1]}</tt:Max>
-            </tt:QualityRange>
-            <tt:H264>
-                {resolutions_xml}
-                <tt:GovLengthRange>
-                    <tt:Min>{options["gov_length"][0]}</tt:Min>
-                    <tt:Max>{options["gov_length"][1]}</tt:Max>
-                </tt:GovLengthRange>
-                <tt:FrameRateRange>
-                    <tt:Min>{options["frame_rate"][0]}</tt:Min>
-                    <tt:Max>{options["frame_rate"][1]}</tt:Max>
-                </tt:FrameRateRange>
-                <tt:EncodingIntervalRange>
-                    <tt:Min>{options["encoding_interval"][0]}</tt:Min>
-                    <tt:Max>{options["encoding_interval"][1]}</tt:Max>
-                </tt:EncodingIntervalRange>
-                <tt:BitrateRange>
-                    <tt:Min>{options["bitrate"][0]}</tt:Min>
-                    <tt:Max>{options["bitrate"][1]}</tt:Max>
-                </tt:BitrateRange>
-                <tt:H264ProfilesSupported>Baseline Main High</tt:H264ProfilesSupported>
-            </tt:H264>
-        </trt:Options>
-    </trt:GetVideoEncoderConfigurationOptionsResponse>
-    """
-            logger.info("Successfully generated GetVideoEncoderConfigurationOptions response")
+            # Activate the corresponding profile
+            with self.profiles_lock:
+                for profile_info in self.media_profiles:
+                    if profile_info.token == token:
+                        profile_info.activate()
+                        break
+
+            # Invoke callbacks if registered
+            if token in self.profile_callbacks:
+                self.profile_callbacks[token](token)
+            elif "default" in self.profile_callbacks:
+                self.profile_callbacks["default"](token)
+
+            # Determine stream name based on the profile token.
+            stream_name = self.stream_name  # default base name
+            if token == "profile1":
+                stream_name = f"{self.stream_name}_main"
+            elif token == "profile2":
+                stream_name = f"{self.stream_name}_sub"
+            elif token == "profile3":
+                stream_name = f"{self.stream_name}_mobile"
+
+            # If authentication is enabled, include credentials in the RTSP URL.
+            auth_part = f"{self.username}:{self.password}@" if self.authentication_required else ""
+
+            # Construct the full RTSP URL.
+            stream_url = f"rtsp://{auth_part}{self.server_ip}:{self.rtsp_port}/{stream_name}"
+            logger.info(f"Providing stream URL: {stream_url}")
+
+            # Extract the message ID if present for response correlation.
+            message_id = None
+            header = request.find('.//soap:Header', NS)
+            if header is not None:
+                message_id_elem = header.find('.//wsa:MessageID', NS)
+                if message_id_elem is not None and message_id_elem.text:
+                    message_id = message_id_elem.text
+
+            response = f"""
+        <trt:GetStreamUriResponse>
+          <trt:MediaUri>
+            <tt:Uri>{stream_url}</tt:Uri>
+            <tt:InvalidAfterConnect>false</tt:InvalidAfterConnect>
+            <tt:InvalidAfterReboot>false</tt:InvalidAfterReboot>
+            <tt:Timeout>PT60S</tt:Timeout>
+          </trt:MediaUri>
+        </trt:GetStreamUriResponse>
+        """
             return XMLGenerator.generate_soap_response(
-                "http://www.onvif.org/ver10/media/wsdl/GetVideoEncoderConfigurationOptionsResponse",
-                response_xml
+                "http://www.onvif.org/ver10/media/wsdl/GetStreamUriResponse",
+                response,
+                message_id
             )
         except Exception as e:
-            logger.error(f"Exception in _handle_get_video_encoder_configuration_options: {e}", exc_info=True)
-            fallback_response = """
-    <trt:GetVideoEncoderConfigurationOptionsResponse xmlns:trt="http://www.onvif.org/ver10/media/wsdl" xmlns:tt="http://www.onvif.org/ver10/schema">
-        <trt:Options>
-            <tt:QualityRange>
-                <tt:Min>1</tt:Min>
-                <tt:Max>100</tt:Max>
-            </tt:QualityRange>
-            <tt:H264>
-                <tt:ResolutionsAvailable>
-                    <tt:Width>1920</tt:Width>
-                    <tt:Height>1080</tt:Height>
-                </tt:ResolutionsAvailable>
-                <tt:GovLengthRange>
-                    <tt:Min>1</tt:Min>
-                    <tt:Max>60</tt:Max>
-                </tt:GovLengthRange>
-                <tt:FrameRateRange>
-                    <tt:Min>1</tt:Min>
-                    <tt:Max>30</tt:Max>
-                </tt:FrameRateRange>
-                <tt:EncodingIntervalRange>
-                    <tt:Min>1</tt:Min>
-                    <tt:Max>30</tt:Max>
-                </tt:EncodingIntervalRange>
-                <tt:H264ProfilesSupported>Baseline</tt:H264ProfilesSupported>
-            </tt:H264>
-        </trt:Options>
-    </trt:GetVideoEncoderConfigurationOptionsResponse>
-    """
-            return XMLGenerator.generate_soap_response(
-                "http://www.onvif.org/ver10/media/wsdl/GetVideoEncoderConfigurationOptionsResponse",
-                fallback_response
-            )
+            logger.error(f"Error in GetStreamUri handler: {e}", exc_info=True)
+            return XMLGenerator.generate_fault_response(f"Internal error: {str(e)}")
 
     def _handle_get_audio_source_configurations(self, request: ET.Element) -> str:
         """
