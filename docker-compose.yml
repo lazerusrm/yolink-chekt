@@ -58,7 +58,10 @@ services:
       - WIDTH=1920
       - HEIGHT=1080
       - CYCLE_INTERVAL=10000
-      - ENABLE_ONVIF=true
+      - ONVIF_AUTH_REQUIRED=true
+      - ONVIF_USERNAME=admin
+       - ONVIF_PASSWORD=123456
+       - ONVIF_AUTH_METHOD=both
       - ONVIF_PORT=8555
       - SERVER_IP=0.0.0.0
       - RTSP_API_PORT=3001
