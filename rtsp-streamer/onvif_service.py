@@ -1447,6 +1447,132 @@ class OnvifService(threading.Thread):
             logger.error(f"Error handling GetServices: {e}", exc_info=True)
             return XMLGenerator.generate_fault_response(f"Error getting services: {str(e)}")
 
+    def _handle_get_capabilities(self, request: ET.Element) -> str:
+        """
+        Handle GetCapabilities request.
+        Returns the capabilities of the ONVIF device.
+
+        Args:
+            request: Request XML element
+
+        Returns:
+            str: SOAP response XML
+        """
+        try:
+            # Extract category if specified, default to 'All'
+            get_capabilities = request.find('.//tds:GetCapabilities', NS)
+            category = 'All'
+            if get_capabilities is not None:
+                category_elem = get_capabilities.find('.//tds:Category', NS)
+                if category_elem is not None:
+                    category = category_elem.text
+
+            # Define capabilities based on supported services
+            capabilities_xml = ""
+
+            if category in ['All', 'Device']:
+                capabilities_xml += """
+        <tt:Device>
+          <tt:Network>
+            <tt:IPFilter>false</tt:IPFilter>
+            <tt:ZeroConfiguration>false</tt:ZeroConfiguration>
+            <tt:IPVersion6>false</tt:IPVersion6>
+            <tt:DynDNS>false</tt:DynDNS>
+            <tt:Dot11Configuration>false</tt:Dot11Configuration>
+            <tt:HostnameFromDHCP>false</tt:HostnameFromDHCP>
+            <tt:NTP>0</tt:NTP>
+          </tt:Network>
+          <tt:System>
+            <tt:DiscoveryResolve>true</tt:DiscoveryResolve>
+            <tt:DiscoveryBye>true</tt:DiscoveryBye>
+            <tt:RemoteDiscovery>true</tt:RemoteDiscovery>
+            <tt:SystemBackup>false</tt:SystemBackup>
+            <tt:SystemLogging>false</tt:SystemLogging>
+            <tt:FirmwareUpgrade>false</tt:FirmwareUpgrade>
+            <tt:HttpFirmwareUpgrade>false</tt:HttpFirmwareUpgrade>
+            <tt:HttpSystemBackup>false</tt:HttpSystemBackup>
+            <tt:HttpSystemLogging>false</tt:HttpSystemLogging>
+            <tt:HttpSupportInformation>false</tt:HttpSupportInformation>
+          </tt:System>
+          <tt:IO>
+            <tt:InputConnectors>0</tt:InputConnectors>
+            <tt:RelayOutputs>0</tt:RelayOutputs>
+          </tt:IO>
+          <tt:Security>
+            <tt:TLS1.0>false</tt:TLS1.0>
+            <tt:TLS1.1>false</tt:TLS1.1>
+            <tt:TLS1.2>false</tt:TLS1.2>
+            <tt:OnboardKeyGeneration>false</tt:OnboardKeyGeneration>
+            <tt:AccessPolicyConfig>false</tt:AccessPolicyConfig>
+            <tt:DefaultAccessPolicy>false</tt:DefaultAccessPolicy>
+            <tt:Dot1X>false</tt:Dot1X>
+            <tt:RemoteUserHandling>false</tt:RemoteUserHandling>
+            <tt:X.509Token>false</tt:X.509Token>
+            <tt:SAMLToken>false</tt:SAMLToken>
+            <tt:KerberosToken>false</tt:KerberosToken>
+            <tt:UsernameToken>true</tt:UsernameToken>
+            <tt:HttpDigest>true</tt:HttpDigest>
+            <tt:RELToken>false</tt:RELToken>
+          </tt:Security>
+        </tt:Device>
+    """
+
+            if category in ['All', 'Media']:
+                capabilities_xml += """
+        <tt:Media>
+          <tt:StreamingCapabilities>
+            <tt:RTPMulticast>false</tt:RTPMulticast>
+            <tt:RTP_TCP>true</tt:RTP_TCP>
+            <tt:RTP_RTSP_TCP>true</tt:RTP_RTSP_TCP>
+          </tt:StreamingCapabilities>
+          <tt:ProfileCapabilities>
+            <tt:MaximumNumberOfProfiles>3</tt:MaximumNumberOfProfiles>
+          </tt:ProfileCapabilities>
+        </tt:Media>
+    """
+
+            if category in ['All', 'Events']:
+                capabilities_xml += """
+        <tt:Events>
+          <tt:WSSubscriptionPolicySupport>false</tt:WSSubscriptionPolicySupport>
+          <tt:WSPullPointSupport>true</tt:WSPullPointSupport>
+          <tt:WSPausableSubscriptionManagerInterfaceSupport>false</tt:WSPausableSubscriptionManagerInterfaceSupport>
+        </tt:Events>
+    """
+
+            if category in ['All', 'Imaging']:
+                capabilities_xml += """
+        <tt:Imaging>
+          <tt:ImageStabilization>false</tt:ImageStabilization>
+        </tt:Imaging>
+    """
+
+            if category in ['All', 'PTZ']:
+                capabilities_xml += """
+        <tt:PTZ>
+          <tt:EFlip>false</tt:EFlip>
+          <tt:Reverse>false</tt:Reverse>
+          <tt:GetCompatibleConfigurations>true</tt:GetCompatibleConfigurations>
+          <tt:MoveStatus>true</tt:MoveStatus>
+          <tt:StatusPosition>true</tt:StatusPosition>
+        </tt:PTZ>
+    """
+
+            response = f"""
+    <tds:GetCapabilitiesResponse>
+      <tds:Capabilities>
+        {capabilities_xml}
+      </tds:Capabilities>
+    </tds:GetCapabilitiesResponse>
+    """
+            return XMLGenerator.generate_soap_response(
+                "http://www.onvif.org/ver10/device/wsdl/GetCapabilitiesResponse",
+                response
+            )
+        except Exception as e:
+            logger.error(f"Error handling GetCapabilities: {e}", exc_info=True)
+            return XMLGenerator.generate_fault_response(f"Error getting capabilities: {str(e)}")
+
     def handle_media_service(self, soap_request: str) -> str:
         """
         Handle ONVIF Media service requests with enhanced protocol support.
