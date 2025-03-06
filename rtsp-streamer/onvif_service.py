@@ -2087,6 +2087,31 @@ class OnvifService(threading.Thread):
             logger.error(f"Error handling GetVideoSourceConfigurationOptions: {e}", exc_info=True)
             return XMLGenerator.generate_fault_response(f"Error getting video source configuration options: {str(e)}")
 
+    def _handle_get_audio_source_configurations(self, request: ET.Element) -> str:
+        """
+        Handle GetAudioSourceConfigurations request.
+        Returns audio source configurations (none supported in this implementation).
+
+        Args:
+            request: Request XML element
+
+        Returns:
+            str: SOAP response XML
+        """
+        try:
+            # No audio sources supported, return empty response
+            response = """
+    <trt:GetAudioSourceConfigurationsResponse>
+    </trt:GetAudioSourceConfigurationsResponse>
+    """
+            return XMLGenerator.generate_soap_response(
+                "http://www.onvif.org/ver10/media/wsdl/GetAudioSourceConfigurationsResponse",
+                response
+            )
+        except Exception as e:
+            logger.error(f"Error handling GetAudioSourceConfigurations: {e}", exc_info=True)
+            return XMLGenerator.generate_fault_response(f"Error getting audio source configurations: {str(e)}")
+
 
 
     def _handle_get_hostname(self, request: ET.Element) -> str:
