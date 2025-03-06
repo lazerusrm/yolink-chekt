@@ -563,59 +563,127 @@ class OnvifService(threading.Thread):
         logger.info("WS-Discovery service started")
 
     def _ws_discovery(self) -> None:
-        """Implement WS-Discovery for ONVIF device announcement."""
+        """Implement WS-Discovery for ONVIF device announcement with improved reliability."""
         try:
+            # Create socket with broadcast capability
             self.discovery_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
             self.discovery_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            self.discovery_socket.bind(('', 3702))
+            self.discovery_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)  # Enable broadcasting
+
+            # Set a larger buffer size to handle more incoming requests
+            self.discovery_socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 65536)
+
+            # Bind to all interfaces on the ONVIF discovery port
+            self.discovery_socket.bind(('0.0.0.0', 3702))
+
+            # Join the ONVIF multicast group
             mreq = socket.inet_aton('239.255.255.250') + socket.inet_aton('0.0.0.0')
             self.discovery_socket.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+
+            # Set a reasonable timeout to allow for loop responsiveness
             self.discovery_socket.settimeout(0.5)
 
-            logger.info("WS-Discovery listening on UDP 3702")
+            logger.info(f"WS-Discovery listening on UDP 3702, advertising services at {self.server_ip}")
+            logger.info(f"Device service URL: {self.device_service_url}")
+            logger.info(f"Media service URL: {self.media_service_url}")
+
+            # Send initial announcement immediately
             self._send_hello_announcement()
 
+            # Discovery loop
             while self.running:
                 try:
+                    # Send periodic announcements
                     current_time = time.time()
                     if current_time - self.last_announce_time > self.announce_interval:
                         self._send_hello_announcement()
 
-                    data, addr = self.discovery_socket.recvfrom(4096)
+                    # Listen for incoming discovery messages
+                    data, addr = self.discovery_socket.recvfrom(8192)  # Larger buffer for incoming messages
+
+                    # Debug the raw message if needed
+                    if os.environ.get('DEBUG_DISCOVERY') == 'true':
+                        logger.debug(f"Received WS-Discovery message from {addr}: {data[:200]}...")
+
+                    # Handle ONVIF ProbeMatches
                     if b"Probe" in data:
-                        logger.debug(f"Received WS-Discovery probe from {addr}")
+                        logger.info(f"Received WS-Discovery probe from {addr}")
                         response = self._generate_probe_match_response()
                         self.discovery_socket.sendto(response.encode('utf-8'), addr)
-                        logger.debug(f"Sent WS-Discovery response to {addr}")
+                        logger.info(f"Sent WS-Discovery ProbeMatch response to {addr}")
+
+                    # Handle direct messages
+                    elif b"GetSystemDateAndTime" in data or b"GetCapabilities" in data:
+                        logger.info(f"Received direct ONVIF message from {addr}, redirecting to API")
+                        # Could add code here to handle direct SOAP requests if needed
+
                 except socket.timeout:
+                    # Normal timeout, just continue the loop
                     pass
                 except Exception as e:
                     if self.running:
                         logger.error(f"WS-Discovery error: {e}")
-                time.sleep(0.1)
+                        if os.environ.get('DEBUG_DISCOVERY') == 'true':
+                            logger.error(f"Exception details: {traceback.format_exc()}")
+                        # Short sleep to prevent tight loop in case of persistent errors
+                        time.sleep(1)
+
+                        # Brief sleep to prevent CPU hogging while still being responsive
+                time.sleep(0.05)
 
         except Exception as e:
-            logger.error(f"Error in WS-Discovery service: {e}")
+            logger.error(f"Error initializing WS-Discovery service: {e}")
+            logger.error(f"Exception details: {traceback.format_exc()}")
         finally:
+            # Clean up the socket on exit
             if self.discovery_socket:
                 try:
                     self.discovery_socket.close()
-                except Exception:
-                    pass
+                    logger.info("WS-Discovery socket closed")
+                except Exception as close_error:
+                    logger.error(f"Error closing discovery socket: {close_error}")
                 self.discovery_socket = None
 
     def _send_hello_announcement(self) -> None:
-        """Send a WS-Discovery Hello announcement to advertise the device."""
+        """
+        Send a WS-Discovery Hello announcement to advertise the device.
+        Uses both multicast and broadcast for better discovery in complex networks.
+        """
         if not self.discovery_socket:
+            logger.warning("Cannot send Hello announcement: discovery socket not initialized")
             return
 
         try:
+            # Generate the Hello message using the existing method
             hello_msg = self._generate_hello_message()
-            self.discovery_socket.sendto(hello_msg.encode('utf-8'), ('239.255.255.250', 3702))
+            encoded_msg = hello_msg.encode('utf-8')
+
+            # Send to standard ONVIF multicast address
+            self.discovery_socket.sendto(encoded_msg, ('239.255.255.250', 3702))
+
+            # Also send as broadcast for networks that might block multicast
+            try:
+                self.discovery_socket.sendto(encoded_msg, ('255.255.255.255', 3702))
+            except Exception as broadcast_error:
+                logger.warning(f"Broadcast send failed, falling back to multicast only: {broadcast_error}")
+
+            # Update the timestamp for when we last sent an announcement
             self.last_announce_time = time.time()
-            logger.info("Sent WS-Discovery Hello announcement")
+
+            # Log detailed announcement information in debug mode
+            if os.environ.get('DEBUG_DISCOVERY') == 'true':
+                logger.info(f"Hello announcement sent with details:")
+                logger.info(f"  - Device UUID: {self.device_uuid}")
+                logger.info(f"  - Server IP: {self.server_ip}")
+                logger.info(f"  - Device Service URL: {self.device_service_url}")
+                logger.info(f"  - Media Service URL: {self.media_service_url}")
+            else:
+                logger.info("Sent WS-Discovery Hello announcement via multicast and broadcast")
+
         except Exception as e:
             logger.error(f"Failed to send Hello announcement: {e}")
+            if os.environ.get('DEBUG_DISCOVERY') == 'true':
+                logger.error(f"Exception details: {traceback.format_exc()}")
 
     def _generate_hello_message(self) -> str:
         """

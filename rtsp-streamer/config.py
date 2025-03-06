@@ -111,11 +111,11 @@ class Configuration:
         """Register default validators for common configuration parameters."""
         # Network settings
         self.register_validator("rtsp_port",
-            lambda v: ConfigValidator.safe_int(v, 8554, 1, 65535, "RTSP_PORT"))
+            lambda v: ConfigValidator.safe_int(v, 554, 1, 65535, "RTSP_PORT"))
         self.register_validator("http_port",
-            lambda v: ConfigValidator.safe_int(v, 3001, 1, 65535, "HTTP_PORT"))
+            lambda v: ConfigValidator.safe_int(v, 80, 1, 65535, "HTTP_PORT"))
         self.register_validator("onvif_port",
-            lambda v: ConfigValidator.safe_int(v, 8555, 1, 65535, "ONVIF_PORT"))
+            lambda v: ConfigValidator.safe_int(v, 80, 1, 65535, "ONVIF_PORT"))
         self.register_validator("ws_port",
             lambda v: ConfigValidator.safe_int(v, 9999, 1, 65535, "WS_PORT"))
 
