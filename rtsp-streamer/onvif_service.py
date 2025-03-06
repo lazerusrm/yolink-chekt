@@ -1362,6 +1362,91 @@ class OnvifService(threading.Thread):
             logger.error(f"Error handling GetDeviceInformation: {e}", exc_info=True)
             return XMLGenerator.generate_fault_response(f"Error getting device information: {str(e)}")
 
+    def _handle_get_services(self, request: ET.Element) -> str:
+        """
+        Handle GetServices request.
+        Returns a list of available ONVIF services with their URLs and versions.
+
+        Args:
+            request: Request XML element
+
+        Returns:
+            str: SOAP response XML
+        """
+        try:
+            # Check if IncludeCapability is present and set to true
+            include_capability = False
+            get_services = request.find('.//tds:GetServices', NS)
+            if get_services is not None:
+                capability_elem = get_services.find('.//tds:IncludeCapability', NS)
+                if capability_elem is not None and capability_elem.text.lower() == 'true':
+                    include_capability = True
+
+            # Define the services supported by this device
+            services_xml = f"""
+    <tds:Service>
+      <tds:Namespace>http://www.onvif.org/ver10/device/wsdl</tds:Namespace>
+      <tds:XAddr>{self.device_service_url}</tds:XAddr>
+      <tds:Version>
+        <tt:Major>2</tt:Major>
+        <tt:Minor>6</tt:Minor>
+      </tds:Version>
+    </tds:Service>
+    <tds:Service>
+      <tds:Namespace>http://www.onvif.org/ver10/media/wsdl</tds:Namespace>
+      <tds:XAddr>{self.media_service_url}</tds:XAddr>
+      <tds:Version>
+        <tt:Major>2</tt:Major>
+        <tt:Minor>6</tt:Minor>
+      </tds:Version>
+    </tds:Service>
+    <tds:Service>
+      <tds:Namespace>http://www.onvif.org/ver10/events/wsdl</tds:Namespace>
+      <tds:XAddr>{self.events_service_url}</tds:XAddr>
+      <tds:Version>
+        <tt:Major>2</tt:Major>
+        <tt:Minor>6</tt:Minor>
+      </tds:Version>
+    </tds:Service>
+    <tds:Service>
+      <tds:Namespace>http://www.onvif.org/ver20/imaging/wsdl</tds:Namespace>
+      <tds:XAddr>{self.imaging_service_url}</tds:XAddr>
+      <tds:Version>
+        <tt:Major>2</tt:Major>
+        <tt:Minor>6</tt:Minor>
+      </tds:Version>
+    </tds:Service>
+    <tds:Service>
+      <tds:Namespace>http://www.onvif.org/ver20/ptz/wsdl</tds:Namespace>
+      <tds:XAddr>{self.ptz_service_url}</tds:XAddr>
+      <tds:Version>
+        <tt:Major>2</tt:Major>
+        <tt:Minor>6</tt:Minor>
+      </tds:Version>
+    </tds:Service>
+    """
+
+            # Optionally include capabilities if requested (simplified for now)
+            if include_capability:
+                services_xml = services_xml.replace(
+                    "</tds:Service>",
+                    f"""<tds:Capabilities><!-- Simplified capabilities -->
+        </tds:Capabilities></tds:Service>"""
+                )
+
+            response = f"""
+    <tds:GetServicesResponse>
+      {services_xml}
+    </tds:GetServicesResponse>
+    """
+            return XMLGenerator.generate_soap_response(
+                "http://www.onvif.org/ver10/device/wsdl/GetServicesResponse",
+                response
+            )
+        except Exception as e:
+            logger.error(f"Error handling GetServices: {e}", exc_info=True)
+            return XMLGenerator.generate_fault_response(f"Error getting services: {str(e)}")
+
     def handle_media_service(self, soap_request: str) -> str:
         """
         Handle ONVIF Media service requests with enhanced protocol support.
