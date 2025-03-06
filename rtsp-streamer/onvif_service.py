@@ -1951,6 +1951,47 @@ class OnvifService(threading.Thread):
             logger.error(f"Error handling GetVideoEncoderConfigurations: {e}", exc_info=True)
             return XMLGenerator.generate_fault_response(f"Error getting video encoder configurations: {str(e)}")
 
+    def _handle_get_video_source_configurations(self, request: ET.Element) -> str:
+        """
+        Handle GetVideoSourceConfigurations request.
+        Returns all video source configurations for the device's profiles.
+
+        Args:
+            request: Request XML element
+
+        Returns:
+            str: SOAP response XML
+        """
+        try:
+            # Generate video source configs for all profiles
+            configs_xml = ""
+            with self.profiles_lock:
+                for profile in self.media_profiles:
+                    profile_dict = profile.to_dict()
+                    width = profile_dict['resolution']['width']
+                    height = profile_dict['resolution']['height']
+                    configs_xml += f"""
+    <trt:Configurations token="VideoSourceConfig_{profile.token}">
+      <tt:Name>VideoSourceConfig_{profile.token}</tt:Name>
+      <tt:UseCount>1</tt:UseCount>
+      <tt:SourceToken>VideoSource</tt:SourceToken>
+      <tt:Bounds height="{height}" width="{width}" y="0" x="0"/>
+    </trt:Configurations>
+    """
+
+            response = f"""
+    <trt:GetVideoSourceConfigurationsResponse>
+      {configs_xml}
+    </trt:GetVideoSourceConfigurationsResponse>
+    """
+            return XMLGenerator.generate_soap_response(
+                "http://www.onvif.org/ver10/media/wsdl/GetVideoSourceConfigurationsResponse",
+                response
+            )
+        except Exception as e:
+            logger.error(f"Error handling GetVideoSourceConfigurations: {e}", exc_info=True)
+            return XMLGenerator.generate_fault_response(f"Error getting video source configurations: {str(e)}")
+
 
 
     def _handle_get_hostname(self, request: ET.Element) -> str:
