@@ -1897,6 +1897,60 @@ class OnvifService(threading.Thread):
             logger.error(f"Error handling GetSnapshotUri: {e}", exc_info=True)
             return XMLGenerator.generate_fault_response(f"Error getting snapshot URI: {str(e)}")
 
+    def _handle_get_video_encoder_configurations(self, request: ET.Element) -> str:
+        """
+        Handle GetVideoEncoderConfigurations request.
+        Returns all video encoder configurations for the device's profiles.
+
+        Args:
+            request: Request XML element
+
+        Returns:
+            str: SOAP response XML
+        """
+        try:
+            # Generate encoder configs for all profiles
+            configs_xml = ""
+            with self.profiles_lock:
+                for profile in self.media_profiles:
+                    profile_dict = profile.to_dict()
+                    width = profile_dict['resolution']['width']
+                    height = profile_dict['resolution']['height']
+                    configs_xml += f"""
+    <trt:Configurations token="VideoEncoder_{profile.token}">
+      <tt:Name>VideoEncoder_{profile.token}</tt:Name>
+      <tt:UseCount>1</tt:UseCount>
+      <tt:Encoding>H264</tt:Encoding>
+      <tt:Resolution>
+        <tt:Width>{width}</tt:Width>
+        <tt:Height>{height}</tt:Height>
+      </tt:Resolution>
+      <tt:Quality>5</tt:Quality>
+      <tt:RateControl>
+        <tt:FrameRateLimit>{profile.fps}</tt:FrameRateLimit>
+        <tt:EncodingInterval>1</tt:EncodingInterval>
+        <tt:BitrateLimit>4000</tt:BitrateLimit>
+      </tt:RateControl>
+      <tt:H264>
+        <tt:GovLength>30</tt:GovLength>
+        <tt:H264Profile>High</tt:H264Profile>
+      </tt:H264>
+    </trt:Configurations>
+    """
+
+            response = f"""
+    <trt:GetVideoEncoderConfigurationsResponse>
+      {configs_xml}
+    </trt:GetVideoEncoderConfigurationsResponse>
+    """
+            return XMLGenerator.generate_soap_response(
+                "http://www.onvif.org/ver10/media/wsdl/GetVideoEncoderConfigurationsResponse",
+                response
+            )
+        except Exception as e:
+            logger.error(f"Error handling GetVideoEncoderConfigurations: {e}", exc_info=True)
+            return XMLGenerator.generate_fault_response(f"Error getting video encoder configurations: {str(e)}")
+
 
 
     def _handle_get_hostname(self, request: ET.Element) -> str:
