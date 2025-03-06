@@ -1,5 +1,5 @@
 logLevel: debug
-rtspAddress: :8554
+rtspAddress: :554
 readTimeout: 30s
 writeTimeout: 30s
 api: yes
