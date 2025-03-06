@@ -2327,7 +2327,7 @@ class OnvifService(threading.Thread):
 
     def handle_media_service(self, soap_request: str) -> str:
         """
-        Handle ONVIF Media service requests with enhanced protocol support.
+        Handle ONVIF Media service requests with enhanced protocol support and diagnostics.
 
         Args:
             soap_request: SOAP request XML
@@ -2336,18 +2336,26 @@ class OnvifService(threading.Thread):
             str: SOAP response XML
         """
         try:
-            # Debug incoming GetStreamUri requests
+            # Log incoming request at DEBUG level for full visibility
+            logger.debug(f"Received media service request: {soap_request[:1000]}...")
+
+            # Specifically highlight GetStreamUri requests
             if "GetStreamUri" in soap_request:
                 logger.info(f"GetStreamUri request received: {soap_request[:500]}...")
 
+            # Parse XML safely (assuming parse_xml_safely is defined elsewhere)
             root = parse_xml_safely(soap_request)
             if root is None:
-                return XMLGenerator.generate_fault_response("Invalid SOAP request")
+                logger.error("Failed to parse SOAP request")
+                return generate_fault_response("Invalid SOAP request", "ter:InvalidArgVal")
 
-            body = root.find('.//soap:Body', NS)
+            # Use NAMESPACES from onvif.py instead of NS
+            body = root.find('.//soap:Body', NAMESPACES)
             if body is None:
-                return XMLGenerator.generate_fault_response("Invalid SOAP request")
+                logger.error("No SOAP Body found in request")
+                return generate_fault_response("Invalid SOAP request", "ter:InvalidArgVal")
 
+            # Find the action element
             action_element = None
             for child in body:
                 if child.tag.startswith("{"):
@@ -2355,14 +2363,14 @@ class OnvifService(threading.Thread):
                     break
 
             if action_element is None:
-                return XMLGenerator.generate_fault_response("No action element found")
+                logger.error("No action element found in SOAP Body")
+                return generate_fault_response("No action element found", "ter:InvalidArgVal")
 
+            # Extract local name from the tag
             local_name = action_element.tag.split('}')[-1]
-
-            # Log media service actions for debugging
             logger.info(f"Media service action requested: {local_name}")
 
-            # Add the new handlers for previously unsupported methods
+            # Handler map for media service actions
             handler_map = {
                 'GetProfiles': self._handle_get_profiles,
                 'GetProfile': self._handle_get_profile,
@@ -2387,22 +2395,21 @@ class OnvifService(threading.Thread):
 
             handler = handler_map.get(local_name)
             if handler:
-                response = handler(root)
-
-                # Debug response for GetStreamUri
+                response = handler(action_element)  # Pass action_element, not root, as per your handler design
+                # Log GetStreamUri response specifically
                 if local_name == "GetStreamUri":
-                    logger.info(f"GetStreamUri response: {response[:500]}...")
-
+                    logger.info(f"GetStreamUri response generated: {response[:500]}...")
                 return response
             else:
                 logger.warning(f"Unsupported media service action: {local_name}")
-                return XMLGenerator.generate_fault_response(
+                return generate_fault_response(
                     f"Unsupported action: {local_name}",
                     "ter:ActionNotSupported"
                 )
+
         except Exception as e:
             logger.error(f"Error handling media service request: {e}", exc_info=True)
-            return XMLGenerator.generate_fault_response(f"Internal error: {str(e)}")
+            return generate_fault_response(f"Internal error: {str(e)}", "ter:InternalError")
 
     def handle_events_service(self, soap_request: str) -> str:
         """
