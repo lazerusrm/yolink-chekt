@@ -1747,6 +1747,93 @@ class OnvifService(threading.Thread):
             logger.error(f"Error handling GetNetworkProtocols: {e}", exc_info=True)
             return XMLGenerator.generate_fault_response(f"Error getting network protocols: {str(e)}")
 
+    def _handle_get_profile(self, request: ET.Element) -> str:
+        """
+        Handle GetProfile request.
+        Returns a specific media profile based on the provided token.
+
+        Args:
+            request: Request XML element
+
+        Returns:
+            str: SOAP response XML
+        """
+        try:
+            # Extract profile token from the request
+            get_profile = request.find('.//trt:GetProfile', NS)
+            if get_profile is None:
+                return XMLGenerator.generate_fault_response(
+                    "Missing GetProfile element",
+                    "ter:InvalidArgVal"
+                )
+
+            profile_token_elem = get_profile.find('.//trt:ProfileToken', NS)
+            if profile_token_elem is None:
+                return XMLGenerator.generate_fault_response(
+                    "Missing ProfileToken",
+                    "ter:InvalidArgVal"
+                )
+
+            profile_token = profile_token_elem.text
+
+            # Find the matching profile
+            profile = None
+            with self.profiles_lock:
+                for p in self.media_profiles:
+                    if p.token == profile_token:
+                        profile = p
+                        break
+
+            if profile is None:
+                return XMLGenerator.generate_fault_response(
+                    f"Profile {profile_token} not found",
+                    "ter:InvalidArgVal"
+                )
+
+            # Generate profile XML (simplified from _handle_get_profiles)
+            profile_dict = profile.to_dict()
+            width = profile_dict['resolution']['width']
+            height = profile_dict['resolution']['height']
+            response = f"""
+    <trt:GetProfileResponse>
+      <trt:Profile fixed="true" token="{profile.token}">
+        <tt:Name>{profile.name}</tt:Name>
+        <tt:VideoSourceConfiguration token="VideoSourceConfig_{profile.token}">
+          <tt:Name>VideoSourceConfig_{profile.token}</tt:Name>
+          <tt:UseCount>1</tt:UseCount>
+          <tt:SourceToken>VideoSource</tt:SourceToken>
+          <tt:Bounds height="{height}" width="{width}" y="0" x="0"/>
+        </tt:VideoSourceConfiguration>
+        <tt:VideoEncoderConfiguration token="VideoEncoder_{profile.token}">
+          <tt:Name>VideoEncoder_{profile.token}</tt:Name>
+          <tt:UseCount>1</tt:UseCount>
+          <tt:Encoding>H264</tt:Encoding>
+          <tt:Resolution>
+            <tt:Width>{width}</tt:Width>
+            <tt:Height>{height}</tt:Height>
+          </tt:Resolution>
+          <tt:Quality>5</tt:Quality>
+          <tt:RateControl>
+            <tt:FrameRateLimit>{profile.fps}</tt:FrameRateLimit>
+            <tt:EncodingInterval>1</tt:EncodingInterval>
+            <tt:BitrateLimit>4000</tt:BitrateLimit>
+          </tt:RateControl>
+          <tt:H264>
+            <tt:GovLength>30</tt:GovLength>
+            <tt:H264Profile>High</tt:H264Profile>
+          </tt:H264>
+        </tt:VideoEncoderConfiguration>
+      </trt:Profile>
+    </trt:GetProfileResponse>
+    """
+            return XMLGenerator.generate_soap_response(
+                "http://www.onvif.org/ver10/media/wsdl/GetProfileResponse",
+                response
+            )
+        except Exception as e:
+            logger.error(f"Error handling GetProfile: {e}", exc_info=True)
+            return XMLGenerator.generate_fault_response(f"Error getting profile: {str(e)}")
+
 
 
     def _handle_get_hostname(self, request: ET.Element) -> str:
