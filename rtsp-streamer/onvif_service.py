@@ -925,7 +925,8 @@ class OnvifService(threading.Thread):
 
     def _handle_get_video_encoder_configuration_options(self, request: ET.Element) -> str:
         """
-        Handle GetVideoEncoderConfigurationOptions request.
+        Enhanced handler for GetVideoEncoderConfigurationOptions request.
+        Provides a more complete response that better adheres to the ONVIF specification.
 
         Args:
             request: Request XML element
@@ -933,84 +934,163 @@ class OnvifService(threading.Thread):
         Returns:
             str: SOAP response XML
         """
-        # Get configuration token if specified
-        config_token = None
+        # Log the full request for debugging
+        logger.info("Processing GetVideoEncoderConfigurationOptions request")
+
         try:
-            config_token_elem = request.find('.//trt:ConfigurationToken', NS)
-            if config_token_elem is not None:
-                config_token = config_token_elem.text
+            # Get configuration token if specified
+            config_token = None
+            try:
+                config_token_elem = request.find('.//trt:ConfigurationToken', NS)
+                if config_token_elem is not None:
+                    config_token = config_token_elem.text
+                    logger.info(f"Configuration token specified: {config_token}")
+            except Exception as e:
+                logger.debug(f"Error getting configuration token: {e}")
+
+            # Get profile token if specified
+            profile_token = None
+            try:
+                profile_token_elem = request.find('.//trt:ProfileToken', NS)
+                if profile_token_elem is not None:
+                    profile_token = profile_token_elem.text
+                    logger.info(f"Profile token specified: {profile_token}")
+            except Exception as e:
+                logger.debug(f"Error getting profile token: {e}")
+
+            # Use main profile dimensions for options
+            with self.profiles_lock:
+                if profile_token:
+                    profile = next((p for p in self.media_profiles if p.token == profile_token), self.media_profiles[0])
+                else:
+                    profile = self.media_profiles[0]
+
+                width = profile.width
+                height = profile.height
+                fps = profile.fps
+
+                # Get all available resolutions from all profiles
+                all_resolutions = []
+                for p in self.media_profiles:
+                    resolution = {"width": p.width, "height": p.height}
+                    if resolution not in all_resolutions:
+                        all_resolutions.append(resolution)
+
+                # Add some standard resolutions if not already included
+                standard_resolutions = [
+                    {"width": 1920, "height": 1080},
+                    {"width": 1280, "height": 720},
+                    {"width": 640, "height": 480},
+                    {"width": 640, "height": 360},
+                    {"width": 320, "height": 240}
+                ]
+
+                for std_res in standard_resolutions:
+                    if std_res not in all_resolutions:
+                        all_resolutions.append(std_res)
+
+            # Generate resolution XML elements
+            resolution_xml = ""
+            for res in all_resolutions:
+                resolution_xml += f"""
+                <tt:ResolutionsAvailable>
+                  <tt:Width>{res['width']}</tt:Width>
+                  <tt:Height>{res['height']}</tt:Height>
+                </tt:ResolutionsAvailable>"""
+
+            # Create extensive ONVIF-compliant options response
+            response = f"""
+    <trt:GetVideoEncoderConfigurationOptionsResponse>
+      <trt:Options>
+        <tt:QualityRange>
+          <tt:Min>1</tt:Min>
+          <tt:Max>100</tt:Max>
+        </tt:QualityRange>
+        <tt:JPEG>
+          {resolution_xml}
+          <tt:FrameRateRange>
+            <tt:Min>1</tt:Min>
+            <tt:Max>30</tt:Max>
+          </tt:FrameRateRange>
+          <tt:EncodingIntervalRange>
+            <tt:Min>1</tt:Min>
+            <tt:Max>30</tt:Max>
+          </tt:EncodingIntervalRange>
+        </tt:JPEG>
+        <tt:H264>
+          {resolution_xml}
+          <tt:GovLengthRange>
+            <tt:Min>1</tt:Min>
+            <tt:Max>60</tt:Max>
+          </tt:GovLengthRange>
+          <tt:FrameRateRange>
+            <tt:Min>1</tt:Min>
+            <tt:Max>30</tt:Max>
+          </tt:FrameRateRange>
+          <tt:EncodingIntervalRange>
+            <tt:Min>1</tt:Min>
+            <tt:Max>30</tt:Max>
+          </tt:EncodingIntervalRange>
+          <tt:H264ProfilesSupported>Baseline Main High</tt:H264ProfilesSupported>
+        </tt:H264>
+        <tt:Extension>
+          <tt:JPEG>
+            <tt:BitrateRange>
+              <tt:Min>100</tt:Min>
+              <tt:Max>8192</tt:Max>
+            </tt:BitrateRange>
+          </tt:JPEG>
+          <tt:H264>
+            <tt:BitrateRange>
+              <tt:Min>100</tt:Min>
+              <tt:Max>8192</tt:Max>
+            </tt:BitrateRange>
+          </tt:H264>
+        </tt:Extension>
+      </trt:Options>
+    </trt:GetVideoEncoderConfigurationOptionsResponse>
+    """
+            logger.info(f"Sending GetVideoEncoderConfigurationOptions response with {len(all_resolutions)} resolutions")
+            return XMLGenerator.generate_soap_response(
+                "http://www.onvif.org/ver10/media/wsdl/GetVideoEncoderConfigurationOptionsResponse",
+                response
+            )
         except Exception as e:
-            logger.debug(f"Error getting configuration token: {e}")
-
-        # Get profile token if specified
-        profile_token = None
-        try:
-            profile_token_elem = request.find('.//trt:ProfileToken', NS)
-            if profile_token_elem is not None:
-                profile_token = profile_token_elem.text
-        except Exception as e:
-            logger.debug(f"Error getting profile token: {e}")
-
-        # Use main profile dimensions for options
-        with self.profiles_lock:
-            if profile_token:
-                profile = next((p for p in self.media_profiles if p.token == profile_token), self.media_profiles[0])
-            else:
-                profile = self.media_profiles[0]
-
-            width = profile.width
-            height = profile.height
-            fps = profile.fps
-
-        response = f"""
-<trt:GetVideoEncoderConfigurationOptionsResponse>
-  <trt:Options>
-    <tt:QualityRange>
-      <tt:Min>1</tt:Min>
-      <tt:Max>100</tt:Max>
-    </tt:QualityRange>
-    <tt:H264>
-      <tt:ResolutionsAvailable>
-        <tt:Width>{width}</tt:Width>
-        <tt:Height>{height}</tt:Height>
-      </tt:ResolutionsAvailable>
-      <tt:ResolutionsAvailable>
-        <tt:Width>1280</tt:Width>
-        <tt:Height>720</tt:Height>
-      </tt:ResolutionsAvailable>
-      <tt:ResolutionsAvailable>
-        <tt:Width>640</tt:Width>
-        <tt:Height>360</tt:Height>
-      </tt:ResolutionsAvailable>
-      <tt:GovLengthRange>
-        <tt:Min>1</tt:Min>
-        <tt:Max>60</tt:Max>
-      </tt:GovLengthRange>
-      <tt:FrameRateRange>
-        <tt:Min>1</tt:Min>
-        <tt:Max>30</tt:Max>
-      </tt:FrameRateRange>
-      <tt:EncodingIntervalRange>
-        <tt:Min>1</tt:Min>
-        <tt:Max>30</tt:Max>
-      </tt:EncodingIntervalRange>
-      <tt:H264ProfilesSupported>Baseline Main High</tt:H264ProfilesSupported>
-    </tt:H264>
-    <tt:Extension>
-      <tt:H264>
-        <tt:BitrateRange>
-          <tt:Min>128</tt:Min>
-          <tt:Max>8192</tt:Max>
-        </tt:BitrateRange>
-      </tt:H264>
-    </tt:Extension>
-  </trt:Options>
-</trt:GetVideoEncoderConfigurationOptionsResponse>
-"""
-        return XMLGenerator.generate_soap_response(
-            "http://www.onvif.org/ver10/media/wsdl/GetVideoEncoderConfigurationOptionsResponse",
-            response
-        )
+            logger.error(f"Error generating GetVideoEncoderConfigurationOptions response: {e}", exc_info=True)
+            # Return a simple fallback response on error
+            fallback_response = """
+    <trt:GetVideoEncoderConfigurationOptionsResponse>
+      <trt:Options>
+        <tt:QualityRange>
+          <tt:Min>1</tt:Min>
+          <tt:Max>100</tt:Max>
+        </tt:QualityRange>
+        <tt:H264>
+          <tt:ResolutionsAvailable>
+            <tt:Width>1920</tt:Width>
+            <tt:Height>1080</tt:Height>
+          </tt:ResolutionsAvailable>
+          <tt:GovLengthRange>
+            <tt:Min>1</tt:Min>
+            <tt:Max>60</tt:Max>
+          </tt:GovLengthRange>
+          <tt:FrameRateRange>
+            <tt:Min>1</tt:Min>
+            <tt:Max>30</tt:Max>
+          </tt:FrameRateRange>
+          <tt:EncodingIntervalRange>
+            <tt:Min>1</tt:Min>
+            <tt:Max>30</tt:Max>
+          </tt:EncodingIntervalRange>
+          <tt:H264ProfilesSupported>Baseline Main High</tt:H264ProfilesSupported>
+        </tt:H264>
+      </trt:Options>
+    </trt:GetVideoEncoderConfigurationOptionsResponse>
+    """
+            return XMLGenerator.generate_soap_response(
+                "http://www.onvif.org/ver10/media/wsdl/GetVideoEncoderConfigurationOptionsResponse",
+                fallback_response
+            )
 
     def _handle_get_audio_source_configurations(self, request: ET.Element) -> str:
         """
