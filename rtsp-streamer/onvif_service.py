@@ -1332,6 +1332,36 @@ class OnvifService(threading.Thread):
             logger.error(f"Error handling device service request: {e}", exc_info=True)
             return XMLGenerator.generate_fault_response(f"Internal error: {str(e)}")
 
+    def _handle_get_device_information(self, request: ET.Element) -> str:
+        """
+        Handle GetDeviceInformation request.
+        Returns device information such as manufacturer, model, etc.
+
+        Args:
+            request: Request XML element
+
+        Returns:
+            str: SOAP response XML
+        """
+        try:
+            # Generate the response using device_info
+            response = f"""
+    <tds:GetDeviceInformationResponse>
+      <tds:Manufacturer>{self.device_info['Manufacturer']}</tds:Manufacturer>
+      <tds:Model>{self.device_info['Model']}</tds:Model>
+      <tds:FirmwareVersion>{self.device_info['FirmwareVersion']}</tds:FirmwareVersion>
+      <tds:SerialNumber>{self.device_info['SerialNumber']}</tds:SerialNumber>
+      <tds:HardwareId>{self.device_info['HardwareId']}</tds:HardwareId>
+    </tds:GetDeviceInformationResponse>
+    """
+            return XMLGenerator.generate_soap_response(
+                "http://www.onvif.org/ver10/device/wsdl/GetDeviceInformationResponse",
+                response
+            )
+        except Exception as e:
+            logger.error(f"Error handling GetDeviceInformation: {e}", exc_info=True)
+            return XMLGenerator.generate_fault_response(f"Error getting device information: {str(e)}")
+
     def handle_media_service(self, soap_request: str) -> str:
         """
         Handle ONVIF Media service requests with enhanced protocol support.
