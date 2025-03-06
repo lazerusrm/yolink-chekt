@@ -24,13 +24,11 @@ from typing import Dict, Any, Optional, List, Tuple, Set, Callable
 from urllib.parse import urlparse, parse_qs
 from functools import lru_cache
 from collections import defaultdict, deque
-
+from onvif import generate_soap_response, generate_fault_response
 from config import MAC_ADDRESS, generate_random_mac
 
-logger = logging.getLogger(__name__)
-
 # ONVIF XML namespaces - precomputed for efficiency
-NS = {
+NAMESPACES = {
     'soap': 'http://www.w3.org/2003/05/soap-envelope',
     'wsa': 'http://schemas.xmlsoap.org/ws/2004/08/addressing',
     'wsd': 'http://schemas.xmlsoap.org/ws/2005/04/discovery',
@@ -50,7 +48,7 @@ NS = {
 }
 
 # Register namespace prefixes for pretty XML output
-for prefix, uri in NS.items():
+for prefix, uri in NAMESPACES.items():
     ET.register_namespace(prefix, uri)
 
 
@@ -1238,7 +1236,7 @@ class OnvifService(threading.Thread):
             if root is None:
                 return XMLGenerator.generate_fault_response("Invalid SOAP request")
 
-            body = root.find('.//soap:Body', NS)
+            body = root.find('.//soap:Body', NAMESPACES)
             if body is None:
                 return XMLGenerator.generate_fault_response("Invalid SOAP request")
 
@@ -1376,9 +1374,9 @@ class OnvifService(threading.Thread):
         try:
             # Check if IncludeCapability is present and set to true
             include_capability = False
-            get_services = request.find('.//tds:GetServices', NS)
+            get_services = request.find('.//tds:GetServices', NAMESPACES)
             if get_services is not None:
-                capability_elem = get_services.find('.//tds:IncludeCapability', NS)
+                capability_elem = get_services.find('.//tds:IncludeCapability', NAMESPACES)
                 if capability_elem is not None and capability_elem.text.lower() == 'true':
                     include_capability = True
 
@@ -1460,10 +1458,10 @@ class OnvifService(threading.Thread):
         """
         try:
             # Extract category if specified, default to 'All'
-            get_capabilities = request.find('.//tds:GetCapabilities', NS)
+            get_capabilities = request.find('.//tds:GetCapabilities', NAMESPACES)
             category = 'All'
             if get_capabilities is not None:
-                category_elem = get_capabilities.find('.//tds:Category', NS)
+                category_elem = get_capabilities.find('.//tds:Category', NAMESPACES)
                 if category_elem is not None:
                     category = category_elem.text
 
@@ -1760,14 +1758,14 @@ class OnvifService(threading.Thread):
         """
         try:
             # Extract profile token from the request
-            get_profile = request.find('.//trt:GetProfile', NS)
+            get_profile = request.find('.//trt:GetProfile', NAMESPACES)
             if get_profile is None:
                 return XMLGenerator.generate_fault_response(
                     "Missing GetProfile element",
                     "ter:InvalidArgVal"
                 )
 
-            profile_token_elem = get_profile.find('.//trt:ProfileToken', NS)
+            profile_token_elem = get_profile.find('.//trt:ProfileToken', NAMESPACES)
             if profile_token_elem is None:
                 return XMLGenerator.generate_fault_response(
                     "Missing ProfileToken",
@@ -1847,14 +1845,14 @@ class OnvifService(threading.Thread):
         """
         try:
             # Extract profile token from the request
-            get_snapshot_uri = request.find('.//trt:GetSnapshotUri', NS)
+            get_snapshot_uri = request.find('.//trt:GetSnapshotUri', NAMESPACES)
             if get_snapshot_uri is None:
                 return XMLGenerator.generate_fault_response(
                     "Missing GetSnapshotUri element",
                     "ter:InvalidArgVal"
                 )
 
-            profile_token_elem = get_snapshot_uri.find('.//trt:ProfileToken', NS)
+            profile_token_elem = get_snapshot_uri.find('.//trt:ProfileToken', NAMESPACES)
             if profile_token_elem is None:
                 return XMLGenerator.generate_fault_response(
                     "Missing ProfileToken",
@@ -2037,10 +2035,10 @@ class OnvifService(threading.Thread):
         """
         try:
             # Extract ConfigurationToken if present (optional in ONVIF spec)
-            get_options = request.find('.//trt:GetVideoSourceConfigurationOptions', NS)
+            get_options = request.find('.//trt:GetVideoSourceConfigurationOptions', NAMESPACES)
             config_token = None
             if get_options is not None:
-                token_elem = get_options.find('.//trt:ConfigurationToken', NS)
+                token_elem = get_options.find('.//trt:ConfigurationToken', NAMESPACES)
                 if token_elem is not None:
                     config_token = token_elem.text
 
@@ -2125,14 +2123,14 @@ class OnvifService(threading.Thread):
         """
         try:
             # Extract ProfileToken from the request
-            get_configs = request.find('.//trt:GetCompatibleVideoEncoderConfigurations', NS)
+            get_configs = request.find('.//trt:GetCompatibleVideoEncoderConfigurations', NAMESPACES)
             if get_configs is None:
                 return XMLGenerator.generate_fault_response(
                     "Missing GetCompatibleVideoEncoderConfigurations element",
                     "ter:InvalidArgVal"
                 )
 
-            profile_token_elem = get_configs.find('.//trt:ProfileToken', NS)
+            profile_token_elem = get_configs.find('.//trt:ProfileToken', NAMESPACES)
             if profile_token_elem is None:
                 return XMLGenerator.generate_fault_response(
                     "Missing ProfileToken",
@@ -2204,10 +2202,10 @@ class OnvifService(threading.Thread):
         """
         try:
             # Extract ConfigurationToken if present (optional)
-            get_options = request.find('.//trt:GetVideoEncoderConfigurationOptions', NS)
+            get_options = request.find('.//trt:GetVideoEncoderConfigurationOptions', NAMESPACES)
             config_token = None
             if get_options is not None:
-                token_elem = get_options.find('.//trt:ConfigurationToken', NS)
+                token_elem = get_options.find('.//trt:ConfigurationToken', NAMESPACES)
                 if token_elem is not None:
                     config_token = token_elem.text
 
@@ -2434,7 +2432,7 @@ class OnvifService(threading.Thread):
             if root is None:
                 return XMLGenerator.generate_fault_response("Invalid SOAP request")
 
-            body = root.find('.//soap:Body', NS)
+            body = root.find('.//soap:Body', NAMESPACES)
             if body is None:
                 return XMLGenerator.generate_fault_response("Invalid SOAP request")
 
@@ -2492,7 +2490,7 @@ class OnvifService(threading.Thread):
             if root is None:
                 return XMLGenerator.generate_fault_response("Invalid SOAP request")
 
-            body = root.find('.//soap:Body', NS)
+            body = root.find('.//soap:Body', NAMESPACES)
             if body is None:
                 return XMLGenerator.generate_fault_response("Invalid SOAP request")
 
@@ -2551,7 +2549,7 @@ class OnvifService(threading.Thread):
             if root is None:
                 return XMLGenerator.generate_fault_response("Invalid SOAP request")
 
-            body = root.find('.//soap:Body', NS)
+            body = root.find('.//soap:Body', NAMESPACES)
             if body is None:
                 return XMLGenerator.generate_fault_response("Invalid SOAP request")
 
@@ -2682,13 +2680,13 @@ class OnvifService(threading.Thread):
         """
         try:
             # Extract subscription parameters
-            create_subscription = request.find('.//tev:CreatePullPointSubscription', NS)
+            create_subscription = request.find('.//tev:CreatePullPointSubscription', NAMESPACES)
 
             # Default values
             initial_termination_time = 60  # 1 minute by default
 
             # Extract InitialTerminationTime if specified
-            initial_term_elem = create_subscription.find('.//wsnt:InitialTerminationTime', NS)
+            initial_term_elem = create_subscription.find('.//wsnt:InitialTerminationTime', NAMESPACES)
             if initial_term_elem is not None:
                 try:
                     # PT60S format = 60 seconds
@@ -2740,27 +2738,27 @@ class OnvifService(threading.Thread):
         """
         try:
             # Extract parameters
-            pull_messages = request.find('.//tev:PullMessages', NS)
+            pull_messages = request.find('.//tev:PullMessages', NAMESPACES)
 
             subscription_id = None
             timeout = 60  # Default timeout in seconds
             message_limit = 10  # Default message limit
 
             # Extract subscription ID
-            subscription_ref = request.find('.//wsa:ReferenceParameters', NS)
+            subscription_ref = request.find('.//wsa:ReferenceParameters', NAMESPACES)
             if subscription_ref is not None:
-                subscription_id_elem = subscription_ref.find('.//tev:SubscriptionId', NS)
+                subscription_id_elem = subscription_ref.find('.//tev:SubscriptionId', NAMESPACES)
                 if subscription_id_elem is not None:
                     subscription_id = subscription_id_elem.text
 
             # If no subscription ID in headers, try to get it from the body
             if subscription_id is None:
-                subscription_id_elem = pull_messages.find('.//tev:SubscriptionId', NS)
+                subscription_id_elem = pull_messages.find('.//tev:SubscriptionId', NAMESPACES)
                 if subscription_id_elem is not None:
                     subscription_id = subscription_id_elem.text
 
             # Extract timeout
-            timeout_elem = pull_messages.find('.//tev:Timeout', NS)
+            timeout_elem = pull_messages.find('.//tev:Timeout', NAMESPACES)
             if timeout_elem is not None:
                 try:
                     # PT60S format = 60 seconds
@@ -2776,7 +2774,7 @@ class OnvifService(threading.Thread):
                     logger.warning(f"Error parsing Timeout: {e}")
 
             # Extract message limit
-            limit_elem = pull_messages.find('.//tev:MessageLimit', NS)
+            limit_elem = pull_messages.find('.//tev:MessageLimit', NAMESPACES)
             if limit_elem is not None:
                 try:
                     message_limit = int(limit_elem.text)
@@ -2863,9 +2861,9 @@ class OnvifService(threading.Thread):
             # Extract subscription ID
             subscription_id = None
 
-            subscription_ref = request.find('.//wsa:ReferenceParameters', NS)
+            subscription_ref = request.find('.//wsa:ReferenceParameters', NAMESPACES)
             if subscription_ref is not None:
-                subscription_id_elem = subscription_ref.find('.//tev:SubscriptionId', NS)
+                subscription_id_elem = subscription_ref.find('.//tev:SubscriptionId', NAMESPACES)
                 if subscription_id_elem is not None:
                     subscription_id = subscription_id_elem.text
 
@@ -2905,20 +2903,20 @@ class OnvifService(threading.Thread):
         """
         try:
             # Extract parameters
-            renew = request.find('.//wsnt:Renew', NS)
+            renew = request.find('.//wsnt:Renew', NAMESPACES)
 
             subscription_id = None
             termination_time = 60  # Default renewal time in seconds
 
             # Extract subscription ID
-            subscription_ref = request.find('.//wsa:ReferenceParameters', NS)
+            subscription_ref = request.find('.//wsa:ReferenceParameters', NAMESPACES)
             if subscription_ref is not None:
-                subscription_id_elem = subscription_ref.find('.//tev:SubscriptionId', NS)
+                subscription_id_elem = subscription_ref.find('.//tev:SubscriptionId', NAMESPACES)
                 if subscription_id_elem is not None:
                     subscription_id = subscription_id_elem.text
 
             # Extract termination time
-            term_time_elem = renew.find('.//wsnt:TerminationTime', NS)
+            term_time_elem = renew.find('.//wsnt:TerminationTime', NAMESPACES)
             if term_time_elem is not None:
                 try:
                     # PT60S format = 60 seconds
@@ -2979,9 +2977,9 @@ class OnvifService(threading.Thread):
             # Extract subscription ID
             subscription_id = None
 
-            subscription_ref = request.find('.//wsa:ReferenceParameters', NS)
+            subscription_ref = request.find('.//wsa:ReferenceParameters', NAMESPACES)
             if subscription_ref is not None:
-                subscription_id_elem = subscription_ref.find('.//tev:SubscriptionId', NS)
+                subscription_id_elem = subscription_ref.find('.//tev:SubscriptionId', NAMESPACES)
                 if subscription_id_elem is not None:
                     subscription_id = subscription_id_elem.text
 
@@ -3033,7 +3031,7 @@ class OnvifService(threading.Thread):
         """
         try:
             # Extract video source token
-            get_imaging_settings = request.find('.//timg:GetImagingSettings', NS)
+            get_imaging_settings = request.find('.//timg:GetImagingSettings', NAMESPACES)
 
             if get_imaging_settings is None:
                 return XMLGenerator.generate_fault_response(
@@ -3041,7 +3039,7 @@ class OnvifService(threading.Thread):
                     "ter:InvalidArgVal"
                 )
 
-            video_source_token_elem = get_imaging_settings.find('.//timg:VideoSourceToken', NS)
+            video_source_token_elem = get_imaging_settings.find('.//timg:VideoSourceToken', NAMESPACES)
             if video_source_token_elem is None:
                 return XMLGenerator.generate_fault_response(
                     "Missing VideoSourceToken",
@@ -3096,7 +3094,7 @@ class OnvifService(threading.Thread):
         """
         try:
             # Extract parameters
-            set_imaging_settings = request.find('.//timg:SetImagingSettings', NS)
+            set_imaging_settings = request.find('.//timg:SetImagingSettings', NAMESPACES)
 
             if set_imaging_settings is None:
                 return XMLGenerator.generate_fault_response(
@@ -3104,7 +3102,7 @@ class OnvifService(threading.Thread):
                     "ter:InvalidArgVal"
                 )
 
-            video_source_token_elem = set_imaging_settings.find('.//timg:VideoSourceToken', NS)
+            video_source_token_elem = set_imaging_settings.find('.//timg:VideoSourceToken', NAMESPACES)
             if video_source_token_elem is None:
                 return XMLGenerator.generate_fault_response(
                     "Missing VideoSourceToken",
@@ -3114,7 +3112,7 @@ class OnvifService(threading.Thread):
             video_source_token = video_source_token_elem.text
 
             # Extract imaging settings
-            imaging_settings_elem = set_imaging_settings.find('.//timg:ImagingSettings', NS)
+            imaging_settings_elem = set_imaging_settings.find('.//timg:ImagingSettings', NAMESPACES)
             if imaging_settings_elem is None:
                 return XMLGenerator.generate_fault_response(
                     "Missing ImagingSettings",
@@ -3153,7 +3151,7 @@ class OnvifService(threading.Thread):
         """
         try:
             # Extract video source token
-            get_options = request.find('.//timg:GetOptions', NS)
+            get_options = request.find('.//timg:GetOptions', NAMESPACES)
 
             if get_options is None:
                 return XMLGenerator.generate_fault_response(
@@ -3161,7 +3159,7 @@ class OnvifService(threading.Thread):
                     "ter:InvalidArgVal"
                 )
 
-            video_source_token_elem = get_options.find('.//timg:VideoSourceToken', NS)
+            video_source_token_elem = get_options.find('.//timg:VideoSourceToken', NAMESPACES)
             if video_source_token_elem is None:
                 return XMLGenerator.generate_fault_response(
                     "Missing VideoSourceToken",
@@ -3258,7 +3256,7 @@ class OnvifService(threading.Thread):
         """
         try:
             # Extract video source token
-            get_move_options = request.find('.//timg:GetMoveOptions', NS)
+            get_move_options = request.find('.//timg:GetMoveOptions', NAMESPACES)
 
             if get_move_options is None:
                 return XMLGenerator.generate_fault_response(
@@ -3266,7 +3264,7 @@ class OnvifService(threading.Thread):
                     "ter:InvalidArgVal"
                 )
 
-            video_source_token_elem = get_move_options.find('.//timg:VideoSourceToken', NS)
+            video_source_token_elem = get_move_options.find('.//timg:VideoSourceToken', NAMESPACES)
             if video_source_token_elem is None:
                 return XMLGenerator.generate_fault_response(
                     "Missing VideoSourceToken",
@@ -3323,7 +3321,7 @@ class OnvifService(threading.Thread):
         """
         try:
             # Extract parameters
-            move = request.find('.//timg:Move', NS)
+            move = request.find('.//timg:Move', NAMESPACES)
 
             if move is None:
                 return XMLGenerator.generate_fault_response(
@@ -3331,7 +3329,7 @@ class OnvifService(threading.Thread):
                     "ter:InvalidArgVal"
                 )
 
-            video_source_token_elem = move.find('.//timg:VideoSourceToken', NS)
+            video_source_token_elem = move.find('.//timg:VideoSourceToken', NAMESPACES)
             if video_source_token_elem is None:
                 return XMLGenerator.generate_fault_response(
                     "Missing VideoSourceToken",
@@ -3362,7 +3360,7 @@ class OnvifService(threading.Thread):
         """
         try:
             # Extract parameters
-            stop = request.find('.//timg:Stop', NS)
+            stop = request.find('.//timg:Stop', NAMESPACES)
 
             if stop is None:
                 return XMLGenerator.generate_fault_response(
@@ -3370,7 +3368,7 @@ class OnvifService(threading.Thread):
                     "ter:InvalidArgVal"
                 )
 
-            video_source_token_elem = stop.find('.//timg:VideoSourceToken', NS)
+            video_source_token_elem = stop.find('.//timg:VideoSourceToken', NAMESPACES)
             if video_source_token_elem is None:
                 return XMLGenerator.generate_fault_response(
                     "Missing VideoSourceToken",
@@ -3401,7 +3399,7 @@ class OnvifService(threading.Thread):
         """
         try:
             # Extract video source token
-            get_status = request.find('.//timg:GetStatus', NS)
+            get_status = request.find('.//timg:GetStatus', NAMESPACES)
 
             if get_status is None:
                 return XMLGenerator.generate_fault_response(
@@ -3409,7 +3407,7 @@ class OnvifService(threading.Thread):
                     "ter:InvalidArgVal"
                 )
 
-            video_source_token_elem = get_status.find('.//timg:VideoSourceToken', NS)
+            video_source_token_elem = get_status.find('.//timg:VideoSourceToken', NAMESPACES)
             if video_source_token_elem is None:
                 return XMLGenerator.generate_fault_response(
                     "Missing VideoSourceToken",
@@ -3513,7 +3511,7 @@ class OnvifService(threading.Thread):
         """
         try:
             # Extract PTZ configuration token
-            get_configuration = request.find('.//tptz:GetConfiguration', NS)
+            get_configuration = request.find('.//tptz:GetConfiguration', NAMESPACES)
 
             if get_configuration is None:
                 return XMLGenerator.generate_fault_response(
@@ -3521,7 +3519,7 @@ class OnvifService(threading.Thread):
                     "ter:InvalidArgVal"
                 )
 
-            ptz_configuration_token_elem = get_configuration.find('.//tptz:PTZConfigurationToken', NS)
+            ptz_configuration_token_elem = get_configuration.find('.//tptz:PTZConfigurationToken', NAMESPACES)
             if ptz_configuration_token_elem is None:
                 return XMLGenerator.generate_fault_response(
                     "Missing PTZConfigurationToken",
@@ -3604,7 +3602,7 @@ class OnvifService(threading.Thread):
         """
         try:
             # Extract parameters
-            get_configuration_options = request.find('.//tptz:GetConfigurationOptions', NS)
+            get_configuration_options = request.find('.//tptz:GetConfigurationOptions', NAMESPACES)
 
             if get_configuration_options is None:
                 return XMLGenerator.generate_fault_response(
@@ -3614,7 +3612,7 @@ class OnvifService(threading.Thread):
 
             # The configuration token is optional
             ptz_configuration_token = None
-            ptz_configuration_token_elem = get_configuration_options.find('.//tptz:ConfigurationToken', NS)
+            ptz_configuration_token_elem = get_configuration_options.find('.//tptz:ConfigurationToken', NAMESPACES)
             if ptz_configuration_token_elem is not None:
                 ptz_configuration_token = ptz_configuration_token_elem.text
 
@@ -3714,7 +3712,7 @@ class OnvifService(threading.Thread):
         """
         try:
             # Extract profile token
-            get_status = request.find('.//tptz:GetStatus', NS)
+            get_status = request.find('.//tptz:GetStatus', NAMESPACES)
 
             if get_status is None:
                 return XMLGenerator.generate_fault_response(
@@ -3722,7 +3720,7 @@ class OnvifService(threading.Thread):
                     "ter:InvalidArgVal"
                 )
 
-            profile_token_elem = get_status.find('.//tptz:ProfileToken', NS)
+            profile_token_elem = get_status.find('.//tptz:ProfileToken', NAMESPACES)
             if profile_token_elem is None:
                 return XMLGenerator.generate_fault_response(
                     "Missing ProfileToken",
@@ -3924,7 +3922,7 @@ class OnvifService(threading.Thread):
         """
         try:
             # Extract profile token
-            get_presets = request.find('.//tptz:GetPresets', NS)
+            get_presets = request.find('.//tptz:GetPresets', NAMESPACES)
 
             if get_presets is None:
                 return XMLGenerator.generate_fault_response(
@@ -3932,7 +3930,7 @@ class OnvifService(threading.Thread):
                     "ter:InvalidArgVal"
                 )
 
-            profile_token_elem = get_presets.find('.//tptz:ProfileToken', NS)
+            profile_token_elem = get_presets.find('.//tptz:ProfileToken', NAMESPACES)
             if profile_token_elem is None:
                 return XMLGenerator.generate_fault_response(
                     "Missing ProfileToken",
@@ -3976,7 +3974,7 @@ class OnvifService(threading.Thread):
         """
         try:
             # Extract parameters
-            goto_preset = request.find('.//tptz:GotoPreset', NS)
+            goto_preset = request.find('.//tptz:GotoPreset', NAMESPACES)
 
             if goto_preset is None:
                 return XMLGenerator.generate_fault_response(
@@ -3984,7 +3982,7 @@ class OnvifService(threading.Thread):
                     "ter:InvalidArgVal"
                 )
 
-            profile_token_elem = goto_preset.find('.//tptz:ProfileToken', NS)
+            profile_token_elem = goto_preset.find('.//tptz:ProfileToken', NAMESPACES)
             if profile_token_elem is None:
                 return XMLGenerator.generate_fault_response(
                     "Missing ProfileToken",
@@ -3993,7 +3991,7 @@ class OnvifService(threading.Thread):
 
             profile_token = profile_token_elem.text
 
-            preset_token_elem = goto_preset.find('.//tptz:PresetToken', NS)
+            preset_token_elem = goto_preset.find('.//tptz:PresetToken', NAMESPACES)
             if preset_token_elem is None:
                 return XMLGenerator.generate_fault_response(
                     "Missing PresetToken",
@@ -4044,7 +4042,7 @@ class OnvifService(threading.Thread):
         """
         try:
             # Extract parameters
-            continuous_move = request.find('.//tptz:ContinuousMove', NS)
+            continuous_move = request.find('.//tptz:ContinuousMove', NAMESPACES)
 
             if continuous_move is None:
                 return XMLGenerator.generate_fault_response(
@@ -4052,7 +4050,7 @@ class OnvifService(threading.Thread):
                     "ter:InvalidArgVal"
                 )
 
-            profile_token_elem = continuous_move.find('.//tptz:ProfileToken', NS)
+            profile_token_elem = continuous_move.find('.//tptz:ProfileToken', NAMESPACES)
             if profile_token_elem is None:
                 return XMLGenerator.generate_fault_response(
                     "Missing ProfileToken",
@@ -4062,7 +4060,7 @@ class OnvifService(threading.Thread):
             profile_token = profile_token_elem.text
 
             # Extract velocity if provided
-            velocity_elem = continuous_move.find('.//tptz:Velocity', NS)
+            velocity_elem = continuous_move.find('.//tptz:Velocity', NAMESPACES)
 
             # Update status to show movement
             self.ptz_status['moveStatus']['panTilt'] = 'MOVING'
@@ -4091,7 +4089,7 @@ class OnvifService(threading.Thread):
         """
         try:
             # Extract parameters
-            relative_move = request.find('.//tptz:RelativeMove', NS)
+            relative_move = request.find('.//tptz:RelativeMove', NAMESPACES)
 
             if relative_move is None:
                 return XMLGenerator.generate_fault_response(
@@ -4099,7 +4097,7 @@ class OnvifService(threading.Thread):
                     "ter:InvalidArgVal"
                 )
 
-            profile_token_elem = relative_move.find('.//tptz:ProfileToken', NS)
+            profile_token_elem = relative_move.find('.//tptz:ProfileToken', NAMESPACES)
             if profile_token_elem is None:
                 return XMLGenerator.generate_fault_response(
                     "Missing ProfileToken",
@@ -4109,7 +4107,7 @@ class OnvifService(threading.Thread):
             profile_token = profile_token_elem.text
 
             # Extract translation if provided
-            translation_elem = relative_move.find('.//tptz:Translation', NS)
+            translation_elem = relative_move.find('.//tptz:Translation', NAMESPACES)
 
             # Update status to show movement
             self.ptz_status['moveStatus']['panTilt'] = 'MOVING'
@@ -4142,7 +4140,7 @@ class OnvifService(threading.Thread):
         """
         try:
             # Extract parameters
-            absolute_move = request.find('.//tptz:AbsoluteMove', NS)
+            absolute_move = request.find('.//tptz:AbsoluteMove', NAMESPACES)
 
             if absolute_move is None:
                 return XMLGenerator.generate_fault_response(
@@ -4150,7 +4148,7 @@ class OnvifService(threading.Thread):
                     "ter:InvalidArgVal"
                 )
 
-            profile_token_elem = absolute_move.find('.//tptz:ProfileToken', NS)
+            profile_token_elem = absolute_move.find('.//tptz:ProfileToken', NAMESPACES)
             if profile_token_elem is None:
                 return XMLGenerator.generate_fault_response(
                     "Missing ProfileToken",
@@ -4160,11 +4158,11 @@ class OnvifService(threading.Thread):
             profile_token = profile_token_elem.text
 
             # Extract position if provided
-            position_elem = absolute_move.find('.//tptz:Position', NS)
+            position_elem = absolute_move.find('.//tptz:Position', NAMESPACES)
 
             if position_elem is not None:
                 # Extract pan/tilt position
-                pan_tilt_elem = position_elem.find('.//tt:PanTilt', NS)
+                pan_tilt_elem = position_elem.find('.//tt:PanTilt', NAMESPACES)
                 if pan_tilt_elem is not None:
                     try:
                         pan = float(pan_tilt_elem.get('x', 0.0))
@@ -4180,7 +4178,7 @@ class OnvifService(threading.Thread):
                         logger.warning(f"Error parsing PanTilt values: {e}")
 
                 # Extract zoom position
-                zoom_elem = position_elem.find('.//tt:Zoom', NS)
+                zoom_elem = position_elem.find('.//tt:Zoom', NAMESPACES)
                 if zoom_elem is not None:
                     try:
                         zoom = float(zoom_elem.get('x', 0.0))
@@ -4223,7 +4221,7 @@ class OnvifService(threading.Thread):
         """
         try:
             # Extract parameters
-            stop = request.find('.//tptz:Stop', NS)
+            stop = request.find('.//tptz:Stop', NAMESPACES)
 
             if stop is None:
                 return XMLGenerator.generate_fault_response(
@@ -4231,7 +4229,7 @@ class OnvifService(threading.Thread):
                     "ter:InvalidArgVal"
                 )
 
-            profile_token_elem = stop.find('.//tptz:ProfileToken', NS)
+            profile_token_elem = stop.find('.//tptz:ProfileToken', NAMESPACES)
             if profile_token_elem is None:
                 return XMLGenerator.generate_fault_response(
                     "Missing ProfileToken",
@@ -4270,7 +4268,7 @@ class OnvifService(threading.Thread):
         """
         try:
             # Extract parameters
-            get_instances = request.find('.//trt:GetGuaranteedNumberOfVideoEncoderInstances', NS)
+            get_instances = request.find('.//trt:GetGuaranteedNumberOfVideoEncoderInstances', NAMESPACES)
 
             if get_instances is None:
                 return XMLGenerator.generate_fault_response(
@@ -4280,7 +4278,7 @@ class OnvifService(threading.Thread):
 
             # Extract configuration token if provided
             config_token = None
-            config_token_elem = get_instances.find('.//trt:ConfigurationToken', NS)
+            config_token_elem = get_instances.find('.//trt:ConfigurationToken', NAMESPACES)
             if config_token_elem is not None:
                 config_token = config_token_elem.text
 
@@ -4308,7 +4306,7 @@ class OnvifService(threading.Thread):
         """
         try:
             # Extract parameters
-            start_multicast = request.find('.//trt:StartMulticastStreaming', NS)
+            start_multicast = request.find('.//trt:StartMulticastStreaming', NAMESPACES)
 
             if start_multicast is None:
                 return XMLGenerator.generate_fault_response(
@@ -4317,7 +4315,7 @@ class OnvifService(threading.Thread):
                 )
 
             # Extract profile token
-            profile_token_elem = start_multicast.find('.//trt:ProfileToken', NS)
+            profile_token_elem = start_multicast.find('.//trt:ProfileToken', NAMESPACES)
             if profile_token_elem is None:
                 return XMLGenerator.generate_fault_response(
                     "Missing ProfileToken",
@@ -4342,7 +4340,7 @@ class OnvifService(threading.Thread):
         """
         try:
             # Extract parameters
-            stop_multicast = request.find('.//trt:StopMulticastStreaming', NS)
+            stop_multicast = request.find('.//trt:StopMulticastStreaming', NAMESPACES)
 
             if stop_multicast is None:
                 return XMLGenerator.generate_fault_response(
@@ -4351,7 +4349,7 @@ class OnvifService(threading.Thread):
                 )
 
             # Extract profile token
-            profile_token_elem = stop_multicast.find('.//trt:ProfileToken', NS)
+            profile_token_elem = stop_multicast.find('.//trt:ProfileToken', NAMESPACES)
             if profile_token_elem is None:
                 return XMLGenerator.generate_fault_response(
                     "Missing ProfileToken",
@@ -4376,7 +4374,7 @@ class OnvifService(threading.Thread):
         """
         try:
             # Extract parameters
-            get_osds = request.find('.//trt:GetOSDs', NS)
+            get_osds = request.find('.//trt:GetOSDs', NAMESPACES)
 
             if get_osds is None:
                 return XMLGenerator.generate_fault_response(
@@ -4404,7 +4402,7 @@ class OnvifService(threading.Thread):
         """
         try:
             # Extract parameters
-            get_osd_options = request.find('.//trt:GetOSDOptions', NS)
+            get_osd_options = request.find('.//trt:GetOSDOptions', NAMESPACES)
 
             if get_osd_options is None:
                 return XMLGenerator.generate_fault_response(
@@ -4441,7 +4439,7 @@ class OnvifService(threading.Thread):
         """
         try:
             # Extract parameters
-            set_osd = request.find('.//trt:SetOSD', NS)
+            set_osd = request.find('.//trt:SetOSD', NAMESPACES)
 
             if set_osd is None:
                 return XMLGenerator.generate_fault_response(
@@ -4465,7 +4463,7 @@ class OnvifService(threading.Thread):
         """
         try:
             # Extract parameters
-            set_sync_point = request.find('.//trt:SetSynchronizationPoint', NS)
+            set_sync_point = request.find('.//trt:SetSynchronizationPoint', NAMESPACES)
 
             if set_sync_point is None:
                 return XMLGenerator.generate_fault_response(
@@ -4474,7 +4472,7 @@ class OnvifService(threading.Thread):
                 )
 
             # Extract profile token
-            profile_token_elem = set_sync_point.find('.//trt:ProfileToken', NS)
+            profile_token_elem = set_sync_point.find('.//trt:ProfileToken', NAMESPACES)
             if profile_token_elem is None:
                 return XMLGenerator.generate_fault_response(
                     "Missing ProfileToken",
@@ -4614,7 +4612,7 @@ class OnvifService(threading.Thread):
         """
         try:
             # Extract parameters
-            get_system_log = request.find('.//tds:GetSystemLog', NS)
+            get_system_log = request.find('.//tds:GetSystemLog', NAMESPACES)
 
             if get_system_log is None:
                 return XMLGenerator.generate_fault_response(
