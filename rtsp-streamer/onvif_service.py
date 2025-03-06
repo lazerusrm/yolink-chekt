@@ -701,7 +701,7 @@ class OnvifService(threading.Thread):
                 'GetSystemDateAndTime': self._handle_get_system_date_and_time,
                 'GetHostname': self._handle_get_hostname,
                 'GetNetworkInterfaces': self._handle_get_network_interfaces,
-                'GetNetworkProtocols': self._handle_get_network_protocols
+                'GetNetworkProtocols': self._handle_get_network_protocols,  # <- Missing comma was here
                 'GetVideoSourceConfigurationOptions': self._handle_get_video_source_configuration_options,
                 'GetAudioSourceConfigurations': self._handle_get_audio_source_configurations,
                 'GetCompatibleVideoEncoderConfigurations': self._handle_get_compatible_video_encoder_configurations,
