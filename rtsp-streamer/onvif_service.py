@@ -1713,6 +1713,40 @@ class OnvifService(threading.Thread):
             logger.error(f"Error handling GetNetworkInterfaces: {e}", exc_info=True)
             return XMLGenerator.generate_fault_response(f"Error getting network interfaces: {str(e)}")
 
+    def _handle_get_network_protocols(self, request: ET.Element) -> str:
+        """
+        Handle GetNetworkProtocols request.
+        Returns the supported network protocols and their ports.
+
+        Args:
+            request: Request XML element
+
+        Returns:
+            str: SOAP response XML
+        """
+        try:
+            response = f"""
+    <tds:GetNetworkProtocolsResponse>
+      <tds:NetworkProtocols>
+        <tt:Name>HTTP</tt:Name>
+        <tt:Enabled>true</tt:Enabled>
+        <tt:Port>{self.onvif_port}</tt:Port>
+      </tds:NetworkProtocols>
+      <tds:NetworkProtocols>
+        <tt:Name>RTSP</tt:Name>
+        <tt:Enabled>true</tt:Enabled>
+        <tt:Port>{self.rtsp_port}</tt:Port>
+      </tds:NetworkProtocols>
+    </tds:GetNetworkProtocolsResponse>
+    """
+            return XMLGenerator.generate_soap_response(
+                "http://www.onvif.org/ver10/device/wsdl/GetNetworkProtocolsResponse",
+                response
+            )
+        except Exception as e:
+            logger.error(f"Error handling GetNetworkProtocols: {e}", exc_info=True)
+            return XMLGenerator.generate_fault_response(f"Error getting network protocols: {str(e)}")
+
 
 
     def _handle_get_hostname(self, request: ET.Element) -> str:
