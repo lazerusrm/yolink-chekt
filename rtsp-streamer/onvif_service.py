@@ -1670,6 +1670,49 @@ class OnvifService(threading.Thread):
             logger.error(f"Error handling GetSystemDateAndTime: {e}", exc_info=True)
             return XMLGenerator.generate_fault_response(f"Error getting system date and time: {str(e)}")
 
+    def _handle_get_network_interfaces(self, request: ET.Element) -> str:
+        """
+        Handle GetNetworkInterfaces request.
+        Returns information about the device's network interfaces.
+
+        Args:
+            request: Request XML element
+
+        Returns:
+            str: SOAP response XML
+        """
+        try:
+            # Simple single-interface response using server_ip
+            response = f"""
+    <tds:GetNetworkInterfacesResponse>
+      <tds:NetworkInterfaces token="eth0">
+        <tt:Enabled>true</tt:Enabled>
+        <tt:Info>
+          <tt:Name>eth0</tt:Name>
+          <tt:HwAddress>{self.mac_address}</tt:HwAddress>
+          <tt:MTU>1500</tt:MTU>
+        </tt:Info>
+        <tt:IPv4>
+          <tt:Enabled>true</tt:Enabled>
+          <tt:Config>
+            <tt:Manual>
+              <tt:Address>{self.server_ip}</tt:Address>
+              <tt:PrefixLength>24</tt:PrefixLength>
+            </tt:Manual>
+            <tt:DHCP>false</tt:DHCP>
+          </tt:Config>
+        </tt:IPv4>
+      </tds:NetworkInterfaces>
+    </tds:GetNetworkInterfacesResponse>
+    """
+            return XMLGenerator.generate_soap_response(
+                "http://www.onvif.org/ver10/device/wsdl/GetNetworkInterfacesResponse",
+                response
+            )
+        except Exception as e:
+            logger.error(f"Error handling GetNetworkInterfaces: {e}", exc_info=True)
+            return XMLGenerator.generate_fault_response(f"Error getting network interfaces: {str(e)}")
+
 
 
     def _handle_get_hostname(self, request: ET.Element) -> str:
