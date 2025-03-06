@@ -2325,35 +2325,41 @@ class OnvifService(threading.Thread):
             logger.error(f"Error handling GetHostname: {e}", exc_info=True)
             return XMLGenerator.generate_fault_response(f"Error getting hostname: {str(e)}")
 
+    from onvif import NAMESPACES, generate_soap_response, generate_fault_response  # Ensure these are imported
+    import logging
+    from xml.etree import ElementTree as ET
+
+    logger = logging.getLogger(__name__)
+
     def handle_media_service(self, soap_request: str) -> str:
         """
         Handle ONVIF Media service requests with enhanced protocol support and diagnostics.
 
         Args:
-            soap_request: SOAP request XML
+            soap_request: SOAP request XML as a string
 
         Returns:
             str: SOAP response XML
         """
+        logger.debug(f"Received media service request: {soap_request[:1000]}...")
+
+        # Specifically log GetStreamUri requests
+        if "GetStreamUri" in soap_request:
+            logger.info(f"GetStreamUri request received: {soap_request[:500]}...")
+
         try:
-            # Log incoming request at DEBUG level for full visibility
-            logger.debug(f"Received media service request: {soap_request[:1000]}...")
-
-            # Specifically highlight GetStreamUri requests
-            if "GetStreamUri" in soap_request:
-                logger.info(f"GetStreamUri request received: {soap_request[:500]}...")
-
-            # Parse XML safely (assuming parse_xml_safely is defined elsewhere)
-            root = parse_xml_safely(soap_request)
-            if root is None:
-                logger.error("Failed to parse SOAP request")
+            # Parse XML safely
+            try:
+                root = ET.fromstring(soap_request)
+            except ET.ParseError as e:
+                logger.error(f"Failed to parse SOAP request: {e}")
                 return generate_fault_response("Invalid SOAP request", "ter:InvalidArgVal")
 
-            # Use NAMESPACES from onvif.py instead of NS
+            # Extract SOAP Body using NAMESPACES
             body = root.find('.//soap:Body', NAMESPACES)
             if body is None:
                 logger.error("No SOAP Body found in request")
-                return generate_fault_response("Invalid SOAP request", "ter:InvalidArgVal")
+                return generate_fault_response("Missing SOAP Body", "ter:InvalidArgVal")
 
             # Find the action element
             action_element = None
@@ -2366,11 +2372,11 @@ class OnvifService(threading.Thread):
                 logger.error("No action element found in SOAP Body")
                 return generate_fault_response("No action element found", "ter:InvalidArgVal")
 
-            # Extract local name from the tag
+            # Extract the local action name
             local_name = action_element.tag.split('}')[-1]
             logger.info(f"Media service action requested: {local_name}")
 
-            # Handler map for media service actions
+            # Define handler map for media service actions
             handler_map = {
                 'GetProfiles': self._handle_get_profiles,
                 'GetProfile': self._handle_get_profile,
@@ -2393,12 +2399,12 @@ class OnvifService(threading.Thread):
                 'SetSynchronizationPoint': self._handle_set_synchronization_point,
             }
 
+            # Execute the handler if found
             handler = handler_map.get(local_name)
             if handler:
-                response = handler(action_element)  # Pass action_element, not root, as per your handler design
-                # Log GetStreamUri response specifically
+                response = handler(action_element)
                 if local_name == "GetStreamUri":
-                    logger.info(f"GetStreamUri response generated: {response[:500]}...")
+                    logger.info(f"GetStreamUri response: {response[:500]}...")
                 return response
             else:
                 logger.warning(f"Unsupported media service action: {local_name}")
@@ -2410,6 +2416,7 @@ class OnvifService(threading.Thread):
         except Exception as e:
             logger.error(f"Error handling media service request: {e}", exc_info=True)
             return generate_fault_response(f"Internal error: {str(e)}", "ter:InternalError")
+
 
     def handle_events_service(self, soap_request: str) -> str:
         """
@@ -3908,7 +3915,7 @@ class OnvifService(threading.Thread):
             logger.error(f"Error handling GetProfiles: {e}", exc_info=True)
             return generate_fault_response(f"Internal error: {str(e)}", "ter:InternalError")
 
-        
+
 
     def _handle_get_presets(self, request: ET.Element) -> str:
         """
