@@ -2191,6 +2191,78 @@ class OnvifService(threading.Thread):
             return XMLGenerator.generate_fault_response(
                 f"Error getting compatible video encoder configurations: {str(e)}")
 
+    def _handle_get_video_encoder_configuration_options(self, request: ET.Element) -> str:
+        """
+        Handle GetVideoEncoderConfigurationOptions request.
+        Returns the configuration options available for video encoders.
+
+        Args:
+            request: Request XML element
+
+        Returns:
+            str: SOAP response XML
+        """
+        try:
+            # Extract ConfigurationToken if present (optional in ONVIF spec)
+            get_options = request.find('.//trt:GetVideoEncoderConfigurationOptions', NS)
+            config_token = None
+            if get_options is not None:
+                token_elem = get_options.find('.//trt:ConfigurationToken', NS)
+                if token_elem is not None:
+                    config_token = token_elem.text
+
+            # Simple response with options based on existing profiles
+            options_xml = ""
+            with self.profiles_lock:
+                for profile in self.media_profiles:
+                    profile_dict = profile.to_dict()
+                    width = profile_dict['resolution']['width']
+                    height = profile_dict['resolution']['height']
+                    options_xml += f"""
+    <tt:Options>
+      <tt:H264>
+        <tt:ResolutionsAvailable>
+          <tt:Width>{width}</tt:Width>
+          <tt:Height>{height}</tt:Height>
+        </tt:ResolutionsAvailable>
+        <tt:GovLengthRange>
+          <tt:Min>10</tt:Min>
+          <tt:Max>60</tt:Max>
+        </tt:GovLengthRange>
+        <tt:FrameRateRange>
+          <tt:Min>1</tt:Min>
+          <tt:Max>{profile.fps}</tt:Max>
+        </tt:FrameRateRange>
+        <tt:EncodingIntervalRange>
+          <tt:Min>1</tt:Min>
+          <tt:Max>1</tt:Max>
+        </tt:EncodingIntervalRange>
+        <tt:H264ProfilesSupported>High</tt:H264ProfilesSupported>
+        <tt:BitrateRange>
+          <tt:Min>1000</tt:Min>
+          <tt:Max>8000</tt:Max>
+        </tt:BitrateRange>
+      </tt:H264>
+      <tt:QualityRange>
+        <tt:Min>1</tt:Min>
+        <tt:Max>10</tt:Max>
+      </tt:QualityRange>
+    </tt:Options>
+    """
+
+            response = f"""
+    <trt:GetVideoEncoderConfigurationOptionsResponse>
+      {options_xml}
+    </trt:GetVideoEncoderConfigurationOptionsResponse>
+    """
+            return XMLGenerator.generate_soap_response(
+                "http://www.onvif.org/ver10/media/wsdl/GetVideoEncoderConfigurationOptionsResponse",
+                response
+            )
+        except Exception as e:
+            logger.error(f"Error handling GetVideoEncoderConfigurationOptions: {e}", exc_info=True)
+            return XMLGenerator.generate_fault_response(f"Error getting video encoder configuration options: {str(e)}")
+
 
 
     def _handle_get_hostname(self, request: ET.Element) -> str:
