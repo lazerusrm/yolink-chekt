@@ -702,6 +702,10 @@ class OnvifService(threading.Thread):
                 'GetHostname': self._handle_get_hostname,
                 'GetNetworkInterfaces': self._handle_get_network_interfaces,
                 'GetNetworkProtocols': self._handle_get_network_protocols
+                'GetVideoSourceConfigurationOptions': self._handle_get_video_source_configuration_options,
+                'GetAudioSourceConfigurations': self._handle_get_audio_source_configurations,
+                'GetCompatibleVideoEncoderConfigurations': self._handle_get_compatible_video_encoder_configurations,
+                'GetVideoEncoderConfigurationOptions': self._handle_get_video_encoder_configuration_options
             }
 
             handler = handler_map.get(local_name)
@@ -1208,7 +1212,8 @@ class OnvifService(threading.Thread):
 
     def _handle_get_profiles(self, request: ET.Element) -> str:
         """
-        Handle GetProfiles request.
+        Simplified handler for GetProfiles request.
+        Provides a minimal, standard-compliant response.
 
         Args:
             request: Request XML root
@@ -1216,89 +1221,114 @@ class OnvifService(threading.Thread):
         Returns:
             str: SOAP response XML
         """
-        with self.profiles_lock:
-            profiles_xml = ""
-            for profile_info in self.media_profiles:
-                profile = profile_info.to_dict()
-                profiles_xml += f"""
-<trt:Profiles fixed="true" token="{profile['token']}">
-  <tt:Name>{profile['name']}</tt:Name>
-  <tt:VideoSourceConfiguration token="VideoSourceConfig">
-    <tt:Name>VideoSourceConfig</tt:Name>
-    <tt:UseCount>1</tt:UseCount>
-    <tt:SourceToken>VideoSource</tt:SourceToken>
-    <tt:Bounds height="{profile['resolution']['height']}" width="{profile['resolution']['width']}" y="0" x="0"/>
-  </tt:VideoSourceConfiguration>
-  <tt:VideoEncoderConfiguration token="VideoEncoder_{profile['token']}">
-    <tt:Name>VideoEncoder</tt:Name>
-    <tt:UseCount>1</tt:UseCount>
-    <tt:Encoding>{profile['encoding']}</tt:Encoding>
-    <tt:Resolution>
-      <tt:Width>{profile['resolution']['width']}</tt:Width>
-      <tt:Height>{profile['resolution']['height']}</tt:Height>
-    </tt:Resolution>
-    <tt:Quality>5</tt:Quality>
-    <tt:RateControl>
-      <tt:FrameRateLimit>{profile['fps']}</tt:FrameRateLimit>
-      <tt:EncodingInterval>1</tt:EncodingInterval>
-      <tt:BitrateLimit>4096</tt:BitrateLimit>
-    </tt:RateControl>
-    <tt:H264>
-      <tt:GovLength>30</tt:GovLength>
-      <tt:H264Profile>High</tt:H264Profile>
-    </tt:H264>
-    <tt:Multicast>
-      <tt:Address>
-        <tt:Type>IPv4</tt:Type>
-        <tt:IPv4Address>0.0.0.0</tt:IPv4Address>
-      </tt:Address>
-      <tt:Port>0</tt:Port>
-      <tt:TTL>1</tt:TTL>
-      <tt:AutoStart>false</tt:AutoStart>
-    </tt:Multicast>
-    <tt:SessionTimeout>PT60S</tt:SessionTimeout>
-  </tt:VideoEncoderConfiguration>
-  <tt:PTZConfiguration token="PTZConfig_{profile['token']}">
-    <tt:Name>PTZConfig</tt:Name>
-    <tt:UseCount>1</tt:UseCount>
-    <tt:NodeToken>PTZNode</tt:NodeToken>
-    <tt:DefaultAbsolutePantTiltPositionSpace>http://www.onvif.org/ver10/tptz/PanTiltSpaces/PositionGenericSpace</tt:DefaultAbsolutePantTiltPositionSpace>
-    <tt:DefaultAbsoluteZoomPositionSpace>http://www.onvif.org/ver10/tptz/ZoomSpaces/PositionGenericSpace</tt:DefaultAbsoluteZoomPositionSpace>
-    <tt:DefaultPTZTimeout>PT5S</tt:DefaultPTZTimeout>
-    <tt:PanTiltLimits>
-      <tt:Range>
-        <tt:URI>http://www.onvif.org/ver10/tptz/PanTiltSpaces/PositionGenericSpace</tt:URI>
-        <tt:XRange>
-          <tt:Min>-1.0</tt:Min>
-          <tt:Max>1.0</tt:Max>
-        </tt:XRange>
-        <tt:YRange>
-          <tt:Min>-1.0</tt:Min>
-          <tt:Max>1.0</tt:Max>
-        </tt:YRange>
-      </tt:Range>
-    </tt:PanTiltLimits>
-    <tt:ZoomLimits>
-      <tt:Range>
-        <tt:URI>http://www.onvif.org/ver10/tptz/ZoomSpaces/PositionGenericSpace</tt:URI>
-        <tt:XRange>
-          <tt:Min>0.0</tt:Min>
-          <tt:Max>1.0</tt:Max>
-        </tt:XRange>
-      </tt:Range>
-    </tt:ZoomLimits>
-  </tt:PTZConfiguration>
-</trt:Profiles>
-"""
-            response = f"""
-<trt:GetProfilesResponse>
-{profiles_xml}
-</trt:GetProfilesResponse>
-"""
-        return XMLGenerator.generate_soap_response(
-            "http://www.onvif.org/ver10/media/wsdl/GetProfilesResponse",
-            response
-        )
+        logger.info("Processing GetProfiles request with simplified response")
+
+        try:
+            with self.profiles_lock:
+                profiles_xml = ""
+                for profile_info in self.media_profiles:
+                    profile = profile_info.to_dict()
+                    profiles_xml += f"""
+    <trt:Profiles fixed="true" token="{profile['token']}">
+      <tt:Name>{profile['name']}</tt:Name>
+      <tt:VideoSourceConfiguration token="VideoSourceConfig_{profile['token']}">
+        <tt:Name>VideoSourceConfig</tt:Name>
+        <tt:UseCount>1</tt:UseCount>
+        <tt:SourceToken>VideoSource</tt:SourceToken>
+        <tt:Bounds height="{profile['resolution']['height']}" width="{profile['resolution']['width']}" y="0" x="0"/>
+      </tt:VideoSourceConfiguration>
+      <tt:VideoEncoderConfiguration token="VideoEncoder_{profile['token']}">
+        <tt:Name>VideoEncoder_{profile['token']}</tt:Name>
+        <tt:UseCount>1</tt:UseCount>
+        <tt:Encoding>{profile['encoding']}</tt:Encoding>
+        <tt:Resolution>
+          <tt:Width>{profile['resolution']['width']}</tt:Width>
+          <tt:Height>{profile['resolution']['height']}</tt:Height>
+        </tt:Resolution>
+        <tt:Quality>5</tt:Quality>
+        <tt:RateControl>
+          <tt:FrameRateLimit>{profile['fps']}</tt:FrameRateLimit>
+          <tt:EncodingInterval>1</tt:EncodingInterval>
+          <tt:BitrateLimit>4096</tt:BitrateLimit>
+        </tt:RateControl>
+        <tt:H264>
+          <tt:GovLength>30</tt:GovLength>
+          <tt:H264Profile>High</tt:H264Profile>
+        </tt:H264>
+        <tt:Multicast>
+          <tt:Address>
+            <tt:Type>IPv4</tt:Type>
+            <tt:IPv4Address>0.0.0.0</tt:IPv4Address>
+          </tt:Address>
+          <tt:Port>0</tt:Port>
+          <tt:TTL>1</tt:TTL>
+          <tt:AutoStart>false</tt:AutoStart>
+        </tt:Multicast>
+        <tt:SessionTimeout>PT60S</tt:SessionTimeout>
+      </tt:VideoEncoderConfiguration>
+    </trt:Profiles>
+    """
+
+                response = f"""
+    <trt:GetProfilesResponse>
+    {profiles_xml}
+    </trt:GetProfilesResponse>
+    """
+
+            logger.info(f"Sending GetProfiles response with {len(self.media_profiles)} profiles")
+            return XMLGenerator.generate_soap_response(
+                "http://www.onvif.org/ver10/media/wsdl/GetProfilesResponse",
+                response
+            )
+        except Exception as e:
+            logger.error(f"Error in GetProfiles handler: {e}", exc_info=True)
+            # Provide a minimal fallback response
+            fallback_response = """
+    <trt:GetProfilesResponse>
+      <trt:Profiles fixed="true" token="profile1">
+        <tt:Name>Main Stream</tt:Name>
+        <tt:VideoSourceConfiguration token="VideoSourceConfig_1">
+          <tt:Name>VideoSourceConfig</tt:Name>
+          <tt:UseCount>1</tt:UseCount>
+          <tt:SourceToken>VideoSource</tt:SourceToken>
+          <tt:Bounds height="1080" width="1920" y="0" x="0"/>
+        </tt:VideoSourceConfiguration>
+        <tt:VideoEncoderConfiguration token="VideoEncoder_1">
+          <tt:Name>VideoEncoder_1</tt:Name>
+          <tt:UseCount>1</tt:UseCount>
+          <tt:Encoding>H264</tt:Encoding>
+          <tt:Resolution>
+            <tt:Width>1920</tt:Width>
+            <tt:Height>1080</tt:Height>
+          </tt:Resolution>
+          <tt:Quality>5</tt:Quality>
+          <tt:RateControl>
+            <tt:FrameRateLimit>6</tt:FrameRateLimit>
+            <tt:EncodingInterval>1</tt:EncodingInterval>
+            <tt:BitrateLimit>4096</tt:BitrateLimit>
+          </tt:RateControl>
+          <tt:H264>
+            <tt:GovLength>30</tt:GovLength>
+            <tt:H264Profile>High</tt:H264Profile>
+          </tt:H264>
+          <tt:Multicast>
+            <tt:Address>
+              <tt:Type>IPv4</tt:Type>
+              <tt:IPv4Address>0.0.0.0</tt:IPv4Address>
+            </tt:Address>
+            <tt:Port>0</tt:Port>
+            <tt:TTL>1</tt:TTL>
+            <tt:AutoStart>false</tt:AutoStart>
+          </tt:Multicast>
+          <tt:SessionTimeout>PT60S</tt:SessionTimeout>
+        </tt:VideoEncoderConfiguration>
+      </trt:Profiles>
+    </trt:GetProfilesResponse>
+    """
+            return XMLGenerator.generate_soap_response(
+                "http://www.onvif.org/ver10/media/wsdl/GetProfilesResponse",
+                fallback_response
+            )
 
     def _handle_get_profile(self, request: ET.Element) -> str:
         """
@@ -1640,6 +1670,99 @@ class OnvifService(threading.Thread):
             "http://www.onvif.org/ver10/device/wsdl/GetCapabilitiesResponse",
             response
         )
+
+    def _handle_get_video_source_configuration_options(self, request: ET.Element) -> str:
+        """
+        Handle GetVideoSourceConfigurationOptions request.
+
+        Args:
+            request: Request XML element
+
+        Returns:
+            str: SOAP response XML
+        """
+        logger.info("Processing GetVideoSourceConfigurationOptions request")
+
+        try:
+            # Get configuration token if specified
+            config_token = None
+            try:
+                config_token_elem = request.find('.//trt:ConfigurationToken', NS)
+                if config_token_elem is not None:
+                    config_token = config_token_elem.text
+                    logger.info(f"Configuration token specified: {config_token}")
+            except Exception as e:
+                logger.debug(f"Error getting configuration token: {e}")
+
+            # Use main profile dimensions for max bounds
+            with self.profiles_lock:
+                main_profile = next((p for p in self.media_profiles if p.token == "profile1"), self.media_profiles[0])
+                main_width = main_profile.width
+                main_height = main_profile.height
+
+            # Create a simple, standard-compliant response
+            response = f"""
+    <trt:GetVideoSourceConfigurationOptionsResponse>
+      <trt:Options>
+        <tt:BoundsRange>
+          <tt:XRange>
+            <tt:Min>0</tt:Min>
+            <tt:Max>{main_width}</tt:Max>
+          </tt:XRange>
+          <tt:YRange>
+            <tt:Min>0</tt:Min>
+            <tt:Max>{main_height}</tt:Max>
+          </tt:YRange>
+          <tt:WidthRange>
+            <tt:Min>320</tt:Min>
+            <tt:Max>{main_width}</tt:Max>
+          </tt:WidthRange>
+          <tt:HeightRange>
+            <tt:Min>240</tt:Min>
+            <tt:Max>{main_height}</tt:Max>
+          </tt:HeightRange>
+        </tt:BoundsRange>
+        <tt:VideoSourceTokensAvailable>VideoSource</tt:VideoSourceTokensAvailable>
+      </trt:Options>
+    </trt:GetVideoSourceConfigurationOptionsResponse>
+    """
+            logger.info("Sending GetVideoSourceConfigurationOptions response")
+            return XMLGenerator.generate_soap_response(
+                "http://www.onvif.org/ver10/media/wsdl/GetVideoSourceConfigurationOptionsResponse",
+                response
+            )
+        except Exception as e:
+            logger.error(f"Error in GetVideoSourceConfigurationOptions: {e}", exc_info=True)
+            # Return a simple fallback response on error
+            fallback_response = """
+    <trt:GetVideoSourceConfigurationOptionsResponse>
+      <trt:Options>
+        <tt:BoundsRange>
+          <tt:XRange>
+            <tt:Min>0</tt:Min>
+            <tt:Max>1920</tt:Max>
+          </tt:XRange>
+          <tt:YRange>
+            <tt:Min>0</tt:Min>
+            <tt:Max>1080</tt:Max>
+          </tt:YRange>
+          <tt:WidthRange>
+            <tt:Min>320</tt:Min>
+            <tt:Max>1920</tt:Max>
+          </tt:WidthRange>
+          <tt:HeightRange>
+            <tt:Min>240</tt:Min>
+            <tt:Max>1080</tt:Max>
+          </tt:HeightRange>
+        </tt:BoundsRange>
+        <tt:VideoSourceTokensAvailable>VideoSource</tt:VideoSourceTokensAvailable>
+      </trt:Options>
+    </trt:GetVideoSourceConfigurationOptionsResponse>
+    """
+            return XMLGenerator.generate_soap_response(
+                "http://www.onvif.org/ver10/media/wsdl/GetVideoSourceConfigurationOptionsResponse",
+                fallback_response
+            )
 
     def _handle_get_service_capabilities(self, request: ET.Element, service_type: str) -> str:
         """
