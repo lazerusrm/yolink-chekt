@@ -2194,7 +2194,7 @@ class OnvifService(threading.Thread):
     def _handle_get_video_encoder_configuration_options(self, request: ET.Element) -> str:
         """
         Handle GetVideoEncoderConfigurationOptions request.
-        Returns the configuration options available for video encoders.
+        Returns a comprehensive set of configuration options for video encoders.
 
         Args:
             request: Request XML element
@@ -2203,7 +2203,7 @@ class OnvifService(threading.Thread):
             str: SOAP response XML
         """
         try:
-            # Extract ConfigurationToken if present (optional in ONVIF spec)
+            # Extract ConfigurationToken if present (optional)
             get_options = request.find('.//trt:GetVideoEncoderConfigurationOptions', NS)
             config_token = None
             if get_options is not None:
@@ -2211,48 +2211,78 @@ class OnvifService(threading.Thread):
                 if token_elem is not None:
                     config_token = token_elem.text
 
-            # Simple response with options based on existing profiles
-            options_xml = ""
-            with self.profiles_lock:
-                for profile in self.media_profiles:
-                    profile_dict = profile.to_dict()
-                    width = profile_dict['resolution']['width']
-                    height = profile_dict['resolution']['height']
-                    options_xml += f"""
-    <tt:Options>
-      <tt:H264>
-        <tt:ResolutionsAvailable>
-          <tt:Width>{width}</tt:Width>
-          <tt:Height>{height}</tt:Height>
-        </tt:ResolutionsAvailable>
-        <tt:GovLengthRange>
-          <tt:Min>10</tt:Min>
-          <tt:Max>60</tt:Max>
-        </tt:GovLengthRange>
-        <tt:FrameRateRange>
-          <tt:Min>1</tt:Min>
-          <tt:Max>{profile.fps}</tt:Max>
-        </tt:FrameRateRange>
-        <tt:EncodingIntervalRange>
-          <tt:Min>1</tt:Min>
-          <tt:Max>1</tt:Max>
-        </tt:EncodingIntervalRange>
-        <tt:H264ProfilesSupported>High</tt:H264ProfilesSupported>
-        <tt:BitrateRange>
-          <tt:Min>1000</tt:Min>
-          <tt:Max>8000</tt:Max>
-        </tt:BitrateRange>
-      </tt:H264>
-      <tt:QualityRange>
-        <tt:Min>1</tt:Min>
-        <tt:Max>10</tt:Max>
-      </tt:QualityRange>
-    </tt:Options>
-    """
-
+            # Define a broad set of options (not tied strictly to profiles)
             response = f"""
     <trt:GetVideoEncoderConfigurationOptionsResponse>
-      {options_xml}
+      <trt:Options>
+        <tt:JPEG>
+          <tt:ResolutionsAvailable>
+            <tt:Width>1920</tt:Width>
+            <tt:Height>1080</tt:Height>
+          </tt:ResolutionsAvailable>
+          <tt:ResolutionsAvailable>
+            <tt:Width>1280</tt:Width>
+            <tt:Height>720</tt:Height>
+          </tt:ResolutionsAvailable>
+          <tt:ResolutionsAvailable>
+            <tt:Width>640</tt:Width>
+            <tt:Height>480</tt:Height>
+          </tt:ResolutionsAvailable>
+          <tt:QualityRange>
+            <tt:Min>1</tt:Min>
+            <tt:Max>100</tt:Max>
+          </tt:QualityRange>
+          <tt:FrameRateRange>
+            <tt:Min>1</tt:Min>
+            <tt:Max>30</tt:Max>
+          </tt:FrameRateRange>
+          <tt:EncodingIntervalRange>
+            <tt:Min>1</tt:Min>
+            <tt:Max>10</tt:Max>
+          </tt:EncodingIntervalRange>
+          <tt:BitrateRange>
+            <tt:Min>64</tt:Min>
+            <tt:Max>8000</tt:Max>
+          </tt:BitrateRange>
+        </tt:JPEG>
+        <tt:H264>
+          <tt:ResolutionsAvailable>
+            <tt:Width>1920</tt:Width>
+            <tt:Height>1080</tt:Height>
+          </tt:ResolutionsAvailable>
+          <tt:ResolutionsAvailable>
+            <tt:Width>1280</tt:Width>
+            <tt:Height>720</tt:Height>
+          </tt:ResolutionsAvailable>
+          <tt:ResolutionsAvailable>
+            <tt:Width>640</tt:Width>
+            <tt:Height>480</tt:Height>
+          </tt:ResolutionsAvailable>
+          <tt:GovLengthRange>
+            <tt:Min>10</tt:Min>
+            <tt:Max>60</tt:Max>
+          </tt:GovLengthRange>
+          <tt:FrameRateRange>
+            <tt:Min>1</tt:Min>
+            <tt:Max>60</tt:Max>
+          </tt:FrameRateRange>
+          <tt:EncodingIntervalRange>
+            <tt:Min>1</tt:Min>
+            <tt:Max>10</tt:Max>
+          </tt:EncodingIntervalRange>
+          <tt:H264ProfilesSupported>Baseline</tt:H264ProfilesSupported>
+          <tt:H264ProfilesSupported>Main</tt:H264ProfilesSupported>
+          <tt:H264ProfilesSupported>High</tt:H264ProfilesSupported>
+          <tt:BitrateRange>
+            <tt:Min>64</tt:Min>
+            <tt:Max>10000</tt:Max>
+          </tt:BitrateRange>
+        </tt:H264>
+        <tt:QualityRange>
+          <tt:Min>1</tt:Min>
+          <tt:Max>10</tt:Max>
+        </tt:QualityRange>
+      </tt:Options>
     </trt:GetVideoEncoderConfigurationOptionsResponse>
     """
             return XMLGenerator.generate_soap_response(
