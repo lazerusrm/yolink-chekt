@@ -4750,50 +4750,45 @@ Hardware ID: {self.device_info['HardwareId']}
             str: SOAP response XML
         """
         try:
-            # Extract parameters
-            get_stream_uri = request.find('.//trt:GetStreamUri', NS)
+            # Extract GetStreamUri element using NAMESPACES from onvif.py
+            get_stream_uri = request.find('.//trt:GetStreamUri', NAMESPACES)
             if get_stream_uri is None:
-                return XMLGenerator.generate_fault_response(
-                    "Missing GetStreamUri element",
-                    "ter:InvalidArgVal"
-                )
+                logger.error("Missing GetStreamUri element in request")
+                return generate_fault_response("Missing GetStreamUri element", "ter:InvalidArgVal")
 
             # Extract profile token
-            profile_token_elem = get_stream_uri.find('.//trt:ProfileToken', NS)
-            if profile_token_elem is None:
-                return XMLGenerator.generate_fault_response(
-                    "Missing ProfileToken",
-                    "ter:InvalidArgVal"
-                )
-
+            profile_token_elem = get_stream_uri.find('.//trt:ProfileToken', NAMESPACES)
+            if profile_token_elem is None or not profile_token_elem.text:
+                logger.error("Missing or empty ProfileToken in request")
+                return generate_fault_response("Missing ProfileToken", "ter:InvalidArgVal")
             profile_token = profile_token_elem.text
 
             # Extract stream setup details
-            stream_setup = get_stream_uri.find('.//trt:StreamSetup', NS)
+            stream_setup = get_stream_uri.find('.//trt:StreamSetup', NAMESPACES)
             if stream_setup is None:
-                return XMLGenerator.generate_fault_response(
-                    "Missing StreamSetup",
-                    "ter:InvalidArgVal"
-                )
+                logger.error("Missing StreamSetup in request")
+                return generate_fault_response("Missing StreamSetup", "ter:InvalidArgVal")
 
             # Check if this is a metadata stream request
-            stream_type_elem = stream_setup.find('.//tt:Stream', NS)
-            is_metadata = (stream_type_elem is not None and stream_type_elem.text == "Metadata")
+            stream_type_elem = stream_setup.find('.//tt:Stream', NAMESPACES)
+            is_metadata = stream_type_elem is not None and stream_type_elem.text == "Metadata"
 
             # Get transport protocol (default to RTSP)
-            transport_elem = stream_setup.find('.//tt:Transport/tt:Protocol', NS)
+            transport_elem = stream_setup.find('.//tt:Transport/tt:Protocol', NAMESPACES)
             transport = transport_elem.text if transport_elem is not None else "RTSP"
 
-            # First, check the integration layer if available
-            if hasattr(self, 'get_stream_uri'):
+            # First, check for a direct get_stream_uri method (if overridden)
+            if hasattr(self, 'get_stream_uri') and callable(self.get_stream_uri):
                 uri = self.get_stream_uri(profile_token)
                 if uri:
+                    logger.debug(f"Using overridden get_stream_uri for profile {profile_token}: {uri}")
                     return self._generate_stream_uri_response(uri, is_metadata)
 
             # Try the integration API
-            if hasattr(self, 'onvif_integration') and hasattr(self.onvif_integration, 'get_stream_uri'):
+            if hasattr(self, 'onvif_integration') and self.onvif_integration:
                 uri = self.onvif_integration.get_stream_uri(profile_token)
                 if uri:
+                    logger.debug(f"Using integration layer for profile {profile_token}: {uri}")
                     return self._generate_stream_uri_response(uri, is_metadata)
 
             # Fallback to building the URI manually
@@ -4809,9 +4804,9 @@ Hardware ID: {self.device_info['HardwareId']}
             elif profile_token == "profile3":
                 stream_suffix = "_mobile"
             else:
+                logger.warning(f"Unknown profile token: {profile_token}, using base stream name")
                 stream_suffix = ""
 
-            # Add the suffix to the stream name
             stream_name = f"{stream_name}{stream_suffix}"
 
             # Add metadata suffix if requested
@@ -4820,23 +4815,47 @@ Hardware ID: {self.device_info['HardwareId']}
 
             # Get auth parameters for URL
             auth_part = ""
-            if self.authentication_required:
+            if getattr(self, 'authentication_required', False):
                 auth_part = f"{self.username}:{self.password}@"
 
             # Create the URI based on transport protocol
             if transport == "HTTP":
-                # HTTP tunneled URI
                 uri = f"http://{auth_part}{server_ip}:{rtsp_port}/{stream_name}"
             else:
-                # Standard RTSP URI
                 uri = f"rtsp://{auth_part}{server_ip}:{rtsp_port}/{stream_name}"
 
+            logger.debug(f"Manually constructed URI for profile {profile_token}: {uri}")
             return self._generate_stream_uri_response(uri, is_metadata)
 
         except Exception as e:
             logger.error(f"Error handling GetStreamUri: {e}", exc_info=True)
-            return XMLGenerator.generate_fault_response(f"Internal error: {str(e)}")
+            return generate_fault_response(f"Internal error: {str(e)}", "ter:InternalError")
 
+    def _generate_stream_uri_response(self, uri: str, is_metadata: bool) -> str:
+        """
+        Generate the SOAP response for a GetStreamUri request.
+
+        Args:
+            uri: The stream URI to include in the response
+            is_metadata: Whether this is a metadata stream
+
+        Returns:
+            str: SOAP response XML
+        """
+        response_body = f"""
+    <trt:GetStreamUriResponse>
+      <trt:MediaUri>
+        <tt:Uri>{uri}</tt:Uri>
+        <tt:InvalidAfterConnect>false</tt:InvalidAfterConnect>
+        <tt:InvalidAfterReboot>false</tt:InvalidAfterReboot>
+        <tt:Timeout>PT60S</tt:Timeout>
+      </trt:MediaUri>
+    </trt:GetStreamUriResponse>
+    """
+        return generate_soap_response(
+            "http://www.onvif.org/ver10/media/wsdl/GetStreamUriResponse",
+            response_body
+        )
     def _handle_get_service_capabilities(self, request: ET.Element, service_type: str) -> str:
         """
         Handle GetServiceCapabilities request for different services.
