@@ -399,6 +399,15 @@ class OnvifHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
                     pass
             self.active_connections.clear()
 
+    def server_bind(self):
+        """Bind the server and set socket options for better stability."""
+        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        # Set a longer timeout for better stability
+        self.socket.settimeout(60)  # 60 seconds timeout
+        self.socket.bind(self.server_address)
+        self.server_address = self.socket.getsockname()
+
 
 class OnvifService(threading.Thread):
     """
@@ -666,7 +675,9 @@ class OnvifService(threading.Thread):
             # Define media service actions that might be sent to device endpoint
             media_actions = {
                 'GetProfiles', 'GetProfile', 'GetStreamUri', 'GetSnapshotUri',
-                'GetVideoEncoderConfigurations', 'GetVideoSources', 'GetVideoSourceConfigurations'
+                'GetVideoEncoderConfigurations', 'GetVideoSources', 'GetVideoSourceConfigurations',
+                'GetVideoSourceConfigurationOptions', 'GetAudioSourceConfigurations',
+                'GetCompatibleVideoEncoderConfigurations', 'GetVideoEncoderConfigurationOptions'
             }
 
             # If this is a media action, redirect to the media service handler
@@ -737,6 +748,7 @@ class OnvifService(threading.Thread):
             # Log media service actions for debugging
             logger.info(f"Media service action requested: {local_name}")
 
+            # Add the new handlers for previously unsupported methods
             handler_map = {
                 'GetProfiles': self._handle_get_profiles,
                 'GetProfile': self._handle_get_profile,
@@ -745,7 +757,12 @@ class OnvifService(threading.Thread):
                 'GetVideoEncoderConfigurations': self._handle_get_video_encoder_configurations,
                 'GetVideoSourceConfigurations': self._handle_get_video_source_configurations,
                 'GetVideoSources': self._handle_get_video_sources,
-                'GetServiceCapabilities': lambda r: self._handle_get_service_capabilities(r, 'media')
+                'GetServiceCapabilities': lambda r: self._handle_get_service_capabilities(r, 'media'),
+                # New handlers for missing methods
+                'GetVideoSourceConfigurationOptions': self._handle_get_video_source_configuration_options,
+                'GetAudioSourceConfigurations': self._handle_get_audio_source_configurations,
+                'GetCompatibleVideoEncoderConfigurations': self._handle_get_compatible_video_encoder_configurations,
+                'GetVideoEncoderConfigurationOptions': self._handle_get_video_encoder_configuration_options
             }
 
             handler = handler_map.get(local_name)
@@ -807,8 +824,13 @@ class OnvifService(threading.Thread):
             elif token == "profile3":
                 stream_name = f"{self.stream_name}_mobile"
 
+            # Create two URI formats - one with embedded credentials and one without
+            # Some NVRs work better with one format over the other
             auth_part = f"{self.username}:{self.password}@" if self.authentication_required else ""
             stream_url = f"rtsp://{auth_part}{self.server_ip}:{self.rtsp_port}/{stream_name}"
+
+            # Alternative URL without embedded credentials (for clients that don't support username:password@ format)
+            alt_stream_url = f"rtsp://{self.server_ip}:{self.rtsp_port}/{stream_name}"
 
             message_id = None
             header = request.find('.//soap:Header', NS)
@@ -817,16 +839,18 @@ class OnvifService(threading.Thread):
                 if message_id_elem is not None and message_id_elem.text:
                     message_id = message_id_elem.text
 
+            logger.info(f"GetStreamUri for profile {token}: {stream_url.replace(auth_part, '***:***@' if auth_part else '')}")
+
             response = f"""
-    <trt:GetStreamUriResponse>
-      <trt:MediaUri>
-        <tt:Uri>{stream_url}</tt:Uri>
-        <tt:InvalidAfterConnect>false</tt:InvalidAfterConnect>
-        <tt:InvalidAfterReboot>false</tt:InvalidAfterReboot>
-        <tt:Timeout>PT60S</tt:Timeout>
-      </trt:MediaUri>
-    </trt:GetStreamUriResponse>
-    """
+<trt:GetStreamUriResponse>
+  <trt:MediaUri>
+    <tt:Uri>{stream_url}</tt:Uri>
+    <tt:InvalidAfterConnect>false</tt:InvalidAfterConnect>
+    <tt:InvalidAfterReboot>false</tt:InvalidAfterReboot>
+    <tt:Timeout>PT60S</tt:Timeout>
+  </trt:MediaUri>
+</trt:GetStreamUriResponse>
+"""
             return XMLGenerator.generate_soap_response(
                 "http://www.onvif.org/ver10/media/wsdl/GetStreamUriResponse",
                 response,
@@ -835,6 +859,243 @@ class OnvifService(threading.Thread):
         except Exception as e:
             logger.error(f"Error in GetStreamUri handler: {e}", exc_info=True)
             return XMLGenerator.generate_fault_response(f"Internal error: {str(e)}")
+
+    # IMPLEMENTATION OF NEW HANDLERS FOR PREVIOUSLY MISSING METHODS
+
+    def _handle_get_video_source_configuration_options(self, request: ET.Element) -> str:
+        """
+        Handle GetVideoSourceConfigurationOptions request.
+
+        Args:
+            request: Request XML element
+
+        Returns:
+            str: SOAP response XML
+        """
+        # Get configuration token if specified
+        config_token = None
+        try:
+            config_token_elem = request.find('.//trt:ConfigurationToken', NS)
+            if config_token_elem is not None:
+                config_token = config_token_elem.text
+        except Exception as e:
+            logger.debug(f"Error getting configuration token: {e}")
+
+        # Use main profile dimensions for max bounds
+        with self.profiles_lock:
+            main_profile = next((p for p in self.media_profiles if p.token == "profile1"), self.media_profiles[0])
+            main_width = main_profile.width
+            main_height = main_profile.height
+
+        response = f"""
+<trt:GetVideoSourceConfigurationOptionsResponse>
+  <trt:Options>
+    <tt:BoundsRange>
+      <tt:XRange>
+        <tt:Min>0</tt:Min>
+        <tt:Max>{main_width}</tt:Max>
+      </tt:XRange>
+      <tt:YRange>
+        <tt:Min>0</tt:Min>
+        <tt:Max>{main_height}</tt:Max>
+      </tt:YRange>
+      <tt:WidthRange>
+        <tt:Min>320</tt:Min>
+        <tt:Max>{main_width}</tt:Max>
+      </tt:WidthRange>
+      <tt:HeightRange>
+        <tt:Min>240</tt:Min>
+        <tt:Max>{main_height}</tt:Max>
+      </tt:HeightRange>
+    </tt:BoundsRange>
+    <tt:VideoSourceTokensAvailable>VideoSource</tt:VideoSourceTokensAvailable>
+  </trt:Options>
+</trt:GetVideoSourceConfigurationOptionsResponse>
+"""
+        return XMLGenerator.generate_soap_response(
+            "http://www.onvif.org/ver10/media/wsdl/GetVideoSourceConfigurationOptionsResponse",
+            response
+        )
+
+    def _handle_get_video_encoder_configuration_options(self, request: ET.Element) -> str:
+        """
+        Handle GetVideoEncoderConfigurationOptions request.
+
+        Args:
+            request: Request XML element
+
+        Returns:
+            str: SOAP response XML
+        """
+        # Get configuration token if specified
+        config_token = None
+        try:
+            config_token_elem = request.find('.//trt:ConfigurationToken', NS)
+            if config_token_elem is not None:
+                config_token = config_token_elem.text
+        except Exception as e:
+            logger.debug(f"Error getting configuration token: {e}")
+
+        # Get profile token if specified
+        profile_token = None
+        try:
+            profile_token_elem = request.find('.//trt:ProfileToken', NS)
+            if profile_token_elem is not None:
+                profile_token = profile_token_elem.text
+        except Exception as e:
+            logger.debug(f"Error getting profile token: {e}")
+
+        # Use main profile dimensions for options
+        with self.profiles_lock:
+            if profile_token:
+                profile = next((p for p in self.media_profiles if p.token == profile_token), self.media_profiles[0])
+            else:
+                profile = self.media_profiles[0]
+
+            width = profile.width
+            height = profile.height
+            fps = profile.fps
+
+        response = f"""
+<trt:GetVideoEncoderConfigurationOptionsResponse>
+  <trt:Options>
+    <tt:QualityRange>
+      <tt:Min>1</tt:Min>
+      <tt:Max>100</tt:Max>
+    </tt:QualityRange>
+    <tt:H264>
+      <tt:ResolutionsAvailable>
+        <tt:Width>{width}</tt:Width>
+        <tt:Height>{height}</tt:Height>
+      </tt:ResolutionsAvailable>
+      <tt:ResolutionsAvailable>
+        <tt:Width>1280</tt:Width>
+        <tt:Height>720</tt:Height>
+      </tt:ResolutionsAvailable>
+      <tt:ResolutionsAvailable>
+        <tt:Width>640</tt:Width>
+        <tt:Height>360</tt:Height>
+      </tt:ResolutionsAvailable>
+      <tt:GovLengthRange>
+        <tt:Min>1</tt:Min>
+        <tt:Max>60</tt:Max>
+      </tt:GovLengthRange>
+      <tt:FrameRateRange>
+        <tt:Min>1</tt:Min>
+        <tt:Max>30</tt:Max>
+      </tt:FrameRateRange>
+      <tt:EncodingIntervalRange>
+        <tt:Min>1</tt:Min>
+        <tt:Max>30</tt:Max>
+      </tt:EncodingIntervalRange>
+      <tt:H264ProfilesSupported>Baseline Main High</tt:H264ProfilesSupported>
+    </tt:H264>
+    <tt:Extension>
+      <tt:H264>
+        <tt:BitrateRange>
+          <tt:Min>128</tt:Min>
+          <tt:Max>8192</tt:Max>
+        </tt:BitrateRange>
+      </tt:H264>
+    </tt:Extension>
+  </trt:Options>
+</trt:GetVideoEncoderConfigurationOptionsResponse>
+"""
+        return XMLGenerator.generate_soap_response(
+            "http://www.onvif.org/ver10/media/wsdl/GetVideoEncoderConfigurationOptionsResponse",
+            response
+        )
+
+    def _handle_get_audio_source_configurations(self, request: ET.Element) -> str:
+        """
+        Handle GetAudioSourceConfigurations request with an empty response since audio is not supported.
+
+        Args:
+            request: Request XML element
+
+        Returns:
+            str: SOAP response XML
+        """
+        # Simply return an empty list since we don't support audio yet
+        response = """
+<trt:GetAudioSourceConfigurationsResponse>
+</trt:GetAudioSourceConfigurationsResponse>
+"""
+        return XMLGenerator.generate_soap_response(
+            "http://www.onvif.org/ver10/media/wsdl/GetAudioSourceConfigurationsResponse",
+            response
+        )
+
+    def _handle_get_compatible_video_encoder_configurations(self, request: ET.Element) -> str:
+        """
+        Handle GetCompatibleVideoEncoderConfigurations request.
+
+        Args:
+            request: Request XML element
+
+        Returns:
+            str: SOAP response XML
+        """
+        # Get profile token
+        profile_token = None
+        try:
+            profile_token_elem = request.find('.//trt:ProfileToken', NS)
+            if profile_token_elem is not None:
+                profile_token = profile_token_elem.text
+        except Exception as e:
+            logger.debug(f"Error getting profile token: {e}")
+
+        # Return the same information as GetVideoEncoderConfigurations
+        # but filtered to only include configurations compatible with this profile
+        with self.profiles_lock:
+            video_encoders = ""
+            for profile_info in self.media_profiles:
+                # If profile token is specified, only include configurations for that profile
+                if profile_token and profile_info.token != profile_token:
+                    continue
+
+                profile = profile_info.to_dict()
+                video_encoders += f"""
+<trt:Configurations token="VideoEncoder_{profile['token']}">
+  <tt:Name>VideoEncoder_{profile['token']}</tt:Name>
+  <tt:UseCount>1</tt:UseCount>
+  <tt:Encoding>{profile['encoding']}</tt:Encoding>
+  <tt:Resolution>
+    <tt:Width>{profile['resolution']['width']}</tt:Width>
+    <tt:Height>{profile['resolution']['height']}</tt:Height>
+  </tt:Resolution>
+  <tt:Quality>5</tt:Quality>
+  <tt:RateControl>
+    <tt:FrameRateLimit>{profile['fps']}</tt:FrameRateLimit>
+    <tt:EncodingInterval>1</tt:EncodingInterval>
+    <tt:BitrateLimit>4096</tt:BitrateLimit>
+  </tt:RateControl>
+  <tt:H264>
+    <tt:GovLength>30</tt:GovLength>
+    <tt:H264Profile>High</tt:H264Profile>
+  </tt:H264>
+  <tt:Multicast>
+    <tt:Address>
+      <tt:Type>IPv4</tt:Type>
+      <tt:IPv4Address>0.0.0.0</tt:IPv4Address>
+    </tt:Address>
+    <tt:Port>0</tt:Port>
+    <tt:TTL>1</tt:TTL>
+    <tt:AutoStart>false</tt:AutoStart>
+  </tt:Multicast>
+  <tt:SessionTimeout>PT60S</tt:SessionTimeout>
+</trt:Configurations>
+"""
+
+        response = f"""
+<trt:GetCompatibleVideoEncoderConfigurationsResponse>
+{video_encoders}
+</trt:GetCompatibleVideoEncoderConfigurationsResponse>
+"""
+        return XMLGenerator.generate_soap_response(
+            "http://www.onvif.org/ver10/media/wsdl/GetCompatibleVideoEncoderConfigurationsResponse",
+            response
+        )
 
     def _handle_get_device_information(self, request: ET.Element) -> str:
         """
@@ -1059,7 +1320,7 @@ class OnvifService(threading.Thread):
     def _handle_get_profile(self, request: ET.Element) -> str:
         """
         Handle GetProfile request.
-        Since all profiles are always created, no fallback fault is returned if a profile isn’t found.
+        Since all profiles are always created, no fallback fault is returned if a profile isn't found.
         """
         body = request.find('.//soap:Body', NS)
         if body is None:
@@ -1422,7 +1683,7 @@ class OnvifService(threading.Thread):
         elif service_type == 'media':
             response = """
 <trt:GetServiceCapabilitiesResponse>
-  <trt:Capabilities SnapshotUri="true" Rotation="false" VideoSourceMode="false" OSD="false" TemporaryOSDText="false" EXICompression="false" RuleEngine="false" IVASupport="false" ProfileCapabilities="false" MaximumNumberOfProfiles="1" />
+  <trt:Capabilities SnapshotUri="true" Rotation="false" VideoSourceMode="false" OSD="false" TemporaryOSDText="false" EXICompression="false" RuleEngine="false" IVASupport="false" ProfileCapabilities="false" MaximumNumberOfProfiles="3" />
 </trt:GetServiceCapabilitiesResponse>
 """
             action = "http://www.onvif.org/ver10/media/wsdl/GetServiceCapabilitiesResponse"
