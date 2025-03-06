@@ -1834,6 +1834,69 @@ class OnvifService(threading.Thread):
             logger.error(f"Error handling GetProfile: {e}", exc_info=True)
             return XMLGenerator.generate_fault_response(f"Error getting profile: {str(e)}")
 
+    def _handle_get_snapshot_uri(self, request: ET.Element) -> str:
+        """
+        Handle GetSnapshotUri request.
+        Returns a URI for retrieving a snapshot for a specific profile.
+
+        Args:
+            request: Request XML element
+
+        Returns:
+            str: SOAP response XML
+        """
+        try:
+            # Extract profile token from the request
+            get_snapshot_uri = request.find('.//trt:GetSnapshotUri', NS)
+            if get_snapshot_uri is None:
+                return XMLGenerator.generate_fault_response(
+                    "Missing GetSnapshotUri element",
+                    "ter:InvalidArgVal"
+                )
+
+            profile_token_elem = get_snapshot_uri.find('.//trt:ProfileToken', NS)
+            if profile_token_elem is None:
+                return XMLGenerator.generate_fault_response(
+                    "Missing ProfileToken",
+                    "ter:InvalidArgVal"
+                )
+
+            profile_token = profile_token_elem.text
+
+            # Validate profile exists
+            profile = None
+            with self.profiles_lock:
+                for p in self.media_profiles:
+                    if p.token == profile_token:
+                        profile = p
+                        break
+
+            if profile is None:
+                return XMLGenerator.generate_fault_response(
+                    f"Profile {profile_token} not found",
+                    "ter:InvalidArgVal"
+                )
+
+            # Construct snapshot URI (matches your existing /onvif/snapshot endpoint)
+            snapshot_uri = f"http://{self.server_ip}:{self.onvif_port}/onvif/snapshot?token={profile_token}"
+            response = f"""
+    <trt:GetSnapshotUriResponse>
+      <trt:MediaUri>
+        <tt:Uri>{snapshot_uri}</tt:Uri>
+        <tt:InvalidAfterConnect>false</tt:InvalidAfterConnect>
+        <tt:InvalidAfterReboot>false</tt:InvalidAfterReboot>
+        <tt:Timeout>PT60S</tt:Timeout>
+      </trt:MediaUri>
+    </trt:GetSnapshotUriResponse>
+    """
+            return XMLGenerator.generate_soap_response(
+                "http://www.onvif.org/ver10/media/wsdl/GetSnapshotUriResponse",
+                response
+            )
+        except Exception as e:
+            logger.error(f"Error handling GetSnapshotUri: {e}", exc_info=True)
+            return XMLGenerator.generate_fault_response(f"Error getting snapshot URI: {str(e)}")
+
 
 
     def _handle_get_hostname(self, request: ET.Element) -> str:
