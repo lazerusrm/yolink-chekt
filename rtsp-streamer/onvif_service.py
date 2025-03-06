@@ -1992,6 +1992,38 @@ class OnvifService(threading.Thread):
             logger.error(f"Error handling GetVideoSourceConfigurations: {e}", exc_info=True)
             return XMLGenerator.generate_fault_response(f"Error getting video source configurations: {str(e)}")
 
+    def _handle_get_video_sources(self, request: ET.Element) -> str:
+        """
+        Handle GetVideoSources request.
+        Returns the available video sources for the device.
+
+        Args:
+            request: Request XML element
+
+        Returns:
+            str: SOAP response XML
+        """
+        try:
+            # Single video source for simplicity, consistent with profiles
+            response = f"""
+    <trt:GetVideoSourcesResponse>
+      <trt:VideoSources token="VideoSource">
+        <tt:Framerate>30</tt:Framerate>
+        <tt:Resolution>
+          <tt:Width>1920</tt:Width>
+          <tt:Height>1080</tt:Height>
+        </tt:Resolution>
+      </trt:VideoSources>
+    </trt:GetVideoSourcesResponse>
+    """
+            return XMLGenerator.generate_soap_response(
+                "http://www.onvif.org/ver10/media/wsdl/GetVideoSourcesResponse",
+                response
+            )
+        except Exception as e:
+            logger.error(f"Error handling GetVideoSources: {e}", exc_info=True)
+            return XMLGenerator.generate_fault_response(f"Error getting video sources: {str(e)}")
+
 
 
     def _handle_get_hostname(self, request: ET.Element) -> str:
