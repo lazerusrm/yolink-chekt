@@ -879,8 +879,9 @@ class OnvifService(threading.Thread):
 
     def _handle_get_video_encoder_configuration_options(self, request: ET.Element) -> str:
         """
-        Simplified handler for GetVideoEncoderConfigurationOptions request.
-        Uses a basic, strictly compliant response format.
+        Simplified handler for GetVideoEncoderConfigurationOptions request with
+        support for ONVIF Profile S. This version uses profile settings (if provided)
+        to customize available options.
 
         Args:
             request: Request XML element
@@ -888,106 +889,128 @@ class OnvifService(threading.Thread):
         Returns:
             str: SOAP response XML
         """
-        # Log the full request for debugging
-        logger.info("Processing GetVideoEncoderConfigurationOptions request with simplified response")
-
+        logger.info("Processing GetVideoEncoderConfigurationOptions request with Profile S support")
         try:
-            # Extract configuration token if specified for debugging
             config_token = None
             profile_token = None
 
+            # Try to extract the ConfigurationToken (if provided)
             try:
                 config_token_elem = request.find('.//trt:ConfigurationToken', NS)
                 if config_token_elem is not None:
                     config_token = config_token_elem.text
                     logger.info(f"Configuration token specified: {config_token}")
-            except:
-                pass
+            except Exception as e:
+                logger.debug(f"No configuration token found: {e}")
 
+            # Try to extract the ProfileToken (if provided)
             try:
                 profile_token_elem = request.find('.//trt:ProfileToken', NS)
                 if profile_token_elem is not None:
                     profile_token = profile_token_elem.text
                     logger.info(f"Profile token specified: {profile_token}")
-            except:
-                pass
+            except Exception as e:
+                logger.debug(f"No profile token found: {e}")
 
-            # Create a very simple, minimal response that should be compatible with most NVRs
-            # Based on core ONVIF specs without extensions
-            response = """
-    <trt:GetVideoEncoderConfigurationOptionsResponse>
-      <trt:Options>
-        <tt:QualityRange>
-          <tt:Min>1</tt:Min>
-          <tt:Max>100</tt:Max>
-        </tt:QualityRange>
-        <tt:H264>
-          <tt:ResolutionsAvailable>
-            <tt:Width>1920</tt:Width>
-            <tt:Height>1080</tt:Height>
-          </tt:ResolutionsAvailable>
-          <tt:ResolutionsAvailable>
-            <tt:Width>1280</tt:Width>
-            <tt:Height>720</tt:Height>
-          </tt:ResolutionsAvailable>
-          <tt:ResolutionsAvailable>
-            <tt:Width>640</tt:Width>
-            <tt:Height>480</tt:Height>
-          </tt:ResolutionsAvailable>
-          <tt:GovLengthRange>
-            <tt:Min>1</tt:Min>
-            <tt:Max>60</tt:Max>
-          </tt:GovLengthRange>
-          <tt:FrameRateRange>
-            <tt:Min>1</tt:Min>
-            <tt:Max>30</tt:Max>
-          </tt:FrameRateRange>
-          <tt:EncodingIntervalRange>
-            <tt:Min>1</tt:Min>
-            <tt:Max>30</tt:Max>
-          </tt:EncodingIntervalRange>
-          <tt:H264ProfilesSupported>Baseline Main High</tt:H264ProfilesSupported>
-        </tt:H264>
-      </trt:Options>
-    </trt:GetVideoEncoderConfigurationOptionsResponse>
-    """
-            logger.info("Sending simplified GetVideoEncoderConfigurationOptions response")
+            # Set default options
+            available_resolutions = [
+                (640, 480),
+                (1280, 720),
+                (1920, 1080)
+            ]
+            frame_rate_range = (1, 30)
+            bitrate_range = (256, 8192)  # in kbps
+            quality_range = (1, 100)
+            gov_length_range = (1, 60)
+            encoding_interval_range = (1, 30)
+
+            # If a profile token is provided, try to customize options based on that profile
+            if profile_token:
+                with self.profiles_lock:
+                    profile = next((p for p in self.media_profiles if p.token == profile_token), None)
+                if profile:
+                    # Use the profile's resolution as the primary available option and adjust frame rate
+                    available_resolutions = [(profile.width, profile.height)]
+                    frame_rate_range = (1, profile.fps)
+                    logger.info(f"Using profile settings for token {profile_token}: "
+                                f"resolution {profile.width}x{profile.height}, fps {profile.fps}")
+                else:
+                    logger.warning(f"Profile token {profile_token} not found, using default options")
+
+            # Build the response XML by iterating over available resolutions
+            resolutions_xml = "".join([
+                f"<tt:ResolutionsAvailable>"
+                f"<tt:Width>{w}</tt:Width>"
+                f"<tt:Height>{h}</tt:Height>"
+                f"</tt:ResolutionsAvailable>" for w, h in available_resolutions
+            ])
+
+            response = f"""
+        <trt:GetVideoEncoderConfigurationOptionsResponse>
+          <trt:Options>
+            <tt:QualityRange>
+              <tt:Min>{quality_range[0]}</tt:Min>
+              <tt:Max>{quality_range[1]}</tt:Max>
+            </tt:QualityRange>
+            <tt:H264>
+              {resolutions_xml}
+              <tt:GovLengthRange>
+                <tt:Min>{gov_length_range[0]}</tt:Min>
+                <tt:Max>{gov_length_range[1]}</tt:Max>
+              </tt:GovLengthRange>
+              <tt:FrameRateRange>
+                <tt:Min>{frame_rate_range[0]}</tt:Min>
+                <tt:Max>{frame_rate_range[1]}</tt:Max>
+              </tt:FrameRateRange>
+              <tt:EncodingIntervalRange>
+                <tt:Min>{encoding_interval_range[0]}</tt:Min>
+                <tt:Max>{encoding_interval_range[1]}</tt:Max>
+              </tt:EncodingIntervalRange>
+              <tt:BitrateRange>
+                <tt:Min>{bitrate_range[0]}</tt:Min>
+                <tt:Max>{bitrate_range[1]}</tt:Max>
+              </tt:BitrateRange>
+              <tt:H264ProfilesSupported>Baseline Main High</tt:H264ProfilesSupported>
+            </tt:H264>
+          </trt:Options>
+        </trt:GetVideoEncoderConfigurationOptionsResponse>
+        """
+            logger.info("Sending GetVideoEncoderConfigurationOptions response with Profile S support")
             return XMLGenerator.generate_soap_response(
                 "http://www.onvif.org/ver10/media/wsdl/GetVideoEncoderConfigurationOptionsResponse",
                 response
             )
         except Exception as e:
-            logger.error(f"Error in simplified GetVideoEncoderConfigurationOptions: {e}", exc_info=True)
-            # Return an ultra-minimal fallback response
+            logger.error(f"Error in GetVideoEncoderConfigurationOptions handler: {e}", exc_info=True)
             fallback_response = """
-    <trt:GetVideoEncoderConfigurationOptionsResponse>
-      <trt:Options>
-        <tt:QualityRange>
-          <tt:Min>1</tt:Min>
-          <tt:Max>100</tt:Max>
-        </tt:QualityRange>
-        <tt:H264>
-          <tt:ResolutionsAvailable>
-            <tt:Width>1920</tt:Width>
-            <tt:Height>1080</tt:Height>
-          </tt:ResolutionsAvailable>
-          <tt:GovLengthRange>
-            <tt:Min>1</tt:Min>
-            <tt:Max>60</tt:Max>
-          </tt:GovLengthRange>
-          <tt:FrameRateRange>
-            <tt:Min>1</tt:Min>
-            <tt:Max>30</tt:Max>
-          </tt:FrameRateRange>
-          <tt:EncodingIntervalRange>
-            <tt:Min>1</tt:Min>
-            <tt:Max>30</tt:Max>
-          </tt:EncodingIntervalRange>
-          <tt:H264ProfilesSupported>Baseline</tt:H264ProfilesSupported>
-        </tt:H264>
-      </trt:Options>
-    </trt:GetVideoEncoderConfigurationOptionsResponse>
-    """
+        <trt:GetVideoEncoderConfigurationOptionsResponse>
+          <trt:Options>
+            <tt:QualityRange>
+              <tt:Min>1</tt:Min>
+              <tt:Max>100</tt:Max>
+            </tt:QualityRange>
+            <tt:H264>
+              <tt:ResolutionsAvailable>
+                <tt:Width>1920</tt:Width>
+                <tt:Height>1080</tt:Height>
+              </tt:ResolutionsAvailable>
+              <tt:GovLengthRange>
+                <tt:Min>1</tt:Min>
+                <tt:Max>60</tt:Max>
+              </tt:GovLengthRange>
+              <tt:FrameRateRange>
+                <tt:Min>1</tt:Min>
+                <tt:Max>30</tt:Max>
+              </tt:FrameRateRange>
+              <tt:EncodingIntervalRange>
+                <tt:Min>1</tt:Min>
+                <tt:Max>30</tt:Max>
+              </tt:EncodingIntervalRange>
+              <tt:H264ProfilesSupported>Baseline</tt:H264ProfilesSupported>
+            </tt:H264>
+          </trt:Options>
+        </trt:GetVideoEncoderConfigurationOptionsResponse>
+        """
             return XMLGenerator.generate_soap_response(
                 "http://www.onvif.org/ver10/media/wsdl/GetVideoEncoderConfigurationOptionsResponse",
                 fallback_response
