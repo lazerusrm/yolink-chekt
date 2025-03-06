@@ -4740,7 +4740,7 @@ Hardware ID: {self.device_info['HardwareId']}
 
     def _handle_get_stream_uri(self, request: ET.Element) -> str:
         """
-        Handle GetStreamUri request with support for metadata streams.
+        Handle GetStreamUri request with support for metadata streams and camera diagnostics.
         Returns the RTSP URI for a specific profile.
 
         Args:
@@ -4750,7 +4750,7 @@ Hardware ID: {self.device_info['HardwareId']}
             str: SOAP response XML
         """
         try:
-            # Extract GetStreamUri element using NAMESPACES from onvif.py
+            # Extract GetStreamUri element
             get_stream_uri = request.find('.//trt:GetStreamUri', NAMESPACES)
             if get_stream_uri is None:
                 logger.error("Missing GetStreamUri element in request")
@@ -4762,6 +4762,7 @@ Hardware ID: {self.device_info['HardwareId']}
                 logger.error("Missing or empty ProfileToken in request")
                 return generate_fault_response("Missing ProfileToken", "ter:InvalidArgVal")
             profile_token = profile_token_elem.text
+            logger.debug(f"Requested profile token: {profile_token}")
 
             # Extract stream setup details
             stream_setup = get_stream_uri.find('.//trt:StreamSetup', NAMESPACES)
@@ -4769,67 +4770,91 @@ Hardware ID: {self.device_info['HardwareId']}
                 logger.error("Missing StreamSetup in request")
                 return generate_fault_response("Missing StreamSetup", "ter:InvalidArgVal")
 
-            # Check if this is a metadata stream request
+            # Check stream type
             stream_type_elem = stream_setup.find('.//tt:Stream', NAMESPACES)
-            is_metadata = stream_type_elem is not None and stream_type_elem.text == "Metadata"
+            stream_type = stream_type_elem.text if stream_type_elem is not None else "RTP-Unicast"
+            is_metadata = stream_type == "Metadata"
+            logger.debug(f"Stream type: {stream_type}, is_metadata: {is_metadata}")
 
             # Get transport protocol (default to RTSP)
             transport_elem = stream_setup.find('.//tt:Transport/tt:Protocol', NAMESPACES)
             transport = transport_elem.text if transport_elem is not None else "RTSP"
+            logger.debug(f"Requested transport protocol: {transport}")
 
-            # First, check for a direct get_stream_uri method (if overridden)
-            if hasattr(self, 'get_stream_uri') and callable(self.get_stream_uri):
-                uri = self.get_stream_uri(profile_token)
-                if uri:
-                    logger.debug(f"Using overridden get_stream_uri for profile {profile_token}: {uri}")
-                    return self._generate_stream_uri_response(uri, is_metadata)
-
-            # Try the integration API
+            # Try integration layer first (e.g., OnvifStreamingIntegration)
             if hasattr(self, 'onvif_integration') and self.onvif_integration:
                 uri = self.onvif_integration.get_stream_uri(profile_token)
                 if uri:
-                    logger.debug(f"Using integration layer for profile {profile_token}: {uri}")
+                    logger.info(f"Integration layer provided URI: {uri}")
                     return self._generate_stream_uri_response(uri, is_metadata)
+                else:
+                    logger.warning(f"Integration layer failed to provide URI for profile {profile_token}")
 
-            # Fallback to building the URI manually
+            # Fallback to manual URI construction
             server_ip = self.config.get("server_ip", "127.0.0.1")
             rtsp_port = self.config.get("rtsp_port", 554)
             stream_name = self.config.get("stream_name", "yolink-dashboard")
+            logger.debug(f"Config: server_ip={server_ip}, rtsp_port={rtsp_port}, stream_name={stream_name}")
 
-            # Add profile-specific suffix
-            if profile_token == "profile1":
-                stream_suffix = "_main"
-            elif profile_token == "profile2":
-                stream_suffix = "_sub"
-            elif profile_token == "profile3":
-                stream_suffix = "_mobile"
-            else:
-                logger.warning(f"Unknown profile token: {profile_token}, using base stream name")
-                stream_suffix = ""
+            # Map profile token to suffix (adjust based on camera support)
+            profile_suffix_map = {
+                "profile1": "_main",
+                "profile2": "_sub",
+                "profile3": "_mobile"
+            }
+            stream_suffix = profile_suffix_map.get(profile_token, "")
+            if not stream_suffix:
+                logger.warning(f"Unknown profile token '{profile_token}', using base stream name")
 
             stream_name = f"{stream_name}{stream_suffix}"
-
-            # Add metadata suffix if requested
             if is_metadata:
                 stream_name = f"{stream_name}_metadata"
 
-            # Get auth parameters for URL
+            # Handle authentication
             auth_part = ""
             if getattr(self, 'authentication_required', False):
                 auth_part = f"{self.username}:{self.password}@"
+                logger.debug(f"Authentication enabled: {auth_part}")
 
-            # Create the URI based on transport protocol
+            # Construct URI based on transport
             if transport == "HTTP":
                 uri = f"http://{auth_part}{server_ip}:{rtsp_port}/{stream_name}"
             else:
                 uri = f"rtsp://{auth_part}{server_ip}:{rtsp_port}/{stream_name}"
+            logger.info(f"Constructed URI: {uri}")
 
-            logger.debug(f"Manually constructed URI for profile {profile_token}: {uri}")
+            # Validate URI (optional: test connection if possible)
             return self._generate_stream_uri_response(uri, is_metadata)
 
         except Exception as e:
             logger.error(f"Error handling GetStreamUri: {e}", exc_info=True)
             return generate_fault_response(f"Internal error: {str(e)}", "ter:InternalError")
+
+    def _generate_stream_uri_response(self, uri: str, is_metadata: bool) -> str:
+        """
+        Generate the SOAP response for a GetStreamUri request.
+
+        Args:
+            uri: The stream URI to include in the response
+            is_metadata: Whether this is a metadata stream
+
+        Returns:
+            str: SOAP response XML
+        """
+        response_body = f"""
+    <trt:GetStreamUriResponse>
+      <trt:MediaUri>
+        <tt:Uri>{uri}</tt:Uri>
+        <tt:InvalidAfterConnect>false</tt:InvalidAfterConnect>
+        <tt:InvalidAfterReboot>false</tt:InvalidAfterReboot>
+        <tt:Timeout>PT60S</tt:Timeout>
+      </trt:MediaUri>
+    </trt:GetStreamUriResponse>
+    """
+        return generate_soap_response(
+            "http://www.onvif.org/ver10/media/wsdl/GetStreamUriResponse",
+            response_body
+        )
 
     def _generate_stream_uri_response(self, uri: str, is_metadata: bool) -> str:
         """
