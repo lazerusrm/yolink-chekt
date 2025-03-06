@@ -51,6 +51,14 @@ NAMESPACES = {
 for prefix, uri in NAMESPACES.items():
     ET.register_namespace(prefix, uri)
 
+logging.basicConfig(
+    level=logging.INFO,  # Set to DEBUG for more verbose output
+    format='%(asctime)s [%(levelname)s] [%(name)s:%(lineno)d] %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+
+# Create a logger instance
+logger = logging.getLogger('OnvifService')
 
 # Security utility functions
 @lru_cache(maxsize=128)  # Cache digest computations to save CPU
