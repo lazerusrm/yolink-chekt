@@ -63,6 +63,7 @@ services:
       - ONVIF_PASSWORD=123456
       - ONVIF_AUTH_METHOD=both
       - ONVIF_PORT=8555
+      - ONVIF_TEST_MODE=true
       - SERVER_IP=0.0.0.0
       - RTSP_API_PORT=3001
       - WS_PORT=9999
