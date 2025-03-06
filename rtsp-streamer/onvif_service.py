@@ -2024,6 +2024,69 @@ class OnvifService(threading.Thread):
             logger.error(f"Error handling GetVideoSources: {e}", exc_info=True)
             return XMLGenerator.generate_fault_response(f"Error getting video sources: {str(e)}")
 
+    def _handle_get_video_source_configuration_options(self, request: ET.Element) -> str:
+        """
+        Handle GetVideoSourceConfigurationOptions request.
+        Returns the configuration options available for video sources.
+
+        Args:
+            request: Request XML element
+
+        Returns:
+            str: SOAP response XML
+        """
+        try:
+            # Extract ConfigurationToken if present (optional in ONVIF spec)
+            get_options = request.find('.//trt:GetVideoSourceConfigurationOptions', NS)
+            config_token = None
+            if get_options is not None:
+                token_elem = get_options.find('.//trt:ConfigurationToken', NS)
+                if token_elem is not None:
+                    config_token = token_elem.text
+
+            # Simple response with bounds options for all profiles
+            bounds_options = ""
+            with self.profiles_lock:
+                for profile in self.media_profiles:
+                    profile_dict = profile.to_dict()
+                    width = profile_dict['resolution']['width']
+                    height = profile_dict['resolution']['height']
+                    bounds_options += f"""
+    <tt:BoundsRange>
+      <tt:XRange>
+        <tt:Min>0</tt:Min>
+        <tt:Max>{width}</tt:Max>
+      </tt:XRange>
+      <tt:YRange>
+        <tt:Min>0</tt:Min>
+        <tt:Max>{height}</tt:Max>
+      </tt:YRange>
+      <tt:WidthRange>
+        <tt:Min>{width}</tt:Min>
+        <tt:Max>{width}</tt:Max>
+      </tt:WidthRange>
+      <tt:HeightRange>
+        <tt:Min>{height}</tt:Min>
+        <tt:Max>{height}</tt:Max>
+      </tt:HeightRange>
+    </tt:BoundsRange>
+    """
+
+            response = f"""
+    <trt:GetVideoSourceConfigurationOptionsResponse>
+      <trt:Options>
+        {bounds_options}
+      </trt:Options>
+    </trt:GetVideoSourceConfigurationOptionsResponse>
+    """
+            return XMLGenerator.generate_soap_response(
+                "http://www.onvif.org/ver10/media/wsdl/GetVideoSourceConfigurationOptionsResponse",
+                response
+            )
+        except Exception as e:
+            logger.error(f"Error handling GetVideoSourceConfigurationOptions: {e}", exc_info=True)
+            return XMLGenerator.generate_fault_response(f"Error getting video source configuration options: {str(e)}")
+
 
 
     def _handle_get_hostname(self, request: ET.Element) -> str:
