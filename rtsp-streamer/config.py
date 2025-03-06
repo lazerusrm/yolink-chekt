@@ -327,7 +327,7 @@ def get_config() -> Dict[str, Any]:
             "manufacturer": os.environ.get("MANUFACTURER", "Industrial Camera Systems"),
             "model": os.environ.get("MODEL", "Dashboard-RTSP"),
             "firmware_version": os.environ.get("FIRMWARE_VERSION", "1.0.0"),
-            "hardware_id": os.environ.get("HARDWARE_ID", "YOLINK-DASHBOARD-1"),
+            "hardware_id": os.environ.get("HARDWARE_ID", "Dashboard-RTSPV1"),
 
             # Server information
             "server_ip": server_ip,
