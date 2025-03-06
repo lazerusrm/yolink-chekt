@@ -14,13 +14,15 @@ import socketserver
 import xml.etree.ElementTree as ET
 import time
 import os
-from config import MAC_ADDRESS, generate_random_mac
+import traceback
 import weakref
 import ipaddress
 import re
 from typing import Dict, Any, Optional, List, Callable
 from urllib.parse import urlparse, parse_qs
 from functools import lru_cache
+
+from config import MAC_ADDRESS, generate_random_mac
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +44,7 @@ NS = {
 # Register namespace prefixes for pretty XML output
 for prefix, uri in NS.items():
     ET.register_namespace(prefix, uri)
+
 
 # Security utility functions
 @lru_cache(maxsize=128)  # Cache digest computations to save CPU
@@ -292,11 +295,11 @@ class OnvifRequestHandler(http.server.BaseHTTPRequestHandler):
         """
         # For initial testing, accept all auth to verify other ONVIF methods
         # Change STRICT_AUTH to True when ready to enforce proper auth
-        STRICT_AUTH = False
+        STRICT_AUTH = True
 
         # Log current settings for diagnostics
         logger.info(f"ONVIF Auth Settings - Required: {self.service.authentication_required}, "
-                    f"Username: {self.service.username}, Password: {'*' * (len(self.service.password) - 2)}**")
+                    f"Username: {self.service.username}, Password: {'*' * (len(self.service.password) if self.service.password else 0)}")
 
         # Skip authentication if not required
         if not self.service.authentication_required:
@@ -321,8 +324,8 @@ class OnvifRequestHandler(http.server.BaseHTTPRequestHandler):
                     else:
                         # Log the exact strings for debugging (careful with real passwords)
                         logger.warning(
-                            f"Basic auth failed: Expected '{self.service.username}'/'{self.service.password}' "
-                            f"but got '{username}'/'{password}'")
+                            f"Basic auth failed: Expected '{self.service.username}' "
+                            f"but got '{username}'")
                 except Exception as e:
                     logger.warning(f"Error parsing Basic auth: {e}")
 
@@ -629,7 +632,7 @@ class OnvifService(threading.Thread):
                         # Short sleep to prevent tight loop in case of persistent errors
                         time.sleep(1)
 
-                        # Brief sleep to prevent CPU hogging while still being responsive
+                # Brief sleep to prevent CPU hogging while still being responsive
                 time.sleep(0.05)
 
         except Exception as e:
@@ -770,7 +773,7 @@ class OnvifService(threading.Thread):
                 'GetSystemDateAndTime': self._handle_get_system_date_and_time,
                 'GetHostname': self._handle_get_hostname,
                 'GetNetworkInterfaces': self._handle_get_network_interfaces,
-                'GetNetworkProtocols': self._handle_get_network_protocols,  # <- Missing comma was here
+                'GetNetworkProtocols': self._handle_get_network_protocols,
                 'GetVideoSourceConfigurationOptions': self._handle_get_video_source_configuration_options,
                 'GetAudioSourceConfigurations': self._handle_get_audio_source_configurations,
                 'GetCompatibleVideoEncoderConfigurations': self._handle_get_compatible_video_encoder_configurations,
@@ -863,6 +866,112 @@ class OnvifService(threading.Thread):
             logger.error(f"Error handling media service request: {e}")
             return XMLGenerator.generate_fault_response(f"Internal error: {str(e)}")
 
+    def _handle_get_event_properties(self, request: ET.Element) -> str:
+        """
+        Handle GetEventProperties request.
+        Required for Profile S compliance.
+        """
+        response = """
+    <tev:GetEventPropertiesResponse>
+      <tev:TopicNamespaceLocation>http://www.onvif.org/onvif/ver10/topics/topicns.xml</tev:TopicNamespaceLocation>
+      <wsnt:FixedTopicSet>true</wsnt:FixedTopicSet>
+      <wstop:TopicSet>
+        <tns1:Device xmlns:tns1="http://www.onvif.org/ver10/topics">
+          <tns1:Trigger>
+            <tns1:DigitalInput wstop:topic="true">
+              <tns1:State wstop:topic="true"/>
+            </tns1:DigitalInput>
+          </tns1:Trigger>
+        </tns1:Device>
+      </wstop:TopicSet>
+      <wsdl:MessageContentFilter dialext:constraintLanguage="http://www.w3.org/TR/xpath20/">boolean(//tt:SimpleItem)</wsdl:MessageContentFilter>
+    </tev:GetEventPropertiesResponse>
+    """
+        return XMLGenerator.generate_soap_response(
+            "http://www.onvif.org/ver10/events/wsdl/GetEventPropertiesResponse",
+            response
+        )
+
+    def _handle_get_media_profile_options(self, request: ET.Element) -> str:
+        """
+        Handle GetMediaProfileOptions request.
+        """
+        response = """
+    <trt:GetProfileOptionsResponse>
+      <trt:Options>
+        <tt:VideoSourceOptions>
+          <tt:Resolutions>
+            <tt:Width>1920</tt:Width>
+            <tt:Height>1080</tt:Height>
+          </tt:Resolutions>
+          <tt:Resolutions>
+            <tt:Width>1280</tt:Width>
+            <tt:Height>720</tt:Height>
+          </tt:Resolutions>
+        </tt:VideoSourceOptions>
+        <tt:VideoEncoderOptions>
+          <tt:QualityRange>
+            <tt:Min>1</tt:Min>
+            <tt:Max>10</tt:Max>
+          </tt:QualityRange>
+        </tt:VideoEncoderOptions>
+      </trt:Options>
+    </trt:GetProfileOptionsResponse>
+    """
+        return XMLGenerator.generate_soap_response(
+            "http://www.onvif.org/ver10/media/wsdl/GetProfileOptionsResponse",
+            response
+        )
+
+    def _handle_get_video_encoder_configuration_options(self, request: ET.Element) -> str:
+        """
+        Handle GetVideoEncoderConfigurationOptions request.
+        Required for Profile S compliance.
+        """
+        # Get token from request if available
+        token = None
+        token_elem = request.find('.//trt:ConfigurationToken', NS)
+        if token_elem is not None:
+            token = token_elem.text
+
+        # Build response with encoder options
+        response = """
+    <trt:GetVideoEncoderConfigurationOptionsResponse>
+      <trt:Options>
+        <tt:QualityRange>
+          <tt:Min>1</tt:Min>
+          <tt:Max>10</tt:Max>
+        </tt:QualityRange>
+        <tt:H264>
+          <tt:ResolutionsAvailable>
+            <tt:Width>1920</tt:Width>
+            <tt:Height>1080</tt:Height>
+          </tt:ResolutionsAvailable>
+          <tt:ResolutionsAvailable>
+            <tt:Width>1280</tt:Width>
+            <tt:Height>720</tt:Height>
+          </tt:ResolutionsAvailable>
+          <tt:GovLengthRange>
+            <tt:Min>1</tt:Min>
+            <tt:Max>100</tt:Max>
+          </tt:GovLengthRange>
+          <tt:FrameRateRange>
+            <tt:Min>1</tt:Min>
+            <tt:Max>30</tt:Max>
+          </tt:FrameRateRange>
+          <tt:EncodingIntervalRange>
+            <tt:Min>1</tt:Min>
+            <tt:Max>100</tt:Max>
+          </tt:EncodingIntervalRange>
+          <tt:H264ProfilesSupported>High</tt:H264ProfilesSupported>
+        </tt:H264>
+      </trt:Options>
+    </trt:GetVideoEncoderConfigurationOptionsResponse>
+    """
+        return XMLGenerator.generate_soap_response(
+            "http://www.onvif.org/ver10/media/wsdl/GetVideoEncoderConfigurationOptionsResponse",
+            response
+        )
 
     def _handle_get_stream_uri(self, request: ET.Element) -> str:
         """
@@ -1304,12 +1413,21 @@ class OnvifService(threading.Thread):
             return XMLGenerator.generate_fault_response("Missing ProfileToken")
 
         token = profile_token_elem.text
+        profile = None
         with self.profiles_lock:
-            # Unconditionally assume the profile exists as all profiles are always added
+            # Find the requested profile
             for profile_info in self.media_profiles:
                 if profile_info.token == token:
                     profile = profile_info.to_dict()
                     break
+
+            # If profile wasn't found, use the first one as fallback
+            if profile is None and self.media_profiles:
+                profile = self.media_profiles[0].to_dict()
+                logger.warning(f"Profile {token} not found, using {profile['token']} as fallback")
+
+        if profile is None:
+            return XMLGenerator.generate_fault_response("No profiles available")
 
         if token in self.profile_callbacks:
             self.profile_callbacks[token](token)
@@ -1392,7 +1510,6 @@ class OnvifService(threading.Thread):
             "http://www.onvif.org/ver10/media/wsdl/GetProfileResponse",
             response
         )
-
 
     def _handle_get_snapshot_uri(self, request: ET.Element) -> str:
         """
@@ -1525,12 +1642,6 @@ class OnvifService(threading.Thread):
     def _handle_get_video_sources(self, request: ET.Element) -> str:
         """
         Handle GetVideoSources request.
-
-        Args:
-            request: Request XML root
-
-        Returns:
-            str: SOAP response XML
         """
         # Use the highest resolution profile for video source info
         with self.profiles_lock:
@@ -1539,22 +1650,24 @@ class OnvifService(threading.Thread):
             height = main_profile['resolution']['height']
 
             response = f"""
-<trt:GetVideoSourcesResponse>
-  <trt:VideoSources token="VideoSource">
-    <tt:Framerate>30</tt:Framerate>
-    <tt:Resolution>
-      <tt:Width>{width}</tt:Width>
-      <tt:Height>{height}</tt:Height>
-    </tt:Resolution>
-    <tt:Imaging>
-      <tt:Brightness>50</tt:Brightness>
-      <tt:ColorSaturation>50</tt:ColorSaturation>
-      <tt:Contrast>50</tt:Contrast>
-      <tt:Sharpness>50</tt:Sharpness>
-    </tt:Imaging>
-  </trt:VideoSources>
-</trt:GetVideoSourcesResponse>
-"""
+    <trt:GetVideoSourcesResponse>
+      <trt:VideoSources token="VideoSource">
+        <tt:Framerate>30</tt:Framerate>
+        <tt:Resolution>
+          <tt:Width>{width}</tt:Width>
+          <tt:Height>{height}</tt:Height>
+        </tt:Resolution>
+        <tt:Extension>
+          <tt:Imaging>
+            <tt:Brightness>50</tt:Brightness>
+            <tt:ColorSaturation>50</tt:ColorSaturation>
+            <tt:Contrast>50</tt:Contrast>
+            <tt:Sharpness>50</tt:Sharpness>
+          </tt:Imaging>
+        </tt:Extension>
+      </trt:VideoSources>
+    </trt:GetVideoSourcesResponse>
+    """
         return XMLGenerator.generate_soap_response(
             "http://www.onvif.org/ver10/media/wsdl/GetVideoSourcesResponse",
             response
@@ -1871,7 +1984,7 @@ class OnvifService(threading.Thread):
     <tt:Enabled>true</tt:Enabled>
     <tt:Info>
       <tt:Name>eth0</tt:Name>
-      <tt:HwAddress>{MAC_ADDRESS}</tt:HwAddress>
+      <tt:HwAddress>{self.mac_address}</tt:HwAddress>
     </tt:Info>
     <tt:IPv4>
       <tt:Enabled>true</tt:Enabled>
