@@ -1573,6 +1573,55 @@ class OnvifService(threading.Thread):
             logger.error(f"Error handling GetCapabilities: {e}", exc_info=True)
             return XMLGenerator.generate_fault_response(f"Error getting capabilities: {str(e)}")
 
+        def _handle_get_scopes(self, request: ET.Element) -> str:
+            """
+            Handle GetScopes request.
+            Returns the scope parameters of the ONVIF device.
+
+            Args:
+                request: Request XML element
+
+            Returns:
+                str: SOAP response XML
+            """
+            try:
+                # Define scopes based on device configuration
+                scopes_xml = f"""
+            <tds:Scopes>
+              <tt:ScopeDef>Fixed</tt:ScopeDef>
+              <tt:ScopeItem>onvif://www.onvif.org/type/video_encoder</tt:ScopeItem>
+            </tds:Scopes>
+            <tds:Scopes>
+              <tt:ScopeDef>Fixed</tt:ScopeDef>
+              <tt:ScopeItem>onvif://www.onvif.org/Profile/Streaming</tt:ScopeItem>
+            </tds:Scopes>
+            <tds:Scopes>
+              <tt:ScopeDef>Fixed</tt:ScopeDef>
+              <tt:ScopeItem>onvif://www.onvif.org/name/{self.device_info['Model']}</tt:ScopeItem>
+            </tds:Scopes>
+            <tds:Scopes>
+              <tt:ScopeDef>Fixed</tt:ScopeDef>
+              <tt:ScopeItem>onvif://www.onvif.org/location/Dashboard</tt:ScopeItem>
+            </tds:Scopes>
+            <tds:Scopes>
+              <tt:ScopeDef>Fixed</tt:ScopeDef>
+              <tt:ScopeItem>onvif://www.onvif.org/hardware/{self.device_uuid}</tt:ScopeItem>
+            </tds:Scopes>
+        """
+
+                response = f"""
+        <tds:GetScopesResponse>
+          {scopes_xml}
+        </tds:GetScopesResponse>
+        """
+                return XMLGenerator.generate_soap_response(
+                    "http://www.onvif.org/ver10/device/wsdl/GetScopesResponse",
+                    response
+                )
+            except Exception as e:
+                logger.error(f"Error handling GetScopes: {e}", exc_info=True)
+                return XMLGenerator.generate_fault_response(f"Error getting scopes: {str(e)}")
+
     def handle_media_service(self, soap_request: str) -> str:
         """
         Handle ONVIF Media service requests with enhanced protocol support.
