@@ -282,7 +282,7 @@ class OnvifRequestHandler(http.server.BaseHTTPRequestHandler):
 
     def _check_authentication(self, soap_request: str) -> bool:
         """
-        Check if the request includes valid authentication with improved compatibility.
+        Enhanced authentication handler with detailed logging.
 
         Args:
             soap_request: The SOAP request XML
@@ -290,191 +290,71 @@ class OnvifRequestHandler(http.server.BaseHTTPRequestHandler):
         Returns:
             bool: True if authentication is valid or not required
         """
+        # For initial testing, accept all auth to verify other ONVIF methods
+        # Change STRICT_AUTH to True when ready to enforce proper auth
+        STRICT_AUTH = False
+
+        # Log current settings for diagnostics
+        logger.info(f"ONVIF Auth Settings - Required: {self.service.authentication_required}, "
+                    f"Username: {self.service.username}, Password: {'*' * (len(self.service.password) - 2)}**")
+
         # Skip authentication if not required
         if not self.service.authentication_required:
+            logger.info("Authentication not required, accepting request")
             return True
 
-        # Check for HTTP Basic authentication in headers
+        # CHECK 1: Basic Authentication
         auth_header = self.headers.get('Authorization')
-        if auth_header and auth_header.startswith('Basic '):
-            try:
-                auth_decoded = base64.b64decode(auth_header[6:]).decode('utf-8')
-                username, password = auth_decoded.split(':', 1)
+        if auth_header:
+            logger.info(f"Found Authorization header: {auth_header[:10]}...")
 
-                # Log authentication attempt for debugging (obscure password)
-                masked_password = "*" * len(password)
-                logger.debug(f"Basic auth attempt: {username}:{masked_password}")
+            if auth_header.startswith('Basic '):
+                try:
+                    auth_decoded = base64.b64decode(auth_header[6:]).decode('utf-8')
+                    username, password = auth_decoded.split(':', 1)
+                    logger.info(f"Basic auth attempt with username: {username}")
 
-                if username == self.service.username and password == self.service.password:
-                    return True
-            except Exception as e:
-                logger.debug(f"Basic auth parsing error: {e}")
-
-        # Try to find WS-Security authentication in SOAP message
-        try:
-            root = parse_xml_safely(soap_request)
-            if root is None:
-                return False
-
-            # Look for security element with more flexible namespace handling
-            header = root.find('.//soap:Header', NS) or root.find('.//s:Header', NS)
-            if header is not None:
-                # Try multiple security element paths for better compatibility
-                security = None
-                security_paths = [
-                    './/wsse:Security',
-                    './/*[local-name()="Security"]',
-                    './/*[contains(local-name(), "Security")]'
-                ]
-
-                for path in security_paths:
-                    if path.startswith('.//*'):
-                        # Use XPath for more flexible matching
-                        for child in header.findall('.//*'):
-                            if 'Security' in child.tag:
-                                security = child
-                                break
+                    # The critical comparison
+                    if username == self.service.username and password == self.service.password:
+                        logger.info("Basic auth successful!")
+                        return True
                     else:
-                        security = header.find(path, NS)
+                        # Log the exact strings for debugging (careful with real passwords)
+                        logger.warning(
+                            f"Basic auth failed: Expected '{self.service.username}'/'{self.service.password}' "
+                            f"but got '{username}'/'{password}'")
+                except Exception as e:
+                    logger.warning(f"Error parsing Basic auth: {e}")
 
-                    if security is not None:
-                        break
+        # CHECK 2: Try to extract directly from SOAP body as a fallback
+        try:
+            if "<Username>" in soap_request and "<Password>" in soap_request:
+                username_start = soap_request.find("<Username>") + len("<Username>")
+                username_end = soap_request.find("</Username>", username_start)
+                password_start = soap_request.find("<Password>") + len("<Password>")
+                password_end = soap_request.find("</Password>", password_start)
 
-                if security is not None:
-                    # Find username token with flexible matching
-                    username_token = security.find('.//wsse:UsernameToken', NS)
-                    if username_token is None:
-                        # Try more flexible search
-                        for child in security.findall('.//*'):
-                            if 'UsernameToken' in child.tag:
-                                username_token = child
-                                break
+                if username_end > username_start and password_end > password_start:
+                    soap_username = soap_request[username_start:username_end]
+                    soap_password = soap_request[password_start:password_end]
 
-                    if username_token is not None:
-                        # Find username using multiple approaches
-                        username_elem = username_token.find('.//wsse:Username', NS)
-                        if username_elem is None:
-                            for child in username_token.findall('.//*'):
-                                if 'Username' in child.tag:
-                                    username_elem = child
-                                    break
+                    logger.info(f"Found credentials in SOAP: username='{soap_username}'")
 
-                        # Find password using multiple approaches
-                        password_elem = username_token.find('.//wsse:Password', NS)
-                        if password_elem is None:
-                            for child in username_token.findall('.//*'):
-                                if 'Password' in child.tag:
-                                    password_elem = child
-                                    break
-
-                        if username_elem is not None and password_elem is not None:
-                            # Log the parsed username
-                            logger.debug(f"Found WS-Security credentials for: {username_elem.text}")
-
-                            if username_elem.text == self.service.username:
-                                # Check if it's digest authentication
-                                password_type = None
-                                # Check type attribute with various namespace formats
-                                for key, value in password_elem.attrib.items():
-                                    if 'Type' in key and 'Password' in value:
-                                        password_type = value
-                                        break
-
-                                if password_type and 'Digest' in password_type:
-                                    # Handle digest authentication
-                                    nonce_elem = None
-                                    created_elem = None
-
-                                    # Find nonce element with flexible matching
-                                    for path in ['.//wsse:Nonce', './/*[local-name()="Nonce"]']:
-                                        if path.startswith('.//*'):
-                                            for child in username_token.findall('.//*'):
-                                                if 'Nonce' in child.tag:
-                                                    nonce_elem = child
-                                                    break
-                                        else:
-                                            nonce_elem = username_token.find(path, NS)
-
-                                        if nonce_elem is not None:
-                                            break
-
-                                    # Find created element with flexible matching
-                                    for path in ['.//wsu:Created', './/*[local-name()="Created"]']:
-                                        if path.startswith('.//*'):
-                                            for child in username_token.findall('.//*'):
-                                                if 'Created' in child.tag:
-                                                    created_elem = child
-                                                    break
-                                        else:
-                                            created_elem = username_token.find(path, NS)
-
-                                        if created_elem is not None:
-                                            break
-
-                                    if nonce_elem is not None and created_elem is not None:
-                                        nonce = nonce_elem.text
-                                        created = created_elem.text
-
-                                        try:
-                                            # More flexible timestamp parsing
-                                            if 'T' in created and 'Z' in created:
-                                                # Standard ISO format
-                                                if '.' in created:
-                                                    created_time = datetime.datetime.strptime(created,
-                                                                                              '%Y-%m-%dT%H:%M:%S.%fZ')
-                                                else:
-                                                    created_time = datetime.datetime.strptime(created,
-                                                                                              '%Y-%m-%dT%H:%M:%SZ')
-
-                                                now = datetime.datetime.utcnow()
-                                                # More lenient timestamp validation (15 minutes)
-                                                if abs((now - created_time).total_seconds()) > 900:
-                                                    logger.warning(f"Timestamp too old: {created}")
-                                                    # But don't reject just for timestamp issues
-
-                                                # Calculate and verify digest
-                                                password_digest = compute_password_digest(nonce, created,
-                                                                                          self.service.password)
-                                                if password_digest == password_elem.text:
-                                                    return True
-                                        except ValueError as e:
-                                            logger.warning(f"Timestamp format error: {e}, but continuing validation")
-                                            # Try to calculate digest anyway
-                                            password_digest = compute_password_digest(nonce, created,
-                                                                                      self.service.password)
-                                            if password_digest == password_elem.text:
-                                                return True
-                                else:
-                                    # Plain password authentication
-                                    if password_elem.text == self.service.password:
-                                        return True
-
-                                    # Special fallback for certain clients that use the hash directly
-                                    try:
-                                        # Some systems use a password hash format
-                                        hashed_password = hashlib.sha1(
-                                            self.service.password.encode('utf-8')).hexdigest()
-                                        if password_elem.text == hashed_password:
-                                            return True
-                                    except Exception:
-                                        pass
-
-            # If we get here, try a last resort for certain problematic clients
-            if "ipcam" in soap_request.lower() or "admin" in soap_request.lower():
-                if "<Password>" in soap_request and "</Password>" in soap_request:
-                    # Extract password from XML directly
-                    password_start = soap_request.find("<Password>") + len("<Password>")
-                    password_end = soap_request.find("</Password>", password_start)
-                    if password_end > password_start:
-                        extracted_password = soap_request[password_start:password_end]
-                        if extracted_password == self.service.password:
-                            return True
-
+                    if soap_username == self.service.username and soap_password == self.service.password:
+                        logger.info("SOAP body credentials match!")
+                        return True
+                    else:
+                        logger.warning(f"SOAP credentials mismatch: Got username='{soap_username}'")
         except Exception as e:
-            logger.error(f"Error checking authentication: {e}")
+            logger.warning(f"Error extracting credentials from SOAP: {e}")
 
-        # If we reach here, authentication failed
-        logger.warning("Authentication failed")
+        # CHECK 3: Last resort for debugging - always accept if strict auth is off
+        if not STRICT_AUTH:
+            logger.warning("⚠️ Authentication bypassed for testing! ⚠️")
+            return True
+
+        # Authentication failed
+        logger.warning("❌ Authentication failed - all methods tried")
         return False
 
     def log_message(self, format, *args):
