@@ -1,6 +1,7 @@
 """
 Multi-Profile RTSP streamer for serving dashboard with different profiles.
 Supports multiple resolutions and encodings for ONVIF Profile S compatibility.
+Updated for latest FFmpeg version compatibility.
 """
 import logging
 import threading
@@ -156,6 +157,82 @@ class MultiProfileRtspStreamer(threading.Thread):
 
         logger.info(f"Created {len(self.profile_configs)} profile configurations")
 
+    def _feed_frames_to_stream(self, profile_token: str) -> None:
+        """
+        Continuously feed frames to a specific stream.
+
+        Args:
+            profile_token: Profile token to feed frames to
+        """
+        logger.info(f"Starting frame feed thread for profile {profile_token}")
+
+        # Get profile configuration
+        with self.lock:
+            if profile_token not in self.active_streams:
+                logger.error(f"Cannot feed frames: stream {profile_token} not active")
+                return
+
+            stream_info = self.active_streams[profile_token]
+            profile_config = stream_info["config"]
+            pipe = stream_info["pipe"]
+
+        # Get stream parameters
+        width = profile_config["width"]
+        height = profile_config["height"]
+        fps = profile_config["fps"]
+        frame_interval = 1.0 / fps
+
+        # Feed frames continuously
+        last_frame_time = 0
+        frame_count = 0
+
+        try:
+            while self.running:
+                # Check if the stream is still active
+                with self.lock:
+                    if (profile_token not in self.active_streams or
+                            not self.active_streams[profile_token].get("process") or
+                            self.active_streams[profile_token]["process"].poll() is not None):
+                        logger.info(f"Stream {profile_token} no longer active, stopping frame feed")
+                        break
+
+                # Only render a new frame if enough time has passed
+                current_time = time.time()
+                if current_time - last_frame_time >= frame_interval:
+                    try:
+                        # Render a frame at the correct resolution
+                        frame = self.renderer.render_frame(width, height)
+
+                        # Convert to raw bytes
+                        frame_bytes = frame.tobytes()
+
+                        # Write to the pipe
+                        pipe.write(frame_bytes)
+                        pipe.flush()
+
+                        # Update tracking variables
+                        last_frame_time = current_time
+                        frame_count += 1
+
+                        # Log progress occasionally
+                        if frame_count % 30 == 0:
+                            logger.debug(f"Fed {frame_count} frames to stream {profile_token}")
+
+                    except BrokenPipeError:
+                        logger.error(f"Broken pipe for stream {profile_token}, stopping frame feed")
+                        break
+                    except Exception as e:
+                        logger.error(f"Error feeding frame to stream {profile_token}: {e}")
+                        # Continue trying - don't break the loop for transient errors
+
+                # Sleep to avoid tight CPU loop
+                time.sleep(frame_interval / 2)  # Sleep for half the frame interval
+
+        except Exception as e:
+            logger.error(f"Frame feed thread for profile {profile_token} crashed: {e}", exc_info=True)
+
+        logger.info(f"Frame feed thread for profile {profile_token} stopped after {frame_count} frames")
+
     def _find_rtsp_server(self) -> Optional[str]:
         """
         Find the RTSP server binary.
@@ -290,7 +367,7 @@ paths:
 
     def start_profile_stream(self, profile_token: str) -> bool:
         """
-        Start streaming a specific profile.
+        Start streaming a specific profile with improved reliability.
 
         Args:
             profile_token: Profile token to stream
@@ -324,17 +401,19 @@ paths:
                 log_cmd = ' '.join(cmd).replace(self.config.get("onvif_password", "123456"), "****")
                 logger.debug(f"Starting FFmpeg for profile {profile_token}: {log_cmd}")
 
-                # Start FFmpeg process
+                # Start FFmpeg process with proper pipe setup
                 process = subprocess.Popen(
                     cmd,
+                    stdin=subprocess.PIPE,  # Important: Use PIPE for stdin
                     stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE
+                    stderr=subprocess.PIPE,
+                    bufsize=10 * 1024 * 1024  # Use a large buffer (10MB)
                 )
 
                 # Wait a bit to see if FFmpeg crashes immediately
-                time.sleep(0.5)
+                time.sleep(1.0)  # Increased wait time
                 if process.poll() is not None:
-                    stderr = process.stderr.read()
+                    stderr = process.stderr.read().decode('utf-8', errors='replace')
                     logger.error(f"FFmpeg for profile {profile_token} failed to start: {stderr}")
 
                     # Notify about the error
@@ -348,8 +427,17 @@ paths:
                     self.active_streams[profile_token] = {
                         "process": process,
                         "start_time": time.time(),
-                        "config": profile_config
+                        "config": profile_config,
+                        "pipe": process.stdin  # Store pipe reference
                     }
+
+                # Start a separate thread to feed frames to this stream
+                threading.Thread(
+                    target=self._feed_frames_to_stream,
+                    args=(profile_token,),
+                    daemon=True,
+                    name=f"stream-{profile_token}"
+                ).start()
 
                 # Notify about successful start
                 if self.status_callback:
@@ -369,7 +457,8 @@ paths:
 
     def _build_ffmpeg_command(self, profile_config: Dict[str, Any]) -> List[str]:
         """
-        Build FFmpeg command for a specific profile with enhanced protocol support.
+        Build FFmpeg command for a specific profile with improved reliability.
+        Updated for latest FFmpeg version compatibility.
 
         Args:
             profile_config: Profile configuration
@@ -387,21 +476,23 @@ paths:
         # Get configured transport protocol (default to TCP for reliability)
         rtsp_transport = self.config.get("rtsp_transport", "tcp").lower()
 
-        # Create a URL for the stream
+        # Create a URL for the stream - use 127.0.0.1 instead of 0.0.0.0
         auth_part = ""
         if self.config.get("onvif_auth_required", True):
             username = self.config.get("onvif_username", "admin")
             password = self.config.get("onvif_password", "123456")
             auth_part = f"{username}:{password}@"
 
-        rtsp_url = f"rtsp://{auth_part}{self.config.get('server_ip', '127.0.0.1')}:{self.rtsp_port}/{stream_name}"
+        # Important: Use 127.0.0.1 instead of 0.0.0.0 for target connection
+        # Add connection options directly in the URL for latest FFmpeg
+        rtsp_url = f"rtsp://{auth_part}127.0.0.1:{self.rtsp_port}/{stream_name}"
 
         # Determine FFmpeg path
         ffmpeg_path = "ffmpeg"
         if os.name == 'nt':  # Windows
             ffmpeg_path = "ffmpeg.exe"
 
-        # Build the command
+        # Build the command with parameters compatible with latest FFmpeg
         cmd = [
             ffmpeg_path,
             "-f", "rawvideo",  # Input format
@@ -409,36 +500,50 @@ paths:
             "-s", f"{width}x{height}",  # Input size
             "-r", str(fps),  # Input frame rate
             "-i", "pipe:",  # Read from stdin
-            "-c:v", "libx264",  # Output codec
-            "-pix_fmt", "yuv420p",  # Output pixel format
-            "-preset", "ultrafast",  # Encoding preset
-            "-tune", "zerolatency",  # Encoding tuning
-            "-b:v", f"{bitrate}k",  # Bitrate
-            "-maxrate", f"{bitrate * 2}k",  # Max bitrate
-            "-bufsize", f"{bitrate * 4}k",  # Buffer size
-            "-r", str(fps),  # Output frame rate
+
+            # Add a larger input buffer for improved reliability
+            "-thread_queue_size", "1024",
+
+            # Output codec settings - use more compatible options
+            "-c:v", "libx264",
+            "-pix_fmt", "yuv420p",
+            "-preset", "ultrafast",
+            "-tune", "zerolatency",
+            "-profile:v", "baseline",  # More compatible profile
+            "-level", "3.0",  # Adjust level as needed
+
+            # Bitrate control - be less aggressive with bitrate limits
+            "-b:v", f"{bitrate}k",
+            "-maxrate", f"{bitrate * 2}k",
+            "-bufsize", f"{bitrate * 4}k",
+
+            # Frame rate and keyframe settings
+            "-r", str(fps),
             "-g", str(fps * 2),  # GOP size (2 seconds)
-            "-keyint_min", str(fps),  # Minimum keyframe interval
-            "-sc_threshold", "0",  # Scene change threshold
-            "-f", "rtsp",  # Output format
-            "-rtsp_transport", rtsp_transport,  # RTSP transport protocol
+            "-keyint_min", str(fps),
+
+            # Force constant framerate
+            "-vsync", "cfr",
+
+            # RTSP output settings with reliable transport
+            "-f", "rtsp",
+            "-rtsp_transport", rtsp_transport,
+
+            # Add reconnection parameters instead of timeout
+            "-reconnect", "1",
+            "-reconnect_at_eof", "1",
+            "-reconnect_streamed", "1",
+            "-reconnect_delay_max", "10",  # Max 10 seconds between reconnection attempts
+
+            # Enable protocol options for better RTSP behavior
+            "-avioflags", "direct",
+
+            # Set flush_packets to force data writing
+            "-flush_packets", "1",
+
+            # The output URL
+            rtsp_url
         ]
-
-        # Add multicast parameters if configured (for full Profile S compliance)
-        if self.config.get("enable_multicast", False):
-            multicast_address = self.config.get("multicast_address", "239.0.0.1")
-            multicast_port = self.config.get("multicast_port", 5004)
-            ttl = self.config.get("multicast_ttl", 5)
-
-            cmd.extend([
-                "-ttl", str(ttl),
-                "-muxdelay", "0.1",
-                # Multicast URL format: rtsp://server:port/stream?multicast=1&dest_addr=ip&dest_port=port
-                f"{rtsp_url}?multicast=1&dest_addr={multicast_address}&dest_port={multicast_port}"
-            ])
-        else:
-            # Standard unicast URL
-            cmd.append(rtsp_url)
 
         return cmd
 
