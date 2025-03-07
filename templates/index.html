@@ -375,11 +375,11 @@
             } else if (sensor.type === "COSmokeSensor" && typeof sensor.state === 'object') {
                 const alarms = sensor.state;
                 const activeAlarms = [];
+                if (alarms.unexpected) activeAlarms.push("Sensor Error!");
                 if (alarms.smokeAlarm) activeAlarms.push("Smoke Detected");
                 if (alarms.gasAlarm) activeAlarms.push("Gas Detected");
                 if (alarms.highTempAlarm) activeAlarms.push("High Temperature");
                 if (alarms.sLowBattery) activeAlarms.push("Low Battery");
-                if (alarms.unexpected) activeAlarms.push("Unexpected Condition");
                 if (alarms.silence) activeAlarms.push("Silenced");
                 displayState = activeAlarms.length > 0 ? activeAlarms.join(", ") : "Normal";
             } else if (sensor.type === "Switch") {
@@ -412,7 +412,9 @@
 
                     ${
                         sensor.state && sensor.state !== 'unknown'
-                        ? `<p class="sensor-data-item">State: ${displayState}</p>`
+                        ? `<p class="sensor-data-item ${displayState.includes('Sensor Error!') ? 'alarm' : ''}">
+                             State: ${displayState}
+                           </p>`
                         : ''
                     }
 
