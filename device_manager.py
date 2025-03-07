@@ -159,15 +159,15 @@ def get_device_data(device_id):
 
 
 def save_device_data(device_id, data):
-    """Save device data to Redis, preserving previous_state and adding battery mapping."""
+    """Save device data to Redis, preserving previous_state and handling battery appropriately."""
     try:
         # Get existing data to preserve previous_state
         existing = get_device_data(device_id) or {}
         if "state" in data and existing.get("state") != data["state"]:
             data["previous_state"] = existing.get("state", "unknown")
 
-        # Ensure battery is mapped if it's an integer
-        if "battery" in data and isinstance(data["battery"], int):
+        # Only map battery if it's a raw integer from the payload
+        if "battery" in data and isinstance(data["battery"], int) and 0 <= data["battery"] <= 4:
             data["battery"] = map_battery_value(data["battery"])
 
         redis_client.set(f"device:{device_id}", json.dumps(data))

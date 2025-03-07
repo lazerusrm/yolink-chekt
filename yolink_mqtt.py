@@ -85,7 +85,6 @@ def on_message(client, userdata, msg):
             logger.warning("No deviceId in MQTT payload")
             return
 
-        # Get existing device data to retrieve previous_state
         device = get_device_data(device_id) or {}
         if not device.get("deviceId"):
             logger.warning(f"Device {device_id} not found, initializing")
@@ -103,14 +102,14 @@ def on_message(client, userdata, msg):
                 "chekt_zone": "N/A",
                 "door_prop_alarm": False,
                 "previous_state": "unknown",
-                "temperatureUnit": "F"  # Default unit
+                "temperatureUnit": "F"
             }
 
         logger.debug(f"MQTT payload for {device_id}: {json.dumps(payload, indent=2)}")
         logger.debug(f"Current device data before update: {json.dumps(device, indent=2)}")
 
         data = payload.get("data", {})
-        previous_state = device.get("state", "unknown")  # Current state before update becomes previous_state
+        previous_state = device.get("state", "unknown")
 
         # Update state
         if "state" in data:
@@ -118,33 +117,31 @@ def on_message(client, userdata, msg):
 
         # Update battery with mapping
         if "battery" in data:
-            device["battery"] = map_battery_value(data["battery"])
+            battery = data["battery"]
+            if isinstance(battery, int) and 0 <= battery <= 4:
+                device["battery"] = map_battery_value(battery)
+                logger.debug(f"Mapped battery for {device_id} from {battery} to {device['battery']}")
+            elif battery is None and device.get("type") in ["Hub", "Outlet", "Switch"]:
+                device["battery"] = None
+            else:
+                device["battery"] = "unknown"
+                logger.debug(f"Battery for {device_id} set to 'unknown' due to invalid value: {battery}")
 
-        # Update signal, checking both direct and nested (loraInfo)
+        # Update signal
         if "signal" in data:
             device["signal"] = data["signal"]
         elif "loraInfo" in data and "signal" in data["loraInfo"]:
             device["signal"] = data["loraInfo"]["signal"]
 
-        # Update temperature and humidity, preserving existing values if not present
+        # Update other fields
         device["temperature"] = data.get("temperature", device.get("temperature", "unknown"))
         device["humidity"] = data.get("humidity", device.get("humidity", "unknown"))
         device["temperatureUnit"] = data.get("temperatureUnit", device.get("temperatureUnit", "F"))
-
-        # Update alarms for THSensors
         if "alarm" in data:
             device["alarms"]["state"] = data["alarm"]
-
-        # Update device type from payload if present
         if "type" in payload:
             device["type"] = payload["type"]
-
-        # Update last_seen timestamp
         device["last_seen"] = time.strftime("%Y-%m-%d %H:%M:%S")
-
-        # Debug THSensor payloads
-        if payload.get("event", "").startswith("THSensor"):
-            logger.debug(f"THSensor payload: {json.dumps(payload, indent=2)}")
 
         save_device_data(device_id, device)
 
