@@ -93,6 +93,7 @@
         }
         .sensor.alarm { border: 2px solid red; }
         .sensor.warning { border: 2px solid yellow; }
+        .alarm { color: red; }
         .alarm { border: 2px solid red; }
         .warning { border: 2px solid yellow; }
         .hidden { display: none !important; }
@@ -390,7 +391,7 @@
         }
 
         // Device type capabilities
-        const batteryDeviceTypes = ["DoorSensor", "MotionSensor", "LeakSensor", "THSensor", "COSmokeSensor", "SmartRemoter", "PowerFailureAlarm", "Siren", "Finger", "LockV2"];
+        const batteryDeviceTypes = ["DoorSensor", "MotionSensor", "LeakSensor", "THSensor", "COSmokeSensor", "SmartRemoter", "PowerFailureAlarm", "Siren", "Finger", "LockV2", "VibrationSensor", "Manipulator"];
         const tempHumidityDeviceTypes = ["THSensor"];
 
         // Fetch and update sensor data
@@ -472,6 +473,8 @@
 
                         // Process state information
                         let displayState = "Unknown";
+                        let stateClass = "";
+
                         if (Array.isArray(sensor.state)) {
                             displayState = "Outlet States: " + sensor.state.map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(', ');
                         } else if (sensor.type === "COSmokeSensor" && typeof sensor.state === 'object') {
@@ -484,6 +487,20 @@
                             if (alarms.sLowBattery) activeAlarms.push("Low Battery");
                             if (alarms.silence) activeAlarms.push("Silenced");
                             displayState = activeAlarms.length > 0 ? activeAlarms.join(", ") : "Normal";
+                            stateClass = activeAlarms.length > 0 ? "alarm" : "";
+                        } else if (sensor.type === "LockV2" && typeof sensor.state === 'object') {
+                            // Handle lock device with door and lock states
+                            const lockState = sensor.state.lock ? sensor.state.lock.charAt(0).toUpperCase() + sensor.state.lock.slice(1) : "Unknown";
+                            const doorState = sensor.state.door ? sensor.state.door.charAt(0).toUpperCase() + sensor.state.door.slice(1) : "Unknown";
+                            displayState = `Door: ${doorState}, Lock: ${lockState}`;
+                        } else if (sensor.type === "VibrationSensor") {
+                            // Highlight alert state for vibration sensors
+                            displayState = sensor.state.charAt(0).toUpperCase() + sensor.state.slice(1);
+                            stateClass = (sensor.state === "alert") ? "alarm" : "";
+                        } else if (sensor.type === "MotionSensor") {
+                            // Highlight alert state for motion sensors
+                            displayState = sensor.state.charAt(0).toUpperCase() + sensor.state.slice(1);
+                            stateClass = (sensor.state === "alert") ? "alarm" : "";
                         } else if (sensor.type === "Switch") {
                             displayState = (sensor.state === "open") ? "On" : (sensor.state === "closed") ? "Off" : sensor.state;
                         } else if (sensor.state) {
@@ -510,7 +527,7 @@
                                 }
                                 ${
                                     displayState !== "Unknown"
-                                    ? `<p class="sensor-data-item ${displayState.includes('Sensor Error!') ? 'alarm' : ''}">
+                                    ? `<p class="sensor-data-item ${stateClass || (displayState.includes('Sensor Error!') ? 'alarm' : '')}">
                                          State: ${displayState}
                                        </p>`
                                     : ''
