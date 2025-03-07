@@ -66,6 +66,7 @@ from monitor_mqtt import run_monitor_mqtt
 from logging.handlers import RotatingFileHandler
 from flask_apscheduler import APScheduler
 from datetime import datetime
+import threading
 
 handler = RotatingFileHandler("/app/logs/app.log", maxBytes=10*1024*1024, backupCount=5)
 
@@ -98,6 +99,30 @@ def load_user(username):
     if get_user_data(username):
         return User(username)
     return None
+
+def is_system_configured():
+    """Check if the system has been configured with necessary credentials"""
+    config = load_config()
+
+    # Check for YoLink credentials
+    yolink_configured = (
+            config.get("yolink", {}).get("uaid") and
+            config.get("yolink", {}).get("secret_key")
+    )
+
+    # Check for monitor configuration
+    monitor_configured = config.get("mqtt_monitor", {}).get("url")
+
+    return yolink_configured and monitor_configured
+
+def start_services():
+    """Check configuration and start MQTT clients if configured"""
+    if is_system_configured():
+        logger.info("System configured, starting MQTT clients")
+        threading.Thread(target=run_mqtt_client, daemon=True).start()
+        threading.Thread(target=run_monitor_mqtt, daemon=True).start()
+    else:
+        logger.info("System not yet fully configured. MQTT clients not started.")
 
 def init_default_user():
     """Create a default admin user if no users exist."""
@@ -163,15 +188,33 @@ def scheduled_device_refresh():
         except Exception as e:
             logger.error(f"Error in scheduled device refresh: {str(e)}")
 
+
 def init_scheduler():
     try:
         # Only initialize once (in case of multiple workers)
         if not scheduler.running:
             scheduler.init_app(app)
-            scheduler.start()
-            logger.info("Scheduler started successfully")
+
+            # Only start the device refresh job if the system is configured
+            if is_system_configured():
+                scheduler.start()
+                logger.info("Scheduler started successfully")
+            else:
+                logger.info("Scheduler not started - waiting for system configuration")
+        else:
+            # If scheduler is already running but system is now configured,
+            # ensure the jobs are restored
+            if is_system_configured() and not scheduler.get_job('sync_devices'):
+                scheduler.add_job(
+                    id='sync_devices',
+                    func=scheduled_device_refresh,
+                    trigger='interval',
+                    seconds=300,
+                    misfire_grace_time=300
+                )
+                logger.info("Restored scheduled jobs after configuration")
     except Exception as e:
-        logger.error(f"Failed to start scheduler: {str(e)}")
+        logger.error(f"Failed to initialize scheduler: {str(e)}")
 
 # Authentication Routes
 @app.route("/login", methods=["GET", "POST"])
@@ -531,12 +574,24 @@ def last_refresh():
             "message": str(e)
         })
 
+@app.route('/restart_services', methods=['POST'])
+@login_required
+def restart_services():
+    """Endpoint to restart MQTT services after configuration changes"""
+    try:
+        start_services()
+        return jsonify({"status": "success", "message": "Services restarted"})
+    except Exception as e:
+        logger.error(f"Error restarting services: {e}")
+        return jsonify({"status": "error", "message": str(e)})
+
 # Main Entry
 if __name__ == "__main__":
+    # Initialize services based on configuration
+    start_services()
+
+    # Initialize the scheduler
     init_scheduler()
-    import threading
-    config_data = load_config()
-    # Start YoLink and Monitor MQTT clients in threads
-    threading.Thread(target=run_mqtt_client, daemon=True).start()
-    threading.Thread(target=run_monitor_mqtt, daemon=True).start()
+
+    # Run the Flask app
     app.run(host="0.0.0.0", port=5000)

@@ -268,25 +268,46 @@
             });
 
             $('#config-form').submit(function(e) {
-                e.preventDefault();
-                $('#save-status').html('<span class="spinner"></span> Saving...');
-                $.ajax({
-                    type: 'POST',
-                    url: '{{ url_for("config") }}',
-                    data: $(this).serialize(),
-                    success: function(response) {
-                        $('#save-status').html('<span style="color: #28a745;">Saved!</span>');
-                        setTimeout(() => $('#save-status').html(''), 2000);
-                    },
-                    error: function(xhr) {
-                        var errorMsg = xhr.responseJSON ? xhr.responseJSON.message : 'Unknown error';
-                        $('#save-status').html('<span style="color: #dc3545;">Error: ' + errorMsg + '</span>');
-                    }
-                });
-            });
+    e.preventDefault();
+    $('#save-status').html('<span class="spinner"></span> Saving...');
 
-            fetchLogs();
-        });
+    // Submit the form data
+    $.ajax({
+        type: 'POST',
+        url: '{{ url_for("config") }}',
+        data: $(this).serialize(),
+        success: function(response) {
+            $('#save-status').html('<span style="color: #28a745;">Saved!</span>');
+
+            // After saving configuration, restart services
+            $.ajax({
+                type: 'POST',
+                url: '/restart_services',
+                success: function(serviceResponse) {
+                    // Add restart confirmation
+                    if (serviceResponse.status === "success") {
+                        $('#save-status').html('<span style="color: #28a745;">Saved! Services restarted.</span>');
+                    } else {
+                        $('#save-status').html('<span style="color: #28a745;">Saved! Services restart failed.</span>');
+                    }
+
+                    setTimeout(() => $('#save-status').html(''), 3000);
+
+                    // Check status after a delay to allow services to start
+                    setTimeout(checkAllStatuses, 3000);
+                },
+                error: function() {
+                    $('#save-status').html('<span style="color: #28a745;">Saved! (Service restart failed)</span>');
+                    setTimeout(() => $('#save-status').html(''), 3000);
+                }
+            });
+        },
+        error: function(xhr) {
+            var errorMsg = xhr.responseJSON ? xhr.responseJSON.message : 'Unknown error';
+            $('#save-status').html('<span style="color: #dc3545;">Error: ' + errorMsg + '</span>');
+        }
+    });
+});
     </script>
 </body>
 </html>

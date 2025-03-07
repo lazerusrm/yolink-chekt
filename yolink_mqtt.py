@@ -26,6 +26,22 @@ logger = logging.getLogger(__name__)
 client = None
 connected = False
 
+
+def has_valid_credentials():
+    """
+    Check if the configuration has valid YoLink credentials.
+    Returns True if credentials are present, False otherwise.
+    """
+    config = load_config()
+    uaid = config.get("yolink", {}).get("uaid")
+    secret_key = config.get("yolink", {}).get("secret_key")
+
+    if not uaid or not secret_key or uaid == "" or secret_key == "":
+        logger.info("YoLink credentials not yet configured. MQTT connection deferred.")
+        return False
+
+    return True
+
 def map_battery_value(raw_value):
     """Map YoLink battery levels (0-4) to percentages."""
     if not isinstance(raw_value, int) or raw_value < 0 or raw_value > 4:
@@ -197,8 +213,17 @@ def on_message(client, userdata, msg):
     except Exception as e:
         logger.error(f"Error processing message for device {device_id}: {str(e)}")
 
+
 def run_mqtt_client():
+    """Refresh all YoLink devices from the API and update Redis with enhanced data."""
     global client, connected
+
+    # Check for credentials before attempting connection
+    if not has_valid_credentials():
+        logger.info("YoLink MQTT connection deferred - waiting for credentials")
+        connected = False
+        return
+
     config = load_config()
     token = get_access_token(config)  # Ensure a valid token on startup
     if not token:
