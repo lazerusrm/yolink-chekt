@@ -496,7 +496,7 @@ paths:
         cmd = [
             ffmpeg_path,
             "-f", "rawvideo",  # Input format
-            "-pix_fmt", "rgba",  # Input pixel format
+            "-pix_fmt", "rgb24",  # Input pixel format
             "-s", f"{width}x{height}",  # Input size
             "-r", str(fps),  # Input frame rate
             "-i", "pipe:",  # Read from stdin
