@@ -605,214 +605,333 @@ class DashboardRenderer:
                     draw.text((x + padding, y + y_offset), signal_text, font=detail_font, fill=signal_color)
 
     def _render_sensor_panel(self, draw: ImageDraw.ImageDraw, sensor: Dict[str, Any],
-                             x: int, y: int) -> None:
-        """
-        Render a single sensor panel with enhanced visual indicators.
-        Modernized design with improved alarm visibility and battery indicators.
+                         x: int, y: int) -> None:
+    """
+    Render a single sensor panel with enhanced visual indicators.
+    Modernized design with improved alarm visibility.
 
-        Args:
-            draw: PIL ImageDraw object
-            sensor: Sensor data dictionary
-            x: X-coordinate of the sensor panel
-            y: Y-coordinate of the sensor panel
-        """
-        panel_width = self.layout_params["panel_width"]
-        panel_height = self.layout_params["panel_height"]
-        padding = self.layout_params["padding"]
-        title_height = self.layout_params["title_height"]
+    Args:
+        draw: PIL ImageDraw object
+        sensor: Sensor data dictionary
+        x: X-coordinate of the sensor panel
+        y: Y-coordinate of the sensor panel
+    """
+    panel_width = self.layout_params["panel_width"]
+    panel_height = self.layout_params["panel_height"]
+    padding = self.layout_params["padding"]
+    title_height = self.layout_params["title_height"]
 
-        # Determine if we're in a small resolution mode
-        is_small_panel = panel_width < 200 or panel_height < 150
+    # Determine if we're in a small resolution mode
+    is_small_panel = panel_width < 200 or panel_height < 150
 
-        device_id = sensor.get("deviceId", "")
-        is_newest_alarm = device_id == self.newest_alarm_id
-        is_in_alarm = device_id in [s.get("deviceId") for s in self.alarm_sensors]
+    device_id = sensor.get("deviceId", "")
+    is_newest_alarm = device_id == self.newest_alarm_id
+    is_in_alarm = device_id in [s.get("deviceId") for s in self.alarm_sensors]
 
-        # Modern color palette
-        if is_newest_alarm:
-            # More vibrant, attention-grabbing colors for new alarms
-            gradient_top = "#FF5252"  # Brighter red
-            gradient_bottom = "#D32F2F"  # Deeper red for gradient effect
-            outline_color = "#FFD600"  # More saturated yellow
-            outline_width = 3 if is_small_panel else 4  # Thicker outline for better visibility
-        elif is_in_alarm:
-            gradient_top = "#F44336"  # Material Design red
-            gradient_bottom = "#C62828"  # Darker red for gradient
-            outline_color = "#FF8A80"  # Light red outline
-            outline_width = 2 if is_small_panel else 3
-        else:
-            # More modern dark theme with blue tint for normal panels
-            gradient_top = "#37474F"  # Dark blue-grey
-            gradient_bottom = "#263238"  # Darker blue-grey
-            outline_color = "#546E7A"  # Medium blue-grey
-            outline_width = 1
+    # Modern color palette
+    if is_newest_alarm:
+        # More vibrant, attention-grabbing colors for new alarms
+        gradient_top = "#FF5252"    # Brighter red
+        gradient_bottom = "#D32F2F" # Deeper red for gradient effect
+        outline_color = "#FFD600"   # More saturated yellow
+        outline_width = 3 if is_small_panel else 4  # Thicker outline for better visibility
+    elif is_in_alarm:
+        gradient_top = "#F44336"    # Material Design red
+        gradient_bottom = "#C62828" # Darker red for gradient
+        outline_color = "#FF8A80"   # Light red outline
+        outline_width = 2 if is_small_panel else 3
+    else:
+        # More modern dark theme with blue tint for normal panels
+        gradient_top = "#37474F"    # Dark blue-grey
+        gradient_bottom = "#263238" # Darker blue-grey
+        outline_color = "#546E7A"   # Medium blue-grey
+        outline_width = 1
 
-        # Draw panel background with rounded corners effect
-        # First fill the entire panel
-        draw.rectangle(
-            [(x, y), (x + panel_width, y + panel_height)],
-            fill=gradient_bottom
-        )
+    # Draw panel background with rounded corners effect
+    # First fill the entire panel
+    draw.rectangle(
+        [(x, y), (x + panel_width, y + panel_height)],
+        fill=gradient_bottom
+    )
 
-        # Draw header with gradient effect - top 20% of panel
-        header_height = title_height + padding
-        draw.rectangle([(x, y), (x + panel_width, y + header_height)], fill=gradient_top)
+    # Draw header with gradient effect - top 20% of panel
+    header_height = title_height + padding
+    draw.rectangle([(x, y), (x + panel_width, y + header_height)], fill=gradient_top)
 
-        # Draw outline - improved to ensure it surrounds the box properly
-        # Draw each side separately for better control
-        for i in range(outline_width):
-            # Top
-            draw.line([(x + i, y + i), (x + panel_width - i, y + i)], fill=outline_color, width=1)
-            # Right
-            draw.line([(x + panel_width - i, y + i), (x + panel_width - i, y + panel_height - i)], fill=outline_color,
-                      width=1)
-            # Bottom
-            draw.line([(x + panel_width - i, y + panel_height - i), (x + i, y + panel_height - i)], fill=outline_color,
-                      width=1)
-            # Left
-            draw.line([(x + i, y + panel_height - i), (x + i, y + i)], fill=outline_color, width=1)
+    # Draw outline - improved to ensure it surrounds the box properly
+    # Draw each side separately for better control
+    for i in range(outline_width):
+        # Top
+        draw.line([(x + i, y + i), (x + panel_width - i, y + i)], fill=outline_color, width=1)
+        # Right
+        draw.line([(x + panel_width - i, y + i), (x + panel_width - i, y + panel_height - i)], fill=outline_color, width=1)
+        # Bottom
+        draw.line([(x + panel_width - i, y + panel_height - i), (x + i, y + panel_height - i)], fill=outline_color, width=1)
+        # Left
+        draw.line([(x + i, y + panel_height - i), (x + i, y + i)], fill=outline_color, width=1)
 
-        # Get sensor name and truncate as needed
-        sensor_name = sensor.get("name", "Unknown")
-        sensor_name = self._truncate_text(draw, sensor_name,
-                                          self.fonts["large" if not is_small_panel else "medium"],
-                                          panel_width - (padding * 2))
+    # Get sensor name and truncate as needed
+    sensor_name = sensor.get("name", "Unknown")
+    sensor_name = self._truncate_text(draw, sensor_name,
+                                      self.fonts["large" if not is_small_panel else "medium"],
+                                      panel_width - (padding * 2))
 
-        # Render sensor name with improved positioning
-        name_font = self.fonts["large" if not is_small_panel else "medium"]
-        draw.text((x + padding, y + padding), sensor_name, font=name_font, fill="#FFFFFF")
+    # Render sensor name with improved positioning
+    name_font = self.fonts["large" if not is_small_panel else "medium"]
+    draw.text((x + padding, y + padding), sensor_name, font=name_font, fill="#FFFFFF")
 
-        # Get sensor details
-        sensor_type = sensor.get("type")
-        state = sensor.get("state", "N/A")
-        y_offset = header_height + padding
+    # Get sensor details
+    sensor_type = sensor.get("type")
+    state = sensor.get("state", "N/A")
+    y_offset = header_height + padding
 
-        # Determine font for state based on panel size
-        state_font = self.fonts["medium"] if not is_small_panel else self.fonts["small"]
-        detail_font = self.fonts["small"]
+    # Determine font for state based on panel size
+    state_font = self.fonts["medium"] if not is_small_panel else self.fonts["small"]
+    detail_font = self.fonts["small"]
 
-        # Calculate space for NEW ALARM text at bottom if needed
-        alarm_text_height = 0
-        if is_newest_alarm:
-            alarm_text_height = self.layout_params["sensor_row_height"] * 1.2
+    # Calculate space for NEW ALARM text at bottom if needed
+    alarm_text_height = 0
+    if is_newest_alarm:
+        alarm_text_height = self.layout_params["sensor_row_height"] * 1.2
 
-        # Calculate available height for details
-        available_height = panel_height - header_height - padding * 2 - alarm_text_height
+    # Calculate available height for details
+    available_height = panel_height - header_height - padding * 2 - alarm_text_height
 
-        # Render state with enhanced visibility
-        if sensor_type in ["Outlet", "MultiOutlet"]:
-            # Outlet logic...
-            if "power" in sensor:
-                power = safe_float(sensor["power"])
-                if power is not None:
-                    status = "On" if power > 0 else "Off"
-                    # Improved color contrast
-                    status_color = "#4CAF50" if power > 0 else "#F44336"  # Green for on, red for off
-                    status_text = f"Status: {status}" if is_small_panel else f"Status: {status} ({power}W)"
-                    draw.text((x + padding, y + y_offset), status_text, font=state_font, fill=status_color)
-                else:
-                    draw.text((x + padding, y + y_offset), "Unknown", font=state_font, fill="#BDBDBD")
-                y_offset += self.layout_params["sensor_row_height"]
-            # Rest of outlet logic...
-
-        else:
-            if sensor_type == "THSensor" and isinstance(state, dict):
-                # Temperature/humidity sensor
-                state_text = format_smoke_state(state)
-                if state_text == "normal":
-                    state_color = "#4CAF50"  # Material Design green
-                else:
-                    state_color = "#F44336"  # Material Design red
-                draw.text((x + padding, y + y_offset),
-                          f"State: {state_text}" if not is_small_panel else state_text,
-                          font=state_font, fill=state_color)
-                y_offset += self.layout_params["sensor_row_height"]
-            elif isinstance(state, str) and state.lower() in ["open", "motion"]:
-                # Active alarm state - enhanced visibility
-                state_text = state.upper()
-
-                # Create a background for important states for better visibility
-                text_width = self._get_text_width(draw, state_text if is_small_panel else f"State: {state_text}",
-                                                  self.fonts["large"] if not is_small_panel else self.fonts["medium"])
-                text_height = self.layout_params["sensor_row_height"] * (1.2 if not is_small_panel else 1)
-
-                # Background pill shape for alarm state
-                draw.rectangle(
-                    [(x + padding - 4, y + y_offset - 2),
-                     (x + padding + text_width + 4, y + y_offset + text_height)],
-                    fill="#B71C1C"  # Dark red background
-                )
-
-                # State text with improved contrast
-                state_font_to_use = self.fonts["large"] if not is_small_panel else self.fonts["medium"]
-                draw.text((x + padding, y + y_offset),
-                          f"State: {state_text}" if not is_small_panel else state_text,
-                          font=state_font_to_use, fill="#FFFFFF")  # White text for contrast
-                y_offset += self.layout_params["sensor_row_height"] * (1.5 if not is_small_panel else 1.2)
-            elif isinstance(state, str) and state.lower() in ["closed", "no motion"]:
-                # Normal state with modern color
-                state_text = state if not is_small_panel else "CLOSED" if state.lower() == "closed" else "NO MOTION"
-                state_color = "#4CAF50"  # Material Design green
-                draw.text((x + padding, y + y_offset),
-                          f"State: {state_text}" if not is_small_panel else state_text,
-                          font=state_font, fill=state_color)
-                y_offset += self.layout_params["sensor_row_height"]
+    # Render state with enhanced visibility
+    if sensor_type in ["Outlet", "MultiOutlet"]:
+        if "power" in sensor:
+            power = safe_float(sensor["power"])
+            if power is not None:
+                status = "On" if power > 0 else "Off"
+                # Improved color contrast
+                status_color = "#4CAF50" if power > 0 else "#F44336"  # Green for on, red for off
+                status_text = f"Status: {status}" if not is_small_panel else f"Status: {status} ({power}W)"
+                draw.text((x + padding, y + y_offset), status_text, font=state_font, fill=status_color)
             else:
-                # Default state
-                state_text = str(state)
-                state_color = "#FFFFFF"
-                draw.text((x + padding, y + y_offset),
-                          f"State: {state_text}" if not is_small_panel else state_text,
-                          font=state_font, fill=state_color)
-                y_offset += self.layout_params["sensor_row_height"]
+                draw.text((x + padding, y + y_offset), "Unknown", font=state_font, fill="#BDBDBD")
+            y_offset += self.layout_params["sensor_row_height"]
+        elif "powers" in sensor and isinstance(sensor["powers"], list):
+            powers = sensor["powers"]
+            max_outlets = 1 if is_small_panel else 2  # Show fewer outlets on small panels
+            for j, power in enumerate(powers[:max_outlets]):
+                power_val = safe_float(power)
+                if power_val is not None:
+                    status = "On" if power_val > 0 else "Off"
+                    status_color = "#4CAF50" if power_val > 0 else "#F44336"
+                    outlet_text = f"Out {j + 1}: {status}" if is_small_panel else f"Outlet {j + 1}: {status} ({power_val}W)"
+                    draw.text((x + padding, y + y_offset + j * self.layout_params["sensor_row_height"]),
+                              outlet_text, font=state_font, fill=status_color)
+                else:
+                    draw.text((x + padding, y + y_offset + j * self.layout_params["sensor_row_height"]),
+                              f"Out {j + 1}: Unknown" if is_small_panel else f"Outlet {j + 1}: Unknown",
+                              font=state_font, fill="#BDBDBD")
+            y_offset += len(powers[:max_outlets]) * self.layout_params["sensor_row_height"]
+        else:
+            draw.text((x + padding, y + y_offset), "Unknown", font=state_font, fill="#BDBDBD")
+            y_offset += self.layout_params["sensor_row_height"]
+    else:
+        if sensor_type == "THSensor" and isinstance(state, dict):
+            state_text = format_smoke_state(state)
+            if state_text == "normal":
+                state_color = "#4CAF50"  # Material Design green
+            else:
+                state_color = "#F44336"  # Material Design red
+            draw.text((x + padding, y + y_offset),
+                      f"State: {state_text}" if not is_small_panel else state_text,
+                      font=state_font, fill=state_color)
+            y_offset += self.layout_params["sensor_row_height"]
+        elif isinstance(state, str) and state.lower() in ["open", "motion"]:
+            # Active alarm state - enhanced visibility
+            state_text = state.upper()
 
-        # Render more sensor details if there's space
-        # Add battery visualization
-        if "battery" in sensor and sensor["battery"] is not None:
-            battery_value = map_battery_value(safe_int(sensor["battery"]))
-            if battery_value is not None:
-                # Add visual battery indicator
-                self._render_battery_indicator(draw, x, y, y_offset, panel_width, battery_value, is_small_panel)
-                y_offset += self.layout_params["sensor_row_height"]
+            # Create a background for important states for better visibility
+            text_width = self._get_text_width(draw, state_text if is_small_panel else f"State: {state_text}",
+                                             self.fonts["large"] if not is_small_panel else self.fonts["medium"])
+            text_height = self.layout_params["sensor_row_height"] * (1.2 if not is_small_panel else 1)
 
-        # Add signal strength visualization
-        if "signal" in sensor:
-            signal_value = safe_int(sensor["signal"])
-            if signal_value is not None:
-                self._render_signal_indicator(draw, x, y, y_offset, panel_width, signal_value, is_small_panel)
-                y_offset += self.layout_params["sensor_row_height"]
-
-        # Add temperature/humidity visualization for THSensors
-        if sensor_type == "THSensor":
-            if sensor.get("temperature",
-                          "unknown") != "unknown" and y_offset < y + panel_height - padding - alarm_text_height:
-                temp_value = sensor['temperature']
-                temp_unit = sensor.get('temperatureUnit', 'F')
-                self._render_temperature_indicator(draw, x, y, y_offset, panel_width, temp_value, temp_unit,
-                                                   is_small_panel)
-                y_offset += self.layout_params["sensor_row_height"]
-
-        # Add NEW ALARM text at the bottom of the panel - moved as requested
-        if is_newest_alarm:
-            # Calculate position for bottom of panel
-            alarm_y = y + panel_height - self.layout_params["sensor_row_height"] - padding
-
-            # Background for alarm text
-            alarm_text = "⚠ NEW ALARM ⚠"
-            alarm_text_width = self._get_text_width(draw, alarm_text, self.fonts["medium"])
-
-            # Center the text in the panel
-            alarm_x = x + (panel_width - alarm_text_width) // 2
-
-            # Draw background pill for alarm text
+            # Background pill shape for alarm state
             draw.rectangle(
-                [(alarm_x - 6, alarm_y - 2),
-                 (alarm_x + alarm_text_width + 6, alarm_y + self.layout_params["sensor_row_height"])],
-                fill="#FF6F00"  # Dark amber background
+                [(x + padding - 4, y + y_offset - 2),
+                 (x + padding + text_width + 4, y + y_offset + text_height)],
+                fill="#B71C1C"  # Dark red background
             )
 
-            # Draw the alarm text - now at bottom of panel
-            draw.text((alarm_x, alarm_y), alarm_text, font=self.fonts["medium"], fill="#FFFFFF")
+            # State text with improved contrast
+            state_font_to_use = self.fonts["large"] if not is_small_panel else self.fonts["medium"]
+            draw.text((x + padding, y + y_offset),
+                      f"State: {state_text}" if not is_small_panel else state_text,
+                      font=state_font_to_use, fill="#FFFFFF")  # White text for contrast
+            y_offset += self.layout_params["sensor_row_height"] * (1.5 if not is_small_panel else 1.2)
+        elif isinstance(state, str) and state.lower() in ["closed", "no motion"]:
+            # Normal state with modern color
+            state_text = state if not is_small_panel else "CLOSED" if state.lower() == "closed" else "NO MOTION"
+            state_color = "#4CAF50"  # Material Design green
+            draw.text((x + padding, y + y_offset),
+                      f"State: {state_text}" if not is_small_panel else state_text,
+                      font=state_font, fill=state_color)
+            y_offset += self.layout_params["sensor_row_height"]
+        else:
+            # Default state
+            state_text = str(state)
+            state_color = "#FFFFFF"
+            draw.text((x + padding, y + y_offset),
+                      f"State: {state_text}" if not is_small_panel else state_text,
+                      font=state_font, fill=state_color)
+            y_offset += self.layout_params["sensor_row_height"]
+
+    # Battery indicator (inline implementation instead of calling a separate method)
+    if "battery" in sensor and sensor["battery"] is not None:
+        battery_value = map_battery_value(safe_int(sensor["battery"]))
+        if battery_value is not None and y_offset < y + panel_height - padding - alarm_text_height:
+            # Battery colors based on level
+            if battery_value <= 25:
+                batt_color = "#F44336"  # Red for low battery
+            elif battery_value <= 50:
+                batt_color = "#FFC107"  # Amber for medium battery
+            else:
+                batt_color = "#4CAF50"  # Green for good battery
+
+            # Draw battery text
+            batt_text = f"Batt: {battery_value}%" if is_small_panel else f"Battery: {battery_value}%"
+            draw.text((x + padding, y + y_offset), batt_text, font=detail_font, fill=batt_color)
+
+            # Draw battery icon if there's room
+            text_width = self._get_text_width(draw, batt_text, detail_font)
+            icon_x = x + padding + text_width + 10
+
+            if icon_x + 30 <= x + panel_width - padding:
+                # Battery outline
+                bar_width = 25
+                bar_height = 12
+
+                # Draw the battery body
+                draw.rectangle(
+                    [(icon_x, y + y_offset + 2),
+                     (icon_x + bar_width, y + y_offset + bar_height)],
+                    outline="#FFFFFF",
+                    fill="#263238"
+                )
+
+                # Draw the battery terminal
+                draw.rectangle(
+                    [(icon_x + bar_width, y + y_offset + 4),
+                     (icon_x + bar_width + 2, y + y_offset + bar_height - 2)],
+                    fill="#FFFFFF"
+                )
+
+                # Draw the filled part based on percentage
+                if battery_value > 0:
+                    fill_width = max(2, int((bar_width - 2) * battery_value / 100))
+                    draw.rectangle(
+                        [(icon_x + 1, y + y_offset + 3),
+                         (icon_x + 1 + fill_width, y + y_offset + bar_height - 1)],
+                        fill=batt_color
+                    )
+
+            y_offset += self.layout_params["sensor_row_height"]
+
+    # Signal strength indicator (inline implementation)
+    if "signal" in sensor:
+        signal_value = safe_int(sensor["signal"])
+        if signal_value is not None and y_offset < y + panel_height - padding - alarm_text_height:
+            # Signal colors based on strength
+            if signal_value < -90:
+                signal_color = "#F44336"  # Red for weak signal
+            elif signal_value < -70:
+                signal_color = "#FFC107"  # Amber for medium signal
+            else:
+                signal_color = "#4CAF50"  # Green for good signal
+
+            # Draw signal text
+            signal_text = f"Sig: {signal_value}" if is_small_panel else f"Signal: {signal_value}"
+            draw.text((x + padding, y + y_offset), signal_text, font=detail_font, fill=signal_color)
+
+            # Draw signal bars if there's room
+            text_width = self._get_text_width(draw, signal_text, detail_font)
+            icon_x = x + padding + text_width + 10
+
+            if icon_x + 25 <= x + panel_width - padding:
+                # Calculate signal strength (map from -120 to -30 range to 0-100%)
+                strength_pct = max(0, min(100, (signal_value + 120) * 100 / 90))
+
+                # Draw signal bars
+                bar_width = 3
+                bar_spacing = 2
+                bar_base_height = 10
+
+                for i in range(4):
+                    bar_height = (i + 1) * bar_base_height / 4
+                    bar_x = icon_x + i * (bar_width + bar_spacing)
+
+                    # Determine if this bar should be filled based on signal strength
+                    threshold = (i + 1) * 25  # 25%, 50%, 75%, 100%
+                    bar_color = signal_color if strength_pct >= threshold else "#263238"
+
+                    draw.rectangle(
+                        [(bar_x, y + y_offset + (bar_base_height - bar_height)),
+                         (bar_x + bar_width, y + y_offset + bar_base_height)],
+                        fill=bar_color
+                    )
+
+            y_offset += self.layout_params["sensor_row_height"]
+
+    # Temperature indicator for THSensors (inline implementation)
+    if sensor_type == "THSensor" and sensor.get("temperature", "unknown") != "unknown":
+        if y_offset < y + panel_height - padding - alarm_text_height:
+            temp_value = sensor['temperature']
+            temp_unit = sensor.get('temperatureUnit', 'F')
+
+            # Temperature colors based on value
+            try:
+                temp = float(temp_value)
+                if temp_unit == 'F':
+                    if temp < 32:
+                        temp_color = "#2196F3"  # Blue for cold
+                    elif temp < 68:
+                        temp_color = "#4CAF50"  # Green for cool
+                    elif temp < 85:
+                        temp_color = "#FFC107"  # Amber for warm
+                    else:
+                        temp_color = "#F44336"  # Red for hot
+                else:  # Celsius
+                    if temp < 0:
+                        temp_color = "#2196F3"  # Blue for cold
+                    elif temp < 20:
+                        temp_color = "#4CAF50"  # Green for cool
+                    elif temp < 30:
+                        temp_color = "#FFC107"  # Amber for warm
+                    else:
+                        temp_color = "#F44336"  # Red for hot
+            except (ValueError, TypeError):
+                temp_color = "#FFFFFF"  # Default white if conversion fails
+
+            # Draw temperature text
+            temp_text = f"{temp_value}°{temp_unit}" if is_small_panel else f"Temp: {temp_value}°{temp_unit}"
+            draw.text((x + padding, y + y_offset), temp_text, font=detail_font, fill=temp_color)
+
+            y_offset += self.layout_params["sensor_row_height"]
+
+    # Add NEW ALARM text at the bottom of the panel - moved as requested
+    if is_newest_alarm:
+        # Calculate position for bottom of panel
+        alarm_y = y + panel_height - self.layout_params["sensor_row_height"] - padding
+
+        # Background for alarm text
+        alarm_text = "⚠ NEW ALARM ⚠"
+        alarm_text_width = self._get_text_width(draw, alarm_text, self.fonts["medium"])
+
+        # Center the text in the panel
+        alarm_x = x + (panel_width - alarm_text_width) // 2
+
+        # Draw background pill for alarm text
+        draw.rectangle(
+            [(alarm_x - 6, alarm_y - 2),
+             (alarm_x + alarm_text_width + 6, alarm_y + self.layout_params["sensor_row_height"])],
+            fill="#FF6F00"  # Dark amber background
+        )
+
+        # Draw the alarm text - now at bottom of panel
+        draw.text((alarm_x, alarm_y), alarm_text, font=self.fonts["medium"], fill="#FFFFFF")
 
     def _render_alarm_view(self, draw: ImageDraw.ImageDraw) -> None:
         """Render the alarm view (placeholder implementation)."""
@@ -842,206 +961,3 @@ class DashboardRenderer:
             x = padding + (i % self.layout_params["grid_cols"]) * (self.layout_params["panel_width"] + padding)
             y = banner_height + padding + (i // self.layout_params["grid_cols"]) * (self.layout_params["panel_height"] + padding)
             self._render_sensor_panel(draw, sensor, x, y)
-
-
-def _render_battery_indicator(self, draw: ImageDraw.ImageDraw, x: int, y: int,
-                              y_offset: int, panel_width: int, battery_value: int,
-                              is_small_panel: bool = False) -> None:
-    """
-    Render a visual battery level indicator.
-
-    Args:
-        draw: PIL ImageDraw object
-        x, y: Base coordinates of the sensor panel
-        y_offset: Y position to draw the battery indicator
-        panel_width: Width of the sensor panel
-        battery_value: Battery percentage (0-100)
-        is_small_panel: If True, use a more compact layout
-    """
-    padding = self.layout_params["padding"]
-    detail_font = self.fonts["small"]
-
-    # Battery colors based on level
-    if battery_value <= 25:
-        fill_color = "#F44336"  # Red for low battery
-        text_color = "#F44336"
-    elif battery_value <= 50:
-        fill_color = "#FFC107"  # Amber for medium battery
-        text_color = "#FFC107"
-    else:
-        fill_color = "#4CAF50"  # Green for good battery
-        text_color = "#4CAF50"
-
-    # Draw battery text
-    batt_text = f"Batt: {battery_value}%" if is_small_panel else f"Battery: {battery_value}%"
-    draw.text((x + padding, y + y_offset), batt_text, font=detail_font, fill=text_color)
-
-    # Draw battery icon
-    text_width = self._get_text_width(draw, batt_text, detail_font)
-    icon_x = x + padding + text_width + 10
-
-    # Check if there's room for the icon
-    if icon_x + 30 > x + panel_width - padding:
-        return  # Not enough room
-
-    # Battery outline
-    bar_width = 25
-    bar_height = 12
-
-    # Draw the battery body
-    draw.rectangle(
-        [(icon_x, y + y_offset + 2),
-         (icon_x + bar_width, y + y_offset + bar_height)],
-        outline="#FFFFFF",
-        fill="#263238"
-    )
-
-    # Draw the battery terminal
-    draw.rectangle(
-        [(icon_x + bar_width, y + y_offset + 4),
-         (icon_x + bar_width + 2, y + y_offset + bar_height - 2)],
-        fill="#FFFFFF"
-    )
-
-    # Draw the filled part based on percentage
-    if battery_value > 0:
-        fill_width = max(2, int((bar_width - 2) * battery_value / 100))
-        draw.rectangle(
-            [(icon_x + 1, y + y_offset + 3),
-             (icon_x + 1 + fill_width, y + y_offset + bar_height - 1)],
-            fill=fill_color
-        )
-
-
-def _render_signal_indicator(self, draw: ImageDraw.ImageDraw, x: int, y: int,
-                             y_offset: int, panel_width: int, signal_value: int,
-                             is_small_panel: bool = False) -> None:
-    """
-    Render a visual signal strength indicator.
-
-    Args:
-        draw: PIL ImageDraw object
-        x, y: Base coordinates of the sensor panel
-        y_offset: Y position to draw the signal indicator
-        panel_width: Width of the sensor panel
-        signal_value: Signal strength value (typically negative, e.g., -70)
-        is_small_panel: If True, use a more compact layout
-    """
-    padding = self.layout_params["padding"]
-    detail_font = self.fonts["small"]
-
-    # Signal colors based on strength
-    if signal_value < -90:
-        signal_color = "#F44336"  # Red for weak signal
-    elif signal_value < -70:
-        signal_color = "#FFC107"  # Amber for medium signal
-    else:
-        signal_color = "#4CAF50"  # Green for good signal
-
-    # Draw signal text
-    signal_text = f"Sig: {signal_value}" if is_small_panel else f"Signal: {signal_value}"
-    draw.text((x + padding, y + y_offset), signal_text, font=detail_font, fill=signal_color)
-
-    # Draw signal icon
-    text_width = self._get_text_width(draw, signal_text, detail_font)
-    icon_x = x + padding + text_width + 10
-
-    # Check if there's room for the icon
-    if icon_x + 25 > x + panel_width - padding:
-        return  # Not enough room
-
-    # Calculate signal strength for visual representation
-    # Map the signal from typical range (-120 to -30) to 0-100%
-    strength_pct = max(0, min(100, (signal_value + 120) * 100 / 90))
-
-    # Draw signal bars
-    bar_width = 3
-    bar_spacing = 2
-    bar_base_height = 10
-
-    for i in range(4):
-        bar_height = (i + 1) * bar_base_height / 4
-        bar_x = icon_x + i * (bar_width + bar_spacing)
-
-        # Determine if this bar should be filled based on signal strength
-        threshold = (i + 1) * 25  # 25%, 50%, 75%, 100%
-        bar_color = signal_color if strength_pct >= threshold else "#263238"  # Fill or dark background
-
-        draw.rectangle(
-            [(bar_x, y + y_offset + (bar_base_height - bar_height)),
-             (bar_x + bar_width, y + y_offset + bar_base_height)],
-            fill=bar_color
-        )
-
-
-def _render_temperature_indicator(self, draw: ImageDraw.ImageDraw, x: int, y: int,
-                                  y_offset: int, panel_width: int, temp_value: float,
-                                  temp_unit: str = 'F', is_small_panel: bool = False) -> None:
-    """
-    Render a visual temperature indicator.
-
-    Args:
-        draw: PIL ImageDraw object
-        x, y: Base coordinates of the sensor panel
-        y_offset: Y position to draw the temperature indicator
-        panel_width: Width of the sensor panel
-        temp_value: Temperature value
-        temp_unit: Temperature unit ('F' or 'C')
-        is_small_panel: If True, use a more compact layout
-    """
-    padding = self.layout_params["padding"]
-    detail_font = self.fonts["small"]
-
-    # Temperature colors based on value
-    temp = float(temp_value)
-
-    # Set colors based on temperature ranges
-    if temp_unit == 'F':
-        if temp < 32:
-            temp_color = "#2196F3"  # Blue for cold
-        elif temp < 68:
-            temp_color = "#4CAF50"  # Green for cool
-        elif temp < 85:
-            temp_color = "#FFC107"  # Amber for warm
-        else:
-            temp_color = "#F44336"  # Red for hot
-    else:  # Celsius
-        if temp < 0:
-            temp_color = "#2196F3"  # Blue for cold
-        elif temp < 20:
-            temp_color = "#4CAF50"  # Green for cool
-        elif temp < 30:
-            temp_color = "#FFC107"  # Amber for warm
-        else:
-            temp_color = "#F44336"  # Red for hot
-
-    # Draw temperature text
-    temp_text = f"{temp_value}°{temp_unit}" if is_small_panel else f"Temp: {temp_value}°{temp_unit}"
-    draw.text((x + padding, y + y_offset), temp_text, font=detail_font, fill=temp_color)
-
-    # Draw thermometer icon if space allows
-    text_width = self._get_text_width(draw, temp_text, detail_font)
-    icon_x = x + padding + text_width + 10
-
-    # Check if there's room for the icon
-    if icon_x + 10 > x + panel_width - padding:
-        return  # Not enough room
-
-    # Draw a simple thermometer icon
-    bulb_radius = 4
-    stem_height = 10
-    stem_width = 2
-
-    # Draw thermometer stem
-    draw.rectangle(
-        [(icon_x + bulb_radius - stem_width // 2, y + y_offset),
-         (icon_x + bulb_radius + stem_width // 2, y + y_offset + stem_height)],
-        fill="#FFFFFF"
-    )
-
-    # Draw thermometer bulb
-    draw.ellipse(
-        [(icon_x, y + y_offset + stem_height - 1),
-         (icon_x + bulb_radius * 2, y + y_offset + stem_height + bulb_radius * 2 - 1)],
-        fill=temp_color
-    )
