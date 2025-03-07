@@ -631,20 +631,20 @@ class DashboardRenderer:
         # Modern color palette
         if is_newest_alarm:
             # More vibrant, attention-grabbing colors for new alarms
-            gradient_top = "#FF5252"    # Brighter red
-            gradient_bottom = "#D32F2F" # Deeper red for gradient effect
-            outline_color = "#FFD600"   # More saturated yellow
+            gradient_top = "#FF5252"  # Brighter red
+            gradient_bottom = "#D32F2F"  # Deeper red for gradient effect
+            outline_color = "#FFD600"  # More saturated yellow
             outline_width = 3 if is_small_panel else 4  # Thicker outline for better visibility
         elif is_in_alarm:
-            gradient_top = "#F44336"    # Material Design red
-            gradient_bottom = "#C62828" # Darker red for gradient
-            outline_color = "#FF8A80"   # Light red outline
+            gradient_top = "#F44336"  # Material Design red
+            gradient_bottom = "#C62828"  # Darker red for gradient
+            outline_color = "#FF8A80"  # Light red outline
             outline_width = 2 if is_small_panel else 3
         else:
             # More modern dark theme with blue tint for normal panels
-            gradient_top = "#37474F"    # Dark blue-grey
-            gradient_bottom = "#263238" # Darker blue-grey
-            outline_color = "#546E7A"   # Medium blue-grey
+            gradient_top = "#37474F"  # Dark blue-grey
+            gradient_bottom = "#263238"  # Darker blue-grey
+            outline_color = "#546E7A"  # Medium blue-grey
             outline_width = 1
 
         # Draw panel background with rounded corners effect
@@ -664,9 +664,11 @@ class DashboardRenderer:
             # Top
             draw.line([(x + i, y + i), (x + panel_width - i, y + i)], fill=outline_color, width=1)
             # Right
-            draw.line([(x + panel_width - i, y + i), (x + panel_width - i, y + panel_height - i)], fill=outline_color, width=1)
+            draw.line([(x + panel_width - i, y + i), (x + panel_width - i, y + panel_height - i)], fill=outline_color,
+                      width=1)
             # Bottom
-            draw.line([(x + panel_width - i, y + panel_height - i), (x + i, y + panel_height - i)], fill=outline_color, width=1)
+            draw.line([(x + panel_width - i, y + panel_height - i), (x + i, y + panel_height - i)], fill=outline_color,
+                      width=1)
             # Left
             draw.line([(x + i, y + panel_height - i), (x + i, y + i)], fill=outline_color, width=1)
 
@@ -730,23 +732,54 @@ class DashboardRenderer:
                 draw.text((x + padding, y + y_offset), "Unknown", font=state_font, fill="#BDBDBD")
                 y_offset += self.layout_params["sensor_row_height"]
         else:
-            if sensor_type == "THSensor" and isinstance(state, dict):
-                state_text = format_smoke_state(state)
-                if state_text == "normal":
-                    state_color = "#4CAF50"  # Material Design green
+            if sensor_type in ["THSensor", "COSmokeSensor"] and isinstance(state, dict):
+                # Improved smoke/CO sensor state display
+                main_state, detail_reason = format_smoke_state(state)
+
+                # Set color based on main state
+                if main_state == "Alarm":
+                    state_color = "#F44336"  # Red for alarm
+
+                    # Create background for alarm state
+                    state_text = f"State: {main_state}"
+                    if not is_small_panel:
+                        text_width = self._get_text_width(draw, state_text, state_font)
+                        text_height = self.layout_params["sensor_row_height"]
+
+                        # Background pill for alarm
+                        draw.rectangle(
+                            [(x + padding - 4, y + y_offset - 2),
+                             (x + padding + text_width + 4, y + y_offset + text_height)],
+                            fill="#B71C1C"  # Dark red background
+                        )
+                        draw.text((x + padding, y + y_offset), state_text, font=state_font, fill="#FFFFFF")
+                    else:
+                        draw.text((x + padding, y + y_offset), main_state, font=state_font, fill=state_color)
+                elif main_state == "Silenced":
+                    state_color = "#FFC107"  # Amber for silenced
+                    draw.text((x + padding, y + y_offset),
+                              f"State: {main_state}" if not is_small_panel else main_state,
+                              font=state_font, fill=state_color)
                 else:
-                    state_color = "#F44336"  # Material Design red
-                draw.text((x + padding, y + y_offset),
-                          f"State: {state_text}" if not is_small_panel else state_text,
-                          font=state_font, fill=state_color)
+                    state_color = "#4CAF50"  # Green for normal
+                    draw.text((x + padding, y + y_offset),
+                              f"State: {main_state}" if not is_small_panel else main_state,
+                              font=state_font, fill=state_color)
+
                 y_offset += self.layout_params["sensor_row_height"]
+
+                # Show detail reason if present
+                if detail_reason and y_offset < y + panel_height - padding - alarm_text_height:
+                    draw.text((x + padding, y + y_offset), detail_reason, font=detail_font, fill="#FFFFFF")
+                    y_offset += self.layout_params["sensor_row_height"]
+
             elif isinstance(state, str) and state.lower() in ["open", "motion"]:
                 # Active alarm state - enhanced visibility
                 state_text = state.upper()
 
                 # Create a background for important states for better visibility
                 text_width = self._get_text_width(draw, state_text if is_small_panel else f"State: {state_text}",
-                                                 self.fonts["large"] if not is_small_panel else self.fonts["medium"])
+                                                  self.fonts["large"] if not is_small_panel else self.fonts["medium"])
                 text_height = self.layout_params["sensor_row_height"] * (1.2 if not is_small_panel else 1)
 
                 # Background pill shape for alarm state
@@ -780,12 +813,14 @@ class DashboardRenderer:
                 y_offset += self.layout_params["sensor_row_height"]
 
         # Battery indicator (inline implementation instead of calling a separate method)
-        if "battery" in sensor and sensor["battery"] is not None:
+        if "battery" in sensor:
             battery_value = map_battery_value(safe_int(sensor["battery"]))
             if battery_value is not None and y_offset < y + panel_height - padding - alarm_text_height:
-                # Battery colors based on level
-                if battery_value <= 25:
-                    batt_color = "#F44336"  # Red for low battery
+                # Battery colors based on level - updated thresholds
+                if battery_value <= 15:
+                    batt_color = "#F44336"  # Red for very low battery
+                elif battery_value <= 25:
+                    batt_color = "#FF9800"  # Orange for low battery
                 elif battery_value <= 50:
                     batt_color = "#FFC107"  # Amber for medium battery
                 else:
@@ -829,21 +864,30 @@ class DashboardRenderer:
                         )
 
                 y_offset += self.layout_params["sensor_row_height"]
+            elif battery_value is None and sensor[
+                "battery"] is None and y_offset < y + panel_height - padding - alarm_text_height:
+                # Handle case where battery is explicitly null
+                draw.text((x + padding, y + y_offset), "Battery: Not Available", font=detail_font, fill="#BDBDBD")
+                y_offset += self.layout_params["sensor_row_height"]
 
-        # Signal strength indicator (inline implementation)
+        # Signal strength indicator (inline implementation) - UPDATED THRESHOLDS
         if "signal" in sensor:
             signal_value = safe_int(sensor["signal"])
             if signal_value is not None and y_offset < y + panel_height - padding - alarm_text_height:
-                # Signal colors based on strength
-                if signal_value < -90:
-                    signal_color = "#F44336"  # Red for weak signal
-                elif signal_value < -70:
+                # Signal colors based on updated strength thresholds
+                if signal_value < -115:
+                    signal_color = "#F44336"  # Red for very weak signal (alarm)
+                elif signal_value < -105:
+                    signal_color = "#FF9800"  # Orange for weak signal
+                elif signal_value < -85:
                     signal_color = "#FFC107"  # Amber for medium signal
+                elif signal_value < -70:
+                    signal_color = "#8BC34A"  # Light green for good signal
                 else:
-                    signal_color = "#4CAF50"  # Green for good signal
+                    signal_color = "#4CAF50"  # Green for excellent signal
 
                 # Draw signal text
-                signal_text = f"Sig: {signal_value}" if is_small_panel else f"Signal: {signal_value}"
+                signal_text = f"Sig: {signal_value} dBm" if is_small_panel else f"Signal: {signal_value} dBm"
                 draw.text((x + padding, y + y_offset), signal_text, font=detail_font, fill=signal_color)
 
                 # Draw signal bars if there's room
@@ -851,8 +895,9 @@ class DashboardRenderer:
                 icon_x = x + padding + text_width + 10
 
                 if icon_x + 25 <= x + panel_width - padding:
-                    # Calculate signal strength (map from -120 to -30 range to 0-100%)
-                    strength_pct = max(0, min(100, (signal_value + 120) * 100 / 90))
+                    # Calculate signal strength using updated ranges
+                    # Map from -120 to -60 range to 0-100%
+                    strength_pct = max(0, min(100, (signal_value + 120) * 100 / 60))
 
                     # Draw signal bars
                     bar_width = 3
@@ -911,6 +956,29 @@ class DashboardRenderer:
 
                 y_offset += self.layout_params["sensor_row_height"]
 
+        # Show humidity for THSensors if present
+        if sensor_type == "THSensor" and sensor.get("humidity", "unknown") != "unknown":
+            if y_offset < y + panel_height - padding - alarm_text_height:
+                humidity = sensor['humidity']
+
+                # Humidity colors based on value
+                try:
+                    hum = float(humidity)
+                    if hum < 30:
+                        hum_color = "#FFC107"  # Amber for dry
+                    elif hum > 70:
+                        hum_color = "#2196F3"  # Blue for humid
+                    else:
+                        hum_color = "#4CAF50"  # Green for ideal
+                except (ValueError, TypeError):
+                    hum_color = "#FFFFFF"  # Default white if conversion fails
+
+                # Draw humidity text
+                hum_text = f"{humidity}%" if is_small_panel else f"Humidity: {humidity}%"
+                draw.text((x + padding, y + y_offset), hum_text, font=detail_font, fill=hum_color)
+
+                y_offset += self.layout_params["sensor_row_height"]
+
         # Add NEW ALARM text at the bottom of the panel - moved as requested
         if is_newest_alarm:
             # Calculate position for bottom of panel
@@ -932,6 +1000,129 @@ class DashboardRenderer:
 
             # Draw the alarm text - now at bottom of panel
             draw.text((alarm_x, alarm_y), alarm_text, font=self.fonts["medium"], fill="#FFFFFF")
+
+    # Update the method in update_sensors that determines if sensors are in alarm state
+    def update_sensors(self, sensors: List[Dict[str, Any]]) -> None:
+        """
+        Update the sensor data and determine which sensors are in alarm state.
+        Detects new alarms for immediate display.
+        Using updated thresholds for signal strength.
+
+        Args:
+            sensors: List of sensor data dictionaries
+        """
+        with self.render_lock:
+            if not isinstance(sensors, list):
+                logger.error("Invalid sensor data: not a list")
+                return
+
+            previous_alarm_ids = set(s.get("deviceId") for s in self.alarm_sensors if s.get("deviceId"))
+            self.sensor_data = []
+            self.alarm_sensors = []
+            self.last_update_time = time.time()
+            logger.info(f"Received {len(sensors)} sensors via WebSocket")
+
+            cutoff_date = datetime.now() - timedelta(days=60)
+
+            for s in sensors:
+                if not s:
+                    continue
+
+                last_seen = s.get("last_seen")
+                if last_seen == "never":
+                    continue
+
+                try:
+                    last_seen_date = datetime.strptime(last_seen, "%Y-%m-%d %H:%M:%S")
+                    if last_seen_date < cutoff_date:
+                        continue
+                except (ValueError, TypeError):
+                    continue
+
+                self.sensor_data.append(s)
+                sensor_type = s.get("type")
+                state = s.get("state")
+                signal = safe_int(s.get("signal"))
+                battery = safe_int(s.get("battery"))
+                device_id = s.get("deviceId", "UnknownID")
+
+                state_str = str(state).strip().lower() if state is not None and not isinstance(state, dict) else ""
+                mapped_battery = map_battery_value(battery) if battery is not None else None
+
+                is_alarm = False
+                alarm_reason = []
+
+                if sensor_type == "DoorSensor":
+                    if state_str == "open":
+                        is_alarm = True
+                        alarm_reason.append("State is 'open'")
+                    # Updated signal threshold to -115
+                    if signal is not None and signal < -115:
+                        is_alarm = True
+                        alarm_reason.append(f"Signal {signal} < -115")
+                    if mapped_battery is not None and mapped_battery <= 25:
+                        is_alarm = True
+                        alarm_reason.append(f"Battery {mapped_battery}% <= 25%")
+                    self.previous_states[device_id] = state_str
+
+                elif sensor_type == "MotionSensor":
+                    if state_str == "motion":
+                        is_alarm = True
+                        alarm_reason.append("State is 'motion'")
+                    # Updated signal threshold to -115
+                    if signal is not None and signal < -115:
+                        is_alarm = True
+                        alarm_reason.append(f"Signal {signal} < -115")
+                    if mapped_battery is not None and mapped_battery <= 25:
+                        is_alarm = True
+                        alarm_reason.append(f"Battery {mapped_battery}% <= 25%")
+
+                elif sensor_type in ["THSensor", "COSmokeSensor"]:
+                    if isinstance(state, dict):
+                        # Check for any alarm conditions
+                        if (state.get("smokeAlarm", False) or
+                                state.get("gasAlarm", False) or
+                                state.get("unexpected", False) or
+                                state.get("highTempAlarm", False)):
+                            is_alarm = True
+
+                            # Add specific reason
+                            if state.get("smokeAlarm", False):
+                                alarm_reason.append("Smoke Detected")
+                            if state.get("gasAlarm", False):
+                                alarm_reason.append("CO Detected")
+                            if state.get("highTempAlarm", False):
+                                alarm_reason.append("High Temperature")
+                            if state.get("unexpected", False):
+                                alarm_reason.append("Sensor Error!")
+
+                    # Updated battery and signal thresholds
+                    if mapped_battery is not None and mapped_battery <= 25:
+                        is_alarm = True
+                        alarm_reason.append(f"Battery {mapped_battery}% <= 25%")
+                    if signal is not None and signal < -115:
+                        is_alarm = True
+                        alarm_reason.append(f"Signal {signal} < -115")
+
+                if is_alarm:
+                    self.alarm_sensors.append(s)
+
+            current_alarm_ids = set(s.get("deviceId") for s in self.alarm_sensors if s.get("deviceId"))
+            new_alarm_ids = current_alarm_ids - previous_alarm_ids
+
+            if new_alarm_ids:
+                self.new_alarm_triggered = True
+                self.alarm_display_timer = time.time()
+                self.newest_alarm_id = next(iter(new_alarm_ids))
+                for s in self.alarm_sensors:
+                    if s.get("deviceId") == self.newest_alarm_id:
+                        logger.info(f"New alarm highlighted: {s.get('name', 'Unknown')} (ID: {self.newest_alarm_id})")
+                        break
+
+            self._update_pagination()
+            self.last_frame = None
+            logger.info(
+                f"Updated: {len(self.sensor_data)} sensors, {len(self.alarm_sensors)} alarms, {self.total_pages} pages")
 
     def _render_alarm_view(self, draw: ImageDraw.ImageDraw) -> None:
         """Render the alarm view (placeholder implementation)."""
@@ -961,3 +1152,35 @@ class DashboardRenderer:
             x = padding + (i % self.layout_params["grid_cols"]) * (self.layout_params["panel_width"] + padding)
             y = banner_height + padding + (i // self.layout_params["grid_cols"]) * (self.layout_params["panel_height"] + padding)
             self._render_sensor_panel(draw, sensor, x, y)
+
+
+def format_smoke_state(state: Dict[str, Any]) -> Tuple[str, Optional[str]]:
+    """
+    Format smoke/CO sensor state into user-friendly text and provide detail reason.
+
+    Args:
+        state: Sensor state dictionary
+
+    Returns:
+        Tuple containing (main_state, detail_reason)
+        - main_state: "Normal" or "Alarm"
+        - detail_reason: Specific reason for alarm or None if normal
+    """
+    if not isinstance(state, dict):
+        return "Unknown", None
+
+    # Check for alarm conditions
+    if state.get("smokeAlarm", False):
+        return "Alarm", "Smoke Detected"
+    elif state.get("gasAlarm", False):
+        return "Alarm", "CO Detected"
+    elif state.get("highTempAlarm", False):
+        return "Alarm", "High Temperature"
+    elif state.get("unexpected", False):
+        return "Alarm", "Sensor Not Installed Correctly"
+    elif state.get("sLowBattery", False) or state.get("lowBattery", False):
+        return "Alarm", "Low Battery"
+    elif state.get("silence", False):
+        return "Silenced", None
+    else:
+        return "Normal", None
