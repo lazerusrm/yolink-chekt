@@ -245,14 +245,18 @@
         }
 
         // Map battery level to percentage and icon
-        function getBatteryInfo(batteryLevel) {
-    if (!batteryLevel || batteryLevel === "unknown" || batteryLevel === null) {
+        function getBatteryInfo(batteryLevel, deviceType) {
+    const hasBattery = batteryDeviceTypes.includes(deviceType);
+    if (!hasBattery) {
         return { percentage: "N/A", iconClass: "fa-battery-empty" };
+    }
+    if (!batteryLevel || batteryLevel === "unknown" || batteryLevel === null) {
+        return { percentage: "Unknown", iconClass: "fa-battery-empty" };
     }
     const level = parseInt(batteryLevel);
     let percentage, iconClass;
     if (isNaN(level)) {
-        percentage = "N/A";
+        percentage = "Unknown";
         iconClass = "fa-battery-empty";
     } else if (level <= 0) {
         percentage = "0%";
@@ -334,149 +338,132 @@
 
         // Fetch and update sensor data
         function updateSensorData() {
-            toggleSpinnerSpeed(true);
+    toggleSpinnerSpeed(true);
 
-            $.when(
-                $.get("/get_sensor_data"),
-                $.get("/system_uptime")
-            ).done(function(sensorResponse, uptimeResponse) {
-                const sensorData   = sensorResponse[0];
-                const uptimeSeconds= uptimeResponse[0].uptime_seconds;
-                const sensorList   = $('#sensor-list');
-                sensorList.empty();
+    $.when(
+        $.get("/get_sensor_data"),
+        $.get("/system_uptime")
+    ).done(function(sensorResponse, uptimeResponse) {
+        const sensorData = sensorResponse[0];
+        const uptimeSeconds = uptimeResponse[0].uptime_seconds;
+        const sensorList = $('#sensor-list');
+        sensorList.empty();
 
-                if (!sensorData || !sensorData.devices) {
-                    console.error("Invalid sensor data received:", sensorData);
-                    sensorList.html('<p>Error loading sensor data.</p>');
-                    toggleSpinnerSpeed(false);
-                    return;
-                }
+        if (!sensorData || !sensorData.devices) {
+            console.error("Invalid sensor data received:", sensorData);
+            sensorList.html('<p>Error loading sensor data.</p>');
+            toggleSpinnerSpeed(false);
+            return;
+        }
 
-                // Sort sensors
-                sensorData.devices.sort(compareSensors);
+        sensorData.devices.sort(compareSensors);
 
-                sensorData.devices.forEach(sensor => {
-                    const lastSeenLocal = formatLocalTime(sensor.last_seen);
-                    const borderClass   = getBorderClass(sensor, uptimeSeconds);
-                    const chektZone     = (sensor.chekt_zone && sensor.chekt_zone !== 'N/A')
-                                          ? sensor.chekt_zone : 'No Zone';
-                    const batteryInfo   = getBatteryInfo(sensor.battery);
-                    const signalQuality = getSignalQuality(sensor.signal);
+        sensorData.devices.forEach(sensor => {
+            const lastSeenLocal = formatLocalTime(sensor.last_seen);
+            const borderClass = getBorderClass(sensor, uptimeSeconds);
+            const chektZone = (sensor.chekt_zone && sensor.chekt_zone !== 'N/A') ? sensor.chekt_zone : 'No Zone';
+            const batteryInfo = getBatteryInfo(sensor.battery, sensor.type); // Pass device type
+            const signalQuality = getSignalQuality(sensor.signal);
 
-                    // Highlight if signal is very low
-                    const signalHighlight = (sensor.signal && parseInt(sensor.signal) <= -115)
-                                            ? 'warning' : '';
-                    // Battery highlight if battery is 0 or 1
-                    const batteryVal     = parseInt(sensor.battery);
-                    const batteryHighlight = (batteryVal === 0) ? 'alarm'
-                                           : (batteryVal === 1) ? 'warning'
-                                           : '';
+            const signalHighlight = (sensor.signal && parseInt(sensor.signal) <= -115) ? 'warning' : '';
+            const batteryVal = parseInt(sensor.battery);
+            const batteryHighlight = (batteryVal === 0) ? 'alarm' : (batteryVal === 1) ? 'warning' : '';
 
-                    // If sensor.state is array or object, handle special formatting
-                    let displayState;
-                    if (Array.isArray(sensor.state)) {
-                        // e.g. multiple outlets
-                        displayState = "Outlet States: " + sensor.state.map(s =>
-                            s.charAt(0).toUpperCase() + s.slice(1)
-                        ).join(', ');
-                    } else if (typeof sensor.state === 'object') {
-                        displayState = JSON.stringify(sensor.state);
-                    } else if (sensor.type === "Switch") {
-                        if (sensor.state === "open")   displayState = "On";
-                        else if (sensor.state === "closed") displayState = "Off";
-                        else displayState = sensor.state;
-                    } else {
-                        displayState = sensor.state;
+            let displayState;
+            if (Array.isArray(sensor.state)) {
+                displayState = "Outlet States: " + sensor.state.map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(', ');
+            } else if (typeof sensor.state === 'object') {
+                displayState = JSON.stringify(sensor.state);
+            } else if (sensor.type === "Switch") {
+                displayState = (sensor.state === "open") ? "On" : (sensor.state === "closed") ? "Off" : sensor.state;
+            } else {
+                displayState = sensor.state;
+            }
+
+            const hasBattery = batteryDeviceTypes.includes(sensor.type);
+            const hasTempHumidity = tempHumidityDeviceTypes.includes(sensor.type);
+
+            const sensorHTML = `
+                <div class="sensor ${borderClass}">
+                    <p class="sensor-name">${sensor.name || 'Unknown Device'}</p>
+                    <span class="chekt-zone" onclick="makeZoneEditable(this, '${sensor.deviceId}')">
+                        ${chektZone}
+                    </span>
+
+                    ${
+                        sensor.type === 'DoorSensor'
+                        ? `<label for="door-prop-${sensor.deviceId}">
+                             Door Prop Alarm:
+                             <input type="checkbox" id="door-prop-${sensor.deviceId}"
+                                    ${sensor.door_prop_alarm ? "checked" : ""}
+                                    onchange="toggleDoorPropAlarm('${sensor.deviceId}', this.checked)">
+                           </label>
+                           <small>(Alerts if door is propped open)</small>`
+                        : ''
                     }
 
-                    const hasBattery      = batteryDeviceTypes.includes(sensor.type);
-                    const hasTempHumidity = tempHumidityDeviceTypes.includes(sensor.type);
+                    ${
+                        sensor.state && sensor.state !== 'unknown'
+                        ? `<p class="sensor-data-item">State: ${displayState}</p>`
+                        : ''
+                    }
 
-                    // Build sensor card
-                    const sensorHTML = `
-                        <div class="sensor ${borderClass}">
-                            <p class="sensor-name">${sensor.name || 'Unknown Device'}</p>
-                            <span class="chekt-zone" onclick="makeZoneEditable(this, '${sensor.deviceId}')">
-                                ${chektZone}
-                            </span>
+                    ${
+                        hasBattery
+                        ? `<p class="sensor-data-item ${batteryHighlight}">
+                             <i class="fas ${batteryInfo.iconClass} battery-icon"></i>
+                             Battery: ${batteryInfo.percentage}
+                           </p>`
+                        : ''
+                    }
 
-                            ${
-                                sensor.type === 'DoorSensor'
-                                ? `<label for="door-prop-${sensor.deviceId}">
-                                     Door Prop Alarm:
-                                     <input type="checkbox" id="door-prop-${sensor.deviceId}"
-                                            ${sensor.door_prop_alarm ? "checked" : ""}
-                                            onchange="toggleDoorPropAlarm('${sensor.deviceId}', this.checked)">
-                                   </label>
-                                   <small>(Alerts if door is propped open)</small>`
-                                : ''
-                            }
+                    ${
+                        sensor.signal && sensor.signal !== "unknown"
+                        ? `<p class="sensor-data-item ${signalHighlight}">
+                             Signal: ${sensor.signal} dBm (${signalQuality})
+                           </p>`
+                        : ''
+                    }
 
-                            ${
-                                sensor.state && sensor.state !== 'unknown'
-                                ? `<p class="sensor-data-item">State: ${displayState}</p>`
-                                : ''
-                            }
+                    ${
+                        hasTempHumidity && sensor.temperature !== "unknown"
+                        ? `<p class="sensor-data-item">Temperature: ${sensor.temperature}°F</p>`
+                        : ''
+                    }
 
-                            ${
-                                hasBattery && sensor.battery !== "unknown"
-                                ? `<p class="sensor-data-item ${batteryHighlight}">
-                                     <i class="fas ${batteryInfo.iconClass} battery-icon"></i>
-                                     Battery: ${batteryInfo.percentage}
-                                   </p>`
-                                : ''
-                            }
+                    ${
+                        hasTempHumidity && sensor.humidity !== "unknown"
+                        ? `<p class="sensor-data-item">Humidity: ${sensor.humidity}%</p>`
+                        : ''
+                    }
 
-                            ${
-                                sensor.signal && sensor.signal !== "unknown"
-                                ? `<p class="sensor-data-item ${signalHighlight}">
-                                     Signal: ${sensor.signal} dBm (${signalQuality})
-                                   </p>`
-                                : ''
-                            }
+                    ${
+                        sensor.last_seen && sensor.last_seen !== 'never'
+                        ? `<p class="sensor-data-item">Last Seen: ${lastSeenLocal}</p>`
+                        : ''
+                    }
 
-                            ${
-                                hasTempHumidity && sensor.temperature !== "unknown"
-                                ? `<p class="sensor-data-item">Temperature: ${sensor.temperature}°F</p>`
-                                : ''
-                            }
+                    ${
+                        sensor.alarms && sensor.alarms.state && Object.values(sensor.alarms.state).some(v => v === true)
+                        ? `<p class="sensor-data-item" style="color: red;">
+                             Alarm: ${JSON.stringify(sensor.alarms.state)}
+                           </p>`
+                        : ''
+                    }
 
-                            ${
-                                hasTempHumidity && sensor.humidity !== "unknown"
-                                ? `<p class="sensor-data-item">Humidity: ${sensor.humidity}%</p>`
-                                : ''
-                            }
+                    <span class="save-confirmation" id="save-confirmation-${sensor.deviceId}" style="display: none;">Saved!</span>
+                </div>
+            `;
+            sensorList.append(sensorHTML);
+        });
 
-                            ${
-                                sensor.last_seen && sensor.last_seen !== 'never'
-                                ? `<p class="sensor-data-item">Last Seen: ${lastSeenLocal}</p>`
-                                : ''
-                            }
-
-                            ${
-                                sensor.alarms && sensor.alarms.state &&
-                                Object.values(sensor.alarms.state).some(v => v === true)
-                                ? `<p class="sensor-data-item" style="color: red;">
-                                     Alarm: ${JSON.stringify(sensor.alarms.state)}
-                                   </p>`
-                                : ''
-                            }
-
-                            <span class="save-confirmation"
-                                  id="save-confirmation-${sensor.deviceId}"
-                                  style="display: none;">Saved!</span>
-                        </div>
-                    `;
-                    sensorList.append(sensorHTML);
-                });
-
-                toggleSpinnerSpeed(false);
-            }).fail(function(xhr, status, error) {
-                console.error("Failed to load sensor data:", error, xhr.responseText);
-                $('#sensor-list').html('<p>Error loading sensor data.</p>');
-                toggleSpinnerSpeed(false);
-            });
-        }
+        toggleSpinnerSpeed(false);
+    }).fail(function(xhr, status, error) {
+        console.error("Failed to load sensor data:", error, xhr.responseText);
+        $('#sensor-list').html('<p>Error loading sensor data.</p>');
+        toggleSpinnerSpeed(false);
+    });
+}
 
         // Make CHEKT zone editable
         window.makeZoneEditable = function(zoneSpan, deviceId) {
