@@ -127,8 +127,8 @@ class MultiProfileRtspStreamer(threading.Thread):
             token="profile1",
             width=self.config.get("width", 1920),
             height=self.config.get("height", 1080),
-            fps=self.config.get("frame_rate", 6),
-            bitrate=self.config.get("bitrate", 2000),
+            fps=self.config.get("frame_rate", 1),
+            bitrate=self.config.get("bitrate", 500),
             stream_name=f"{self.base_stream_name}_main"
         )
         self.profile_configs["profile1"] = main_profile.to_dict()
@@ -138,8 +138,8 @@ class MultiProfileRtspStreamer(threading.Thread):
             token="profile2",
             width=self.config.get("width", 1920) // 2,
             height=self.config.get("height", 1080) // 2,
-            fps=min(self.config.get("frame_rate", 6), 4),
-            bitrate=self.config.get("bitrate", 2000) // 2,
+            fps=min(self.config.get("frame_rate", 1), 4),
+            bitrate=self.config.get("bitrate", 350) // 2,
             stream_name=f"{self.base_stream_name}_sub"
         )
         self.profile_configs["profile2"] = sub_profile.to_dict()
@@ -149,8 +149,8 @@ class MultiProfileRtspStreamer(threading.Thread):
             token="profile3",
             width=self.config.get("width", 1920) // 4,
             height=self.config.get("height", 1080) // 4,
-            fps=min(self.config.get("frame_rate", 6), 2),
-            bitrate=self.config.get("bitrate", 2000) // 4,
+            fps=min(self.config.get("frame_rate", 1), 2),
+            bitrate=self.config.get("bitrate", 200) // 4,
             stream_name=f"{self.base_stream_name}_mobile"
         )
         self.profile_configs["profile3"] = mobile_profile.to_dict()
