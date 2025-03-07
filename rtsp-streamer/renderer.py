@@ -277,6 +277,8 @@ class DashboardRenderer:
         """
         Update the sensor data and determine which sensors are in alarm state.
         Detects new alarms for immediate display.
+        Using updated thresholds for signal strength.
+        Now handles additional sensor types: VibrationSensor, LockV2, Manipulator, Finger.
 
         Args:
             sensors: List of sensor data dictionaries
@@ -316,48 +318,112 @@ class DashboardRenderer:
                 battery = safe_int(s.get("battery"))
                 device_id = s.get("deviceId", "UnknownID")
 
-                state_str = str(state).strip().lower() if state is not None and not isinstance(state, dict) else ""
+                # Handle various types of state values
+                if isinstance(state, dict):
+                    state_str = "complex"
+                elif isinstance(state, list):
+                    state_str = "multi"
+                else:
+                    state_str = str(state).strip().lower() if state is not None else ""
+
                 mapped_battery = map_battery_value(battery) if battery is not None else None
 
                 is_alarm = False
                 alarm_reason = []
 
+                # DoorSensor alarm detection
                 if sensor_type == "DoorSensor":
                     if state_str == "open":
                         is_alarm = True
-                        alarm_reason.append("State is 'open'")
-                    if signal is not None and signal < -119:
+                        alarm_reason.append("Door Open")
+                    # Updated signal threshold to -115
+                    if signal is not None and signal < -115:
                         is_alarm = True
-                        alarm_reason.append(f"Signal {signal} < -119")
+                        alarm_reason.append(f"Signal {signal} < -115")
                     if mapped_battery is not None and mapped_battery <= 25:
                         is_alarm = True
                         alarm_reason.append(f"Battery {mapped_battery}% <= 25%")
                     self.previous_states[device_id] = state_str
 
+                # MotionSensor alarm detection
                 elif sensor_type == "MotionSensor":
-                    if state_str == "motion":
+                    if state_str in ["motion", "alert"]:
                         is_alarm = True
-                        alarm_reason.append("State is 'motion'")
-                    if signal is not None and signal < -119:
+                        alarm_reason.append("Motion Detected")
+                    # Updated signal threshold to -115
+                    if signal is not None and signal < -115:
                         is_alarm = True
-                        alarm_reason.append(f"Signal {signal} < -119")
+                        alarm_reason.append(f"Signal {signal} < -115")
                     if mapped_battery is not None and mapped_battery <= 25:
                         is_alarm = True
                         alarm_reason.append(f"Battery {mapped_battery}% <= 25%")
 
+                # VibrationSensor alarm detection - new sensor type
+                elif sensor_type == "VibrationSensor":
+                    if state_str == "alert":
+                        is_alarm = True
+                        alarm_reason.append("Vibration Detected")
+                    if signal is not None and signal < -115:
+                        is_alarm = True
+                        alarm_reason.append(f"Signal {signal} < -115")
+                    if mapped_battery is not None and mapped_battery <= 25:
+                        is_alarm = True
+                        alarm_reason.append(f"Battery {mapped_battery}% <= 25%")
+
+                # LockV2 alarm detection - new sensor type
+                elif sensor_type == "LockV2":
+                    if isinstance(state, dict):
+                        if state.get("door") == "open":
+                            is_alarm = True
+                            alarm_reason.append("Door Open")
+                    if signal is not None and signal < -115:
+                        is_alarm = True
+                        alarm_reason.append(f"Signal {signal} < -115")
+                    if mapped_battery is not None and mapped_battery <= 25:
+                        is_alarm = True
+                        alarm_reason.append(f"Battery {mapped_battery}% <= 25%")
+
+                # LeakSensor alarm detection
+                elif sensor_type == "LeakSensor":
+                    if state_str == "leak":
+                        is_alarm = True
+                        alarm_reason.append("Leak Detected")
+                    if signal is not None and signal < -115:
+                        is_alarm = True
+                        alarm_reason.append(f"Signal {signal} < -115")
+                    if mapped_battery is not None and mapped_battery <= 25:
+                        is_alarm = True
+                        alarm_reason.append(f"Battery {mapped_battery}% <= 25%")
+
+                # THSensor and COSmokeSensor alarm detection
                 elif sensor_type in ["THSensor", "COSmokeSensor"]:
                     if isinstance(state, dict):
-                        alarms = state
-                        if any(alarms.get(key, False) for key in ["smokeAlarm", "gasAlarm", "unexpected", "highTempAlarm"]):
+                        # Check for any alarm conditions
+                        if (state.get("smokeAlarm", False) or
+                                state.get("gasAlarm", False) or
+                                state.get("unexpected", False) or
+                                state.get("highTempAlarm", False)):
                             is_alarm = True
-                            alarm_reason.append(f"Alarm state active")
+
+                            # Add specific reason
+                            if state.get("smokeAlarm", False):
+                                alarm_reason.append("Smoke Detected")
+                            if state.get("gasAlarm", False):
+                                alarm_reason.append("CO Detected")
+                            if state.get("highTempAlarm", False):
+                                alarm_reason.append("High Temperature")
+                            if state.get("unexpected", False):
+                                alarm_reason.append("Sensor Error!")
+
+                    # Updated battery and signal thresholds
                     if mapped_battery is not None and mapped_battery <= 25:
                         is_alarm = True
                         alarm_reason.append(f"Battery {mapped_battery}% <= 25%")
-                    if signal is not None and signal < -119:
+                    if signal is not None and signal < -115:
                         is_alarm = True
-                        alarm_reason.append(f"Signal {signal} < -119")
+                        alarm_reason.append(f"Signal {signal} < -115")
 
+                # Add sensor to alarm list if any alarm conditions met
                 if is_alarm:
                     self.alarm_sensors.append(s)
 
@@ -375,7 +441,8 @@ class DashboardRenderer:
 
             self._update_pagination()
             self.last_frame = None
-            logger.info(f"Updated: {len(self.sensor_data)} sensors, {len(self.alarm_sensors)} alarms, {self.total_pages} pages")
+            logger.info(
+                f"Updated: {len(self.sensor_data)} sensors, {len(self.alarm_sensors)} alarms, {self.total_pages} pages")
 
     def set_page(self, page_num: int) -> None:
         """
