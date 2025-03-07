@@ -7,17 +7,11 @@
     <!-- Bootstrap CSS -->
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css">
     <!-- Font Awesome CSS -->
-    <link rel="stylesheet"
-          href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css"
-          integrity="sha512-Kc323vGBEqzTmouAECnVceyQqyqdsSiqLQISBL29aUW4U/M7pSPA/gEUZQqv1cwx4OnYxTxve5UMg5GT6L4JJg=="
-          crossorigin="anonymous"
-          referrerpolicy="no-referrer" />
-
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css" integrity="sha512-Kc323vGBEqzTmouAECnVceyQqyqdsSiqLQISBL29aUW4U/M7pSPA/gEUZQqv1cwx4OnYxTxve5UMg5GT6L4JJg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
     <!-- Moment.js and Moment Timezone for timezone handling -->
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.1/moment.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/moment-timezone/0.5.34/moment-timezone-with-data.min.js"></script>
-
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -131,14 +125,14 @@
             font-size: 0.9rem;
             font-weight: bold;
         }
+        .sensor-data-item.alarm { color: red; }
     </style>
 </head>
 <body>
     <!-- Navigation Bar -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
         <a class="navbar-brand" href="#">YoLink to CHEKT</a>
-        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav"
-                aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
             <span class="navbar-toggler-icon"></span>
         </button>
         <div class="collapse navbar-collapse" id="navbarNav">
@@ -197,18 +191,26 @@
 
     <!-- Main Script -->
     <script>
-    // Put all logic in one place to avoid multiple .ready() calls
     $(document).ready(function() {
-        // Quick check: if Moment or moment-timezone didn’t load, log once
+        // Check if dependencies loaded
         if (typeof moment === 'undefined' || typeof moment.tz !== 'function') {
-            console.error("Moment.js or Moment Timezone did not load. Some features may not work properly.");
+            console.error("Moment.js or Moment Timezone failed to load. Timestamps may display incorrectly.");
         }
 
-        let selectedTimezone = "UTC"; // Default timezone
+        // Detect user's local timezone
+        const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+        console.log("User's Local Timezone:", userTimezone);
 
-        // --------------------------------------------------------------------
-        // HELPER FUNCTIONS
-        // --------------------------------------------------------------------
+        // Format UTC timestamp to user's local time
+        function formatLocalTime(isoDateString) {
+            if (!isoDateString || isoDateString === 'never') return "Never";
+            if (typeof moment === 'undefined' || typeof moment.tz !== 'function') {
+                return new Date(isoDateString).toLocaleString() || isoDateString;
+            }
+            const utcTime = moment.utc(isoDateString);
+            const localTime = utcTime.tz(userTimezone);
+            return localTime.isValid() ? localTime.format("MM/DD/YYYY, h:mm:ss A") : "Invalid date";
+        }
 
         // Toggle spinner speed
         function toggleSpinnerSpeed(fast) {
@@ -246,43 +248,43 @@
 
         // Map battery level to percentage and icon
         function getBatteryInfo(batteryLevel, deviceType) {
-    const hasBattery = batteryDeviceTypes.includes(deviceType);
-    if (!hasBattery) {
-        return { percentage: "N/A", iconClass: "fa-battery-empty" };
-    }
-    if (!batteryLevel || batteryLevel === "unknown" || batteryLevel === null) {
-        return { percentage: "Unknown", iconClass: "fa-battery-empty" };
-    }
-    const level = parseInt(batteryLevel);
-    let percentage, iconClass;
-    if (isNaN(level)) {
-        percentage = "Unknown";
-        iconClass = "fa-battery-empty";
-    } else if (level <= 0) {
-        percentage = "0%";
-        iconClass = "fa-battery-empty";
-    } else if (level <= 25) {
-        percentage = `${level}%`;
-        iconClass = "fa-battery-quarter";
-    } else if (level <= 50) {
-        percentage = `${level}%`;
-        iconClass = "fa-battery-half";
-    } else if (level <= 75) {
-        percentage = `${level}%`;
-        iconClass = "fa-battery-three-quarters";
-    } else {
-        percentage = `${level}%`;
-        iconClass = "fa-battery-full";
-    }
-    return { percentage, iconClass };
-}
+            const hasBattery = batteryDeviceTypes.includes(deviceType);
+            if (!hasBattery) {
+                return { percentage: "N/A", iconClass: "fa-battery-empty" };
+            }
+            if (!batteryLevel || batteryLevel === "unknown" || batteryLevel === null) {
+                return { percentage: "Unknown", iconClass: "fa-battery-empty" };
+            }
+            const level = parseInt(batteryLevel);
+            let percentage, iconClass;
+            if (isNaN(level)) {
+                percentage = "Unknown";
+                iconClass = "fa-battery-empty";
+            } else if (level <= 0) {
+                percentage = "0%";
+                iconClass = "fa-battery-empty";
+            } else if (level <= 25) {
+                percentage = `${level}%`;
+                iconClass = "fa-battery-quarter";
+            } else if (level <= 50) {
+                percentage = `${level}%`;
+                iconClass = "fa-battery-half";
+            } else if (level <= 75) {
+                percentage = `${level}%`;
+                iconClass = "fa-battery-three-quarters";
+            } else {
+                percentage = `${level}%`;
+                iconClass = "fa-battery-full";
+            }
+            return { percentage, iconClass };
+        }
 
         // Determine signal quality
         function getSignalQuality(signal) {
             if (!signal || signal === "unknown") return "N/A";
             const s = parseInt(signal);
-            if (s >= -70)  return "Excellent";
-            if (s >= -90)  return "High";
+            if (s >= -70) return "Excellent";
+            if (s >= -90) return "High";
             if (s >= -110) return "Good";
             if (s >= -120) return "Poor";
             return "Very Poor";
@@ -298,190 +300,161 @@
             return a.name.localeCompare(b.name);
         }
 
-        // Format UTC to local time using selected timezone (fallback if not loaded)
-        function formatLocalTime(isoDateString) {
-            if (!isoDateString || isoDateString === 'never') return "Never";
-            // If moment is missing, just return raw or basic format
-            if (typeof moment === 'undefined' || typeof moment.tz !== 'function') {
-                return isoDateString;
-            }
-            const localTime = moment.tz(isoDateString, selectedTimezone);
-            return localTime.isValid()
-                ? localTime.format("MM/DD/YYYY, h:mm:ss A")
-                : "Invalid date";
-        }
-
         // Determine sensor border class for alarm/warning
         function getBorderClass(sensor, uptimeSeconds) {
             let additionalClass = '';
-            // If system uptime is > 4 hours, check last_seen to highlight stale devices
             if (uptimeSeconds > 14400) {
                 const lastSeenTime = new Date(sensor.last_seen).getTime();
                 const currentTime = new Date().getTime();
                 const diffMinutes = (currentTime - lastSeenTime) / (1000 * 60);
                 if (diffMinutes > 300) {
-                    additionalClass = 'alarm';   // 5 hours
+                    additionalClass = 'alarm';
                 } else if (diffMinutes > 255) {
-                    additionalClass = 'warning'; // 4h15m
+                    additionalClass = 'warning';
                 }
             }
-            // If the device itself is in an alarm state
-            const deviceAlarm = (sensor.alarms && sensor.alarms.state &&
-                                 Object.values(sensor.alarms.state).some(v => v === true))
-                                ? 'alarm' : '';
+            const deviceAlarm = (sensor.alarms && sensor.alarms.state && Object.values(sensor.alarms.state).some(v => v === true)) ? 'alarm' : '';
             return `${deviceAlarm} ${additionalClass}`.trim();
         }
 
         // Device type capabilities
-        const batteryDeviceTypes      = ["DoorSensor", "MotionSensor", "LeakSensor", "THSensor", "COSmokeSensor", "SmartRemoter", "PowerFailureAlarm", "Siren", "Finger", "LockV2"];
+        const batteryDeviceTypes = ["DoorSensor", "MotionSensor", "LeakSensor", "THSensor", "COSmokeSensor", "SmartRemoter", "PowerFailureAlarm", "Siren", "Finger", "LockV2"];
         const tempHumidityDeviceTypes = ["THSensor"];
 
         // Fetch and update sensor data
         function updateSensorData() {
-    toggleSpinnerSpeed(true);
+            toggleSpinnerSpeed(true);
+            $.when(
+                $.get("/get_sensor_data"),
+                $.get("/system_uptime")
+            ).done(function(sensorResponse, uptimeResponse) {
+                const sensorData = sensorResponse[0];
+                const uptimeSeconds = uptimeResponse[0].uptime_seconds;
+                const sensorList = $('#sensor-list');
+                sensorList.empty();
 
-    $.when(
-        $.get("/get_sensor_data"),
-        $.get("/system_uptime")
-    ).done(function(sensorResponse, uptimeResponse) {
-        const sensorData = sensorResponse[0];
-        const uptimeSeconds = uptimeResponse[0].uptime_seconds;
-        const sensorList = $('#sensor-list');
-        sensorList.empty();
+                if (!sensorData || !sensorData.devices) {
+                    console.error("Invalid sensor data received:", sensorData);
+                    sensorList.html('<p>Error loading sensor data.</p>');
+                    toggleSpinnerSpeed(false);
+                    return;
+                }
 
-        if (!sensorData || !sensorData.devices) {
-            console.error("Invalid sensor data received:", sensorData);
-            sensorList.html('<p>Error loading sensor data.</p>');
-            toggleSpinnerSpeed(false);
-            return;
+                sensorData.devices.sort(compareSensors);
+
+                sensorData.devices.forEach(sensor => {
+                    const lastSeenLocal = formatLocalTime(sensor.last_seen);
+                    const borderClass = getBorderClass(sensor, uptimeSeconds);
+                    const chektZone = (sensor.chekt_zone && sensor.chekt_zone !== 'N/A') ? sensor.chekt_zone : 'No Zone';
+                    const batteryInfo = getBatteryInfo(sensor.battery, sensor.type);
+                    const signalQuality = getSignalQuality(sensor.signal);
+
+                    const signalHighlight = (sensor.signal && parseInt(sensor.signal) <= -115) ? 'warning' : '';
+                    const batteryVal = parseInt(sensor.battery);
+                    const batteryHighlight = (batteryVal === 0) ? 'alarm' : (batteryVal === 1) ? 'warning' : '';
+
+                    let displayState;
+                    if (Array.isArray(sensor.state)) {
+                        displayState = "Outlet States: " + sensor.state.map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(', ');
+                    } else if (sensor.type === "COSmokeSensor" && typeof sensor.state === 'object') {
+                        const alarms = sensor.state;
+                        const activeAlarms = [];
+                        if (alarms.unexpected) activeAlarms.push("Sensor Error!");
+                        if (alarms.smokeAlarm) activeAlarms.push("Smoke Detected");
+                        if (alarms.gasAlarm) activeAlarms.push("Gas Detected");
+                        if (alarms.highTempAlarm) activeAlarms.push("High Temperature");
+                        if (alarms.sLowBattery) activeAlarms.push("Low Battery");
+                        if (alarms.silence) activeAlarms.push("Silenced");
+                        displayState = activeAlarms.length > 0 ? activeAlarms.join(", ") : "Normal";
+                    } else if (sensor.type === "Switch") {
+                        displayState = (sensor.state === "open") ? "On" : (sensor.state === "closed") ? "Off" : sensor.state;
+                    } else {
+                        displayState = sensor.state;
+                    }
+
+                    const hasBattery = batteryDeviceTypes.includes(sensor.type);
+                    const hasTempHumidity = tempHumidityDeviceTypes.includes(sensor.type);
+
+                    const sensorHTML = `
+                        <div class="sensor ${borderClass}">
+                            <p class="sensor-name">${sensor.name || 'Unknown Device'}</p>
+                            <span class="chekt-zone" onclick="makeZoneEditable(this, '${sensor.deviceId}')">${chektZone}</span>
+                            ${
+                                sensor.type === 'DoorSensor'
+                                ? `<label for="door-prop-${sensor.deviceId}">
+                                     Door Prop Alarm:
+                                     <input type="checkbox" id="door-prop-${sensor.deviceId}"
+                                            ${sensor.door_prop_alarm ? "checked" : ""}
+                                            onchange="toggleDoorPropAlarm('${sensor.deviceId}', this.checked)">
+                                   </label>
+                                   <small>(Alerts if door is propped open)</small>`
+                                : ''
+                            }
+                            ${
+                                sensor.state && sensor.state !== 'unknown'
+                                ? `<p class="sensor-data-item ${displayState.includes('Sensor Error!') ? 'alarm' : ''}">
+                                     State: ${displayState}
+                                   </p>`
+                                : ''
+                            }
+                            ${
+                                hasBattery
+                                ? `<p class="sensor-data-item ${batteryHighlight}">
+                                     <i class="fas ${batteryInfo.iconClass} battery-icon"></i>
+                                     Battery: ${batteryInfo.percentage}
+                                   </p>`
+                                : ''
+                            }
+                            ${
+                                sensor.signal && sensor.signal !== "unknown"
+                                ? `<p class="sensor-data-item ${signalHighlight}">
+                                     Signal: ${sensor.signal} dBm (${signalQuality})
+                                   </p>`
+                                : ''
+                            }
+                            ${
+                                hasTempHumidity && sensor.temperature !== "unknown"
+                                ? `<p class="sensor-data-item">Temperature: ${sensor.temperature}°F</p>`
+                                : ''
+                            }
+                            ${
+                                hasTempHumidity && sensor.humidity !== "unknown"
+                                ? `<p class="sensor-data-item">Humidity: ${sensor.humidity}%</p>`
+                                : ''
+                            }
+                            ${
+                                sensor.last_seen && sensor.last_seen !== 'never'
+                                ? `<p class="sensor-data-item">Last Seen: ${lastSeenLocal}</p>`
+                                : ''
+                            }
+                            ${
+                                sensor.alarms && sensor.alarms.state && Object.values(sensor.alarms.state).some(v => v === true)
+                                ? `<p class="sensor-data-item" style="color: red;">
+                                     Alarm: ${JSON.stringify(sensor.alarms.state)}
+                                   </p>`
+                                : ''
+                            }
+                            <span class="save-confirmation" id="save-confirmation-${sensor.deviceId}" style="display: none;">Saved!</span>
+                        </div>
+                    `;
+                    sensorList.append(sensorHTML);
+                });
+
+                toggleSpinnerSpeed(false);
+            }).fail(function(xhr, status, error) {
+                console.error("Failed to load sensor data:", error, xhr.responseText);
+                $('#sensor-list').html('<p>Error loading sensor data.</p>');
+                toggleSpinnerSpeed(false);
+            });
         }
-
-        sensorData.devices.sort(compareSensors);
-
-        sensorData.devices.forEach(sensor => {
-            const lastSeenLocal = formatLocalTime(sensor.last_seen);
-            const borderClass = getBorderClass(sensor, uptimeSeconds);
-            const chektZone = (sensor.chekt_zone && sensor.chekt_zone !== 'N/A') ? sensor.chekt_zone : 'No Zone';
-            const batteryInfo = getBatteryInfo(sensor.battery, sensor.type);
-            const signalQuality = getSignalQuality(sensor.signal);
-
-            const signalHighlight = (sensor.signal && parseInt(sensor.signal) <= -115) ? 'warning' : '';
-            const batteryVal = parseInt(sensor.battery);
-            const batteryHighlight = (batteryVal === 0) ? 'alarm' : (batteryVal === 1) ? 'warning' : '';
-
-            let displayState;
-            if (Array.isArray(sensor.state)) {
-                displayState = "Outlet States: " + sensor.state.map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(', ');
-            } else if (sensor.type === "COSmokeSensor" && typeof sensor.state === 'object') {
-                const alarms = sensor.state;
-                const activeAlarms = [];
-                if (alarms.unexpected) activeAlarms.push("Sensor Error!");
-                if (alarms.smokeAlarm) activeAlarms.push("Smoke Detected");
-                if (alarms.gasAlarm) activeAlarms.push("Gas Detected");
-                if (alarms.highTempAlarm) activeAlarms.push("High Temperature");
-                if (alarms.sLowBattery) activeAlarms.push("Low Battery");
-                if (alarms.silence) activeAlarms.push("Silenced");
-                displayState = activeAlarms.length > 0 ? activeAlarms.join(", ") : "Normal";
-            } else if (sensor.type === "Switch") {
-                displayState = (sensor.state === "open") ? "On" : (sensor.state === "closed") ? "Off" : sensor.state;
-            } else {
-                displayState = sensor.state;
-            }
-
-            const hasBattery = batteryDeviceTypes.includes(sensor.type);
-            const hasTempHumidity = tempHumidityDeviceTypes.includes(sensor.type);
-
-            const sensorHTML = `
-                <div class="sensor ${borderClass}">
-                    <p class="sensor-name">${sensor.name || 'Unknown Device'}</p>
-                    <span class="chekt-zone" onclick="makeZoneEditable(this, '${sensor.deviceId}')">
-                        ${chektZone}
-                    </span>
-
-                    ${
-                        sensor.type === 'DoorSensor'
-                        ? `<label for="door-prop-${sensor.deviceId}">
-                             Door Prop Alarm:
-                             <input type="checkbox" id="door-prop-${sensor.deviceId}"
-                                    ${sensor.door_prop_alarm ? "checked" : ""}
-                                    onchange="toggleDoorPropAlarm('${sensor.deviceId}', this.checked)">
-                           </label>
-                           <small>(Alerts if door is propped open)</small>`
-                        : ''
-                    }
-
-                    ${
-                        sensor.state && sensor.state !== 'unknown'
-                        ? `<p class="sensor-data-item ${displayState.includes('Sensor Error!') ? 'alarm' : ''}">
-                             State: ${displayState}
-                           </p>`
-                        : ''
-                    }
-
-                    ${
-                        hasBattery
-                        ? `<p class="sensor-data-item ${batteryHighlight}">
-                             <i class="fas ${batteryInfo.iconClass} battery-icon"></i>
-                             Battery: ${batteryInfo.percentage}
-                           </p>`
-                        : ''
-                    }
-
-                    ${
-                        sensor.signal && sensor.signal !== "unknown"
-                        ? `<p class="sensor-data-item ${signalHighlight}">
-                             Signal: ${sensor.signal} dBm (${signalQuality})
-                           </p>`
-                        : ''
-                    }
-
-                    ${
-                        hasTempHumidity && sensor.temperature !== "unknown"
-                        ? `<p class="sensor-data-item">Temperature: ${sensor.temperature}°F</p>`
-                        : ''
-                    }
-
-                    ${
-                        hasTempHumidity && sensor.humidity !== "unknown"
-                        ? `<p class="sensor-data-item">Humidity: ${sensor.humidity}%</p>`
-                        : ''
-                    }
-
-                    ${
-                        sensor.last_seen && sensor.last_seen !== 'never'
-                        ? `<p class="sensor-data-item">Last Seen: ${lastSeenLocal}</p>`
-                        : ''
-                    }
-
-                    ${
-                        sensor.alarms && sensor.alarms.state && Object.values(sensor.alarms.state).some(v => v === true)
-                        ? `<p class="sensor-data-item" style="color: red;">
-                             Alarm: ${JSON.stringify(sensor.alarms.state)}
-                           </p>`
-                        : ''
-                    }
-
-                    <span class="save-confirmation" id="save-confirmation-${sensor.deviceId}" style="display: none;">Saved!</span>
-                </div>
-            `;
-            sensorList.append(sensorHTML);
-        });
-
-        toggleSpinnerSpeed(false);
-    }).fail(function(xhr, status, error) {
-        console.error("Failed to load sensor data:", error, xhr.responseText);
-        $('#sensor-list').html('<p>Error loading sensor data.</p>');
-        toggleSpinnerSpeed(false);
-    });
-}
 
         // Make CHEKT zone editable
         window.makeZoneEditable = function(zoneSpan, deviceId) {
             const currentZoneText = zoneSpan.textContent.trim();
-            const currentZone     = currentZoneText.replace('No Zone', '').trim();
-            const input           = document.createElement('input');
-            input.type            = 'text';
-            input.value           = currentZone;
+            const currentZone = currentZoneText.replace('No Zone', '').trim();
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.value = currentZone;
             input.classList.add('chekt-zone-input');
 
             zoneSpan.parentNode.insertBefore(input, zoneSpan);
@@ -497,9 +470,7 @@
             }
 
             input.addEventListener('keydown', function(event) {
-                if (event.key === 'Enter') {
-                    saveAndUpdate();
-                }
+                if (event.key === 'Enter') saveAndUpdate();
             });
             input.addEventListener('blur', saveAndUpdate);
         };
@@ -517,7 +488,7 @@
                         confirmation.style.display = 'inline';
                         setTimeout(() => {
                             confirmation.style.display = 'none';
-                            updateSensorData(); // Refresh after saving
+                            updateSensorData();
                         }, 2000);
                     }
                 },
@@ -551,22 +522,8 @@
             });
         };
 
-        // --------------------------------------------------------------------
-        // INITIALIZE
-        // --------------------------------------------------------------------
-
-        // Fetch timezone from server config, then load sensors
-        $.get("/get_config", function(config) {
-            selectedTimezone = config.timezone || "UTC";
-            console.log("Selected Timezone:", selectedTimezone);
-            updateSensorData();
-        }).fail(function() {
-            console.error("Failed to fetch config, using default UTC");
-            selectedTimezone = "UTC";
-            updateSensorData();
-        });
-
-        // Check initial statuses
+        // Initialize
+        updateSensorData();
         checkStatus('/check_mqtt_status', 'yolink-mqtt-message', 'yolink-mqtt-icon',
                     'YoLink MQTT connection is active.', 'YoLink MQTT connection is inactive.');
         checkStatus('/check_monitor_mqtt_status', 'monitor-mqtt-message', 'monitor-mqtt-icon',
@@ -574,7 +531,6 @@
         checkStatus('/check_receiver_status', 'receiver-message', 'receiver-icon',
                     'Receiver is alive.', 'Receiver connection failed.');
 
-        // Periodic status checks every 5 seconds
         setInterval(function() {
             checkStatus('/check_mqtt_status', 'yolink-mqtt-message', 'yolink-mqtt-icon',
                         'YoLink MQTT connection is active.', 'YoLink MQTT connection is inactive.');
@@ -584,16 +540,11 @@
                         'Receiver is alive.', 'Receiver connection failed.');
         }, 5000);
 
-        // Auto-update sensor data every 10 seconds
-        setInterval(function() {
-            updateSensorData();
-        }, 10000);
+        setInterval(updateSensorData, 10000);
 
-        // "Update YoLink Devices" button
         $('#update-devices').click(function() {
             $('#refresh-spinner').removeClass('hidden');
             $('#refresh-message').text('Updating YoLink devices...');
-
             $.get('/refresh_devices', function(response) {
                 $('#refresh-spinner').addClass('hidden');
                 $('#refresh-message').text(
@@ -608,6 +559,7 @@
             });
         });
     });
+    ```html
     </script>
 </body>
 </html>
