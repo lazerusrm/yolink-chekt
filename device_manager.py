@@ -123,7 +123,7 @@ def refresh_yolink_devices():
     try:
         redis_client.set("last_refresh_time", str(datetime.now().timestamp()))
     except Exception as e:
-        logger.error(f"Failed to store refresh timestamp: {e}
+        logger.error(f"Failed to store refresh timestamp: {e}")
     config = load_config()
     token = get_access_token(config)
     if not token:
