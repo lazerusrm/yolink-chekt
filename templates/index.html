@@ -246,20 +246,32 @@
 
         // Map battery level to percentage and icon
         function getBatteryInfo(batteryLevel) {
-            if (!batteryLevel || batteryLevel === "unknown") {
-                return { percentage: "N/A", iconClass: "fa-battery-empty" };
-            }
-            let percentage, iconClass;
-            switch (parseInt(batteryLevel)) {
-                case 0: percentage = "0%";   iconClass = "fa-battery-empty";         break;
-                case 1: percentage = "25%";  iconClass = "fa-battery-quarter";       break;
-                case 2: percentage = "50%";  iconClass = "fa-battery-half";          break;
-                case 3: percentage = "75%";  iconClass = "fa-battery-three-quarters";break;
-                case 4: percentage = "100%"; iconClass = "fa-battery-full";          break;
-                default:percentage = "N/A";  iconClass = "fa-battery-empty";         break;
-            }
-            return { percentage, iconClass };
-        }
+    if (!batteryLevel || batteryLevel === "unknown" || batteryLevel === null) {
+        return { percentage: "N/A", iconClass: "fa-battery-empty" };
+    }
+    const level = parseInt(batteryLevel);
+    let percentage, iconClass;
+    if (isNaN(level)) {
+        percentage = "N/A";
+        iconClass = "fa-battery-empty";
+    } else if (level <= 0) {
+        percentage = "0%";
+        iconClass = "fa-battery-empty";
+    } else if (level <= 25) {
+        percentage = `${level}%`;
+        iconClass = "fa-battery-quarter";
+    } else if (level <= 50) {
+        percentage = `${level}%`;
+        iconClass = "fa-battery-half";
+    } else if (level <= 75) {
+        percentage = `${level}%`;
+        iconClass = "fa-battery-three-quarters";
+    } else {
+        percentage = `${level}%`;
+        iconClass = "fa-battery-full";
+    }
+    return { percentage, iconClass };
+}
 
         // Determine signal quality
         function getSignalQuality(signal) {
@@ -268,7 +280,7 @@
             if (s >= -70)  return "Excellent";
             if (s >= -90)  return "High";
             if (s >= -110) return "Good";
-            if (s >= -130) return "Poor";
+            if (s >= -120) return "Poor";
             return "Very Poor";
         }
 
