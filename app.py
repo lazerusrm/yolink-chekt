@@ -103,6 +103,40 @@ def init_default_user():
         user_data = {"password": hashed_password, "force_password_change": True}
         save_user_data(default_username, user_data)
 
+def check_mqtt_connection_active():
+    """Actively check if MQTT connection is functional instead of just checking the flag"""
+    from yolink_mqtt import client as yolink_client, connected as yolink_connected
+    try:
+        # Check if the client exists and is connected
+        if yolink_client and yolink_client.is_connected():
+            return True
+        # If the client says it's connected but the global var doesn't, update the global
+        elif yolink_client and yolink_client.is_connected() and not yolink_connected:
+            import yolink_mqtt
+            yolink_mqtt.connected = True
+            return True
+        return False
+    except Exception as e:
+        logger.error(f"Error checking YoLink MQTT connection: {e}")
+        return False
+
+def check_monitor_connection_active():
+    """Actively check if Monitor MQTT connection is functional"""
+    from monitor_mqtt import client as monitor_client, connected as monitor_connected
+    try:
+        # Check if the client exists and is connected
+        if monitor_client and monitor_client.is_connected():
+            return True
+        # If the client says it's connected but the global var doesn't, update the global
+        elif monitor_client and monitor_client.is_connected() and not monitor_connected:
+            import monitor_mqtt
+            monitor_mqtt.connected = True
+            return True
+        return False
+    except Exception as e:
+        logger.error(f"Error checking Monitor MQTT connection: {e}")
+        return False
+
 # Ensure Redis connection
 if not ensure_redis_connection():
     logger.error("Exiting due to persistent Redis connection failure")
@@ -293,13 +327,33 @@ def create_user():
 @app.route("/refresh_devices")
 @login_required
 def refresh_devices():
+    """Updated to return JSON for AJAX requests"""
     try:
+        # Check if this is an AJAX request
+        is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.args.get('ajax') == '1'
+
         refresh_yolink_devices()
-        flash("Devices refreshed successfully", "success")
+
+        if is_ajax:
+            return jsonify({
+                "status": "success",
+                "message": "Devices refreshed successfully"
+            })
+        else:
+            flash("Devices refreshed successfully", "success")
+            return redirect(url_for("index"))
+
     except Exception as e:
         logger.error(f"Device refresh failed: {e}")
-        flash("Failed to refresh devices", "error")
-    return redirect(url_for("index"))
+
+        if is_ajax:
+            return jsonify({
+                "status": "error",
+                "message": f"Failed to refresh devices: {str(e)}"
+            })
+        else:
+            flash("Failed to refresh devices", "error")
+            return redirect(url_for("index"))
 
 @app.route("/system_uptime")
 @login_required
@@ -380,17 +434,19 @@ def get_logs():
 @app.route("/check_mqtt_status")
 @login_required
 def check_mqtt_status():
+    is_connected = check_mqtt_connection_active()
     return jsonify({
-        "status": "success" if yolink_connected else "error",
-        "message": "YoLink MQTT connection is active." if yolink_connected else "YoLink MQTT connection is inactive."
+        "status": "success" if is_connected else "error",
+        "message": "YoLink MQTT connection is active." if is_connected else "YoLink MQTT connection is inactive."
     })
 
 @app.route("/check_monitor_mqtt_status")
 @login_required
 def check_monitor_mqtt_status():
+    is_connected = check_monitor_connection_active()
     return jsonify({
-        "status": "success" if monitor_connected else "error",
-        "message": "Monitor MQTT connection is active." if monitor_connected else "Monitor MQTT connection is inactive."
+        "status": "success" if is_connected else "error",
+        "message": "Monitor MQTT connection is active." if is_connected else "Monitor MQTT connection is inactive."
     })
 
 @app.route("/check_receiver_status")
@@ -405,9 +461,13 @@ def check_receiver_status():
 @app.route('/check_all_statuses')
 @login_required
 def check_all_statuses():
+    yolink_active = check_mqtt_connection_active()
+    monitor_active = check_monitor_connection_active()
     return jsonify({
-        "yolink": {"status": "success" if yolink_connected else "error", "message": "YoLink MQTT Connected" if yolink_connected else "YoLink MQTT Disconnected"},
-        "monitor": {"status": "success" if monitor_connected else "error", "message": "Monitor MQTT Connected" if monitor_connected else "Monitor MQTT Disconnected"},
+        "yolink": {"status": "success" if yolink_active else "error",
+                  "message": "YoLink MQTT Connected" if yolink_active else "YoLink MQTT Disconnected"},
+        "monitor": {"status": "success" if monitor_active else "error",
+                   "message": "Monitor MQTT Connected" if monitor_active else "Monitor MQTT Disconnected"},
         "receiver": {"status": "success", "message": "Receiver Connected"}
     })
 

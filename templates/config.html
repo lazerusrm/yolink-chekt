@@ -146,7 +146,7 @@
                 <input type="number" id="door_open_timeout" name="door_open_timeout" class="form-control" value="{{ config.door_open_timeout|default(30) }}" min="1" required>
             </div>
 
-            <h2>Timezone</h2>
+            <h2>Timezone <span class="badge badge-warning">Deprecated</span></h2>
             <div class="form-group">
                 <label for="timezone">Timezone</label>
                 <select id="timezone" name="timezone" class="form-control" required>
@@ -154,6 +154,9 @@
                         <option value="{{ tz }}" {% if config.timezone == tz %}selected{% endif %}>{{ tz }}</option>
                     {% endfor %}
                 </select>
+                <small class="text-warning">
+                    <i class="fas fa-exclamation-triangle"></i> This setting is deprecated. The dashboard now automatically uses your browser's timezone.
+                </small>
             </div>
 
             <button type="submit" class="btn btn-primary">Save Configuration</button>
@@ -233,10 +236,30 @@
             $('#refresh-devices-btn').click(function() {
                 $('#refresh-icon').addClass('hidden');
                 $('#refresh-message').text('Refreshing YoLink devices...');
-                $.get('/refresh_devices', function(response) {
-                    updateStatus('refresh-message', 'refresh-icon', response.message || 'Devices refreshed', response.status === "success", 'refresh-spinner');
-                }).fail(function() {
-                    updateStatus('refresh-message', 'refresh-icon', 'Failed to refresh devices', false, 'refresh-spinner');
+                $.ajax({
+                    url: '/refresh_devices?ajax=1',
+                    type: 'GET',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    dataType: 'json',
+                    success: function(response) {
+                        if (response && typeof response === 'object') {
+                            updateStatus('refresh-message', 'refresh-icon',
+                                response.message || 'Devices refreshed',
+                                response.status === "success",
+                                'refresh-spinner');
+                        } else {
+                            updateStatus('refresh-message', 'refresh-icon',
+                                'Devices refreshed', true, 'refresh-spinner');
+                        }
+                    },
+                    error: function(xhr, status, error) {
+                        updateStatus('refresh-message', 'refresh-icon',
+                            'Failed to refresh devices: ' + (xhr.responseJSON ? xhr.responseJSON.message : error),
+                            false, 'refresh-spinner');
+                        console.error("Error refreshing devices:", status, error, xhr.responseText);
+                    }
                 });
             });
 
