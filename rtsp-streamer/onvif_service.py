@@ -1822,7 +1822,7 @@ class OnvifService(threading.Thread):
           <tt:RateControl>
             <tt:FrameRateLimit>{profile.fps}</tt:FrameRateLimit>
             <tt:EncodingInterval>1</tt:EncodingInterval>
-            <tt:BitrateLimit>4000</tt:BitrateLimit>
+            <tt:BitrateLimit>1500</tt:BitrateLimit>
           </tt:RateControl>
           <tt:H264>
             <tt:GovLength>30</tt:GovLength>
@@ -1935,7 +1935,7 @@ class OnvifService(threading.Thread):
       <tt:RateControl>
         <tt:FrameRateLimit>{profile.fps}</tt:FrameRateLimit>
         <tt:EncodingInterval>1</tt:EncodingInterval>
-        <tt:BitrateLimit>4000</tt:BitrateLimit>
+        <tt:BitrateLimit>1500</tt:BitrateLimit>
       </tt:RateControl>
       <tt:H264>
         <tt:GovLength>30</tt:GovLength>
@@ -2179,7 +2179,7 @@ class OnvifService(threading.Thread):
         <tt:RateControl>
           <tt:FrameRateLimit>{profile.fps}</tt:FrameRateLimit>
           <tt:EncodingInterval>1</tt:EncodingInterval>
-          <tt:BitrateLimit>4000</tt:BitrateLimit>
+          <tt:BitrateLimit>1500</tt:BitrateLimit>
         </tt:RateControl>
         <tt:H264>
           <tt:GovLength>30</tt:GovLength>
@@ -4716,20 +4716,16 @@ Hardware ID: {self.device_info['HardwareId']}
         Returns the RTSP URI for a specific profile.
 
         Args:
-            request: Request XML element
+            request: GetStreamUri XML element (already extracted from SOAP Body)
 
         Returns:
             str: SOAP response XML
         """
         logger.info("Processing GetStreamUri request")
-        logger.debug(f"Full request XML: {ET.tostring(request, encoding='unicode')}")
 
         try:
-            # Extract GetStreamUri element
-            get_stream_uri = request.find('.//trt:GetStreamUri', NAMESPACES)
-            if get_stream_uri is None:
-                logger.error("Missing GetStreamUri element in request")
-                return generate_fault_response("Missing GetStreamUri element", "ter:InvalidArgVal")
+            # The request is already the GetStreamUri element, no need to search for it
+            get_stream_uri = request
 
             # Extract profile token
             profile_token_elem = get_stream_uri.find('.//trt:ProfileToken', NAMESPACES)
@@ -4804,24 +4800,30 @@ Hardware ID: {self.device_info['HardwareId']}
             logger.error(f"Error in GetStreamUri: {e}", exc_info=True)
             return generate_fault_response(f"Internal error: {str(e)}", "ter:InternalError")
 
-    def _generate_stream_uri_response(self, uri: str, is_metadata: bool) -> str:
+    def _generate_stream_uri_response(self, uri: str, is_metadata: bool = False) -> str:
         """
-        Generate the SOAP response for a GetStreamUri request.
+        Generate a SOAP response for GetStreamUri with optional metadata indicator.
+
+        Args:
+            uri: Stream URI
+            is_metadata: Flag indicating if this is a metadata stream
+
+        Returns:
+            str: SOAP response XML
         """
-        logger.debug(f"Generating response for URI: {uri}, is_metadata: {is_metadata}")
-        response_body = f"""
-    <trt:GetStreamUriResponse>
-      <trt:MediaUri>
-        <tt:Uri>{uri}</tt:Uri>
-        <tt:InvalidAfterConnect>false</tt:InvalidAfterConnect>
-        <tt:InvalidAfterReboot>false</tt:InvalidAfterReboot>
-        <tt:Timeout>PT60S</tt:Timeout>
-      </trt:MediaUri>
-    </trt:GetStreamUriResponse>
-    """
+        response = f"""
+        <trt:GetStreamUriResponse>
+          <trt:MediaUri>
+            <tt:Uri>{uri}</tt:Uri>
+            <tt:InvalidAfterConnect>false</tt:InvalidAfterConnect>
+            <tt:InvalidAfterReboot>false</tt:InvalidAfterReboot>
+            <tt:Timeout>PT60S</tt:Timeout>
+          </trt:MediaUri>
+        </trt:GetStreamUriResponse>
+        """
         return generate_soap_response(
             "http://www.onvif.org/ver10/media/wsdl/GetStreamUriResponse",
-            response_body
+            response
         )
 
 
