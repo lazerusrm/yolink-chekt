@@ -64,8 +64,11 @@ from monitor_mqtt import run_monitor_mqtt
 
 # Logging Setup
 from logging.handlers import RotatingFileHandler
+from flask_apscheduler import APScheduler
+from datetime import datetime
 
 handler = RotatingFileHandler("/app/logs/app.log", maxBytes=10*1024*1024, backupCount=5)
+
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -73,6 +76,8 @@ logging.basicConfig(
     handlers=[handler, logging.StreamHandler()]
 )
 logger = logging.getLogger(__name__)
+
+scheduler = APScheduler()
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -143,6 +148,30 @@ if not ensure_redis_connection():
     exit(1)
 
 init_default_user()
+
+@scheduler.task('interval', id='sync_devices', seconds=300, misfire_grace_time=300)
+def scheduled_device_refresh():
+    """
+    Scheduled task to refresh YoLink devices every 5 minutes.
+    This ensures new devices appear and deleted devices are removed.
+    """
+    with app.app_context():
+        try:
+            logger.info(f"Running scheduled device refresh at {datetime.now()}")
+            refresh_yolink_devices()
+            logger.info("Scheduled device refresh completed successfully")
+        except Exception as e:
+            logger.error(f"Error in scheduled device refresh: {str(e)}")
+
+def init_scheduler():
+    try:
+        # Only initialize once (in case of multiple workers)
+        if not scheduler.running:
+            scheduler.init_app(app)
+            scheduler.start()
+            logger.info("Scheduler started successfully")
+    except Exception as e:
+        logger.error(f"Failed to start scheduler: {str(e)}")
 
 # Authentication Routes
 @app.route("/login", methods=["GET", "POST"])
@@ -471,8 +500,40 @@ def check_all_statuses():
         "receiver": {"status": "success", "message": "Receiver Connected"}
     })
 
+
+@app.route('/last_refresh')
+@login_required
+def last_refresh():
+    """Return the timestamp of the last device refresh"""
+    try:
+        last_refresh_time = redis_client.get("last_refresh_time")
+        if last_refresh_time:
+            # Convert from stored string to datetime for formatting
+            last_time = datetime.fromtimestamp(float(last_refresh_time))
+            formatted_time = last_time.strftime("%Y-%m-%d %H:%M:%S")
+            time_ago = (datetime.now() - last_time).total_seconds() / 60.0
+
+            return jsonify({
+                "status": "success",
+                "last_refresh": formatted_time,
+                "minutes_ago": round(time_ago, 1)
+            })
+        else:
+            return jsonify({
+                "status": "success",
+                "last_refresh": "Never",
+                "minutes_ago": None
+            })
+    except Exception as e:
+        logger.error(f"Error getting last refresh time: {e}")
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        })
+
 # Main Entry
 if __name__ == "__main__":
+    init_scheduler()
     import threading
     config_data = load_config()
     # Start YoLink and Monitor MQTT clients in threads

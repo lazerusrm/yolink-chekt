@@ -5,6 +5,7 @@ import logging
 from config import load_config, save_config
 from db import redis_client
 from mappings import get_mappings, save_mappings
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +16,68 @@ def map_battery_value(raw_value):
         return None
     return {0: 0, 1: 25, 2: 50, 3: 75, 4: 100}[raw_value]
 
+
+def cleanup_inactive_devices(days_threshold=14):
+    """
+    Remove devices that haven't been seen in the specified number of days
+
+    Args:
+        days_threshold (int): Number of days of inactivity before a device is considered abandoned
+    """
+    try:
+        # Calculate the cutoff timestamp
+        cutoff_date = datetime.now() - timedelta(days=days_threshold)
+        cutoff_str = cutoff_date.strftime("%Y-%m-%d %H:%M:%S")
+
+        logger.info(f"Cleaning up devices not seen since {cutoff_str}")
+
+        # Get all devices currently in our database
+        all_stored_devices = get_all_devices()
+        devices_to_remove = []
+
+        for device in all_stored_devices:
+            device_id = device.get("deviceId")
+            last_seen = device.get("last_seen", "never")
+
+            # Skip devices with no last_seen data or "never" value
+            if not last_seen or last_seen == "never":
+                logger.debug(f"Skipping device {device_id} with no last_seen data")
+                continue
+
+            try:
+                # Parse the last_seen timestamp
+                last_seen_date = datetime.strptime(last_seen, "%Y-%m-%d %H:%M:%S")
+
+                # Check if the device is inactive
+                if last_seen_date < cutoff_date:
+                    logger.info(
+                        f"Device {device_id} (name: {device.get('name')}) last seen at {last_seen} will be removed")
+                    devices_to_remove.append(device_id)
+            except (ValueError, TypeError) as e:
+                logger.warning(f"Could not parse last_seen date for device {device_id}: {last_seen}. Error: {e}")
+
+        # Remove the inactive devices
+        if devices_to_remove:
+            logger.info(f"Removing {len(devices_to_remove)} inactive devices")
+            for device_id in devices_to_remove:
+                try:
+                    # Delete from Redis
+                    redis_client.delete(f"device:{device_id}")
+                    logger.info(f"Removed inactive device {device_id} from database")
+
+                    # Update mappings to remove references to deleted devices
+                    mappings = get_mappings()
+                    mappings["mappings"] = [m for m in mappings["mappings"]
+                                            if m.get("yolink_device_id") != device_id]
+                    save_mappings(mappings)
+
+                except Exception as e:
+                    logger.error(f"Error removing device {device_id}: {e}")
+        else:
+            logger.debug("No inactive devices to clean up")
+
+    except Exception as e:
+        logger.error(f"Error in inactive device cleanup: {e}")
 
 def get_access_token(config):
     """Retrieve or refresh the YoLink access token, validating its age."""
@@ -57,11 +120,23 @@ def get_access_token(config):
 
 def refresh_yolink_devices():
     """Refresh all YoLink devices from the API and update Redis with enhanced data."""
+    try:
+        redis_client.set("last_refresh_time", str(datetime.now().timestamp()))
+    except Exception as e:
+        logger.error(f"Failed to store refresh timestamp: {e}
     config = load_config()
     token = get_access_token(config)
     if not token:
         logger.error("No valid token available; aborting device refresh")
         return
+
+    # First, attempt to clean up inactive devices
+    try:
+        cleanup_inactive_devices(days_threshold=14)  # Remove devices not seen in 14 days
+    except Exception as e:
+        logger.error(f"Error during inactive device cleanup: {e}")
+
+    # Continue with the normal refresh process
     url = "https://api.yosmart.com/open/yolink/v2/api"
     headers = {"Authorization": f"Bearer {token}"}
     try:
