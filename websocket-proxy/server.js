@@ -10,7 +10,7 @@ const axios = require('axios');
 
 // Configuration from environment variables
 const config = {
-  fetchInterval: parseInt(process.env.FETCH_INTERVAL, 10) || 5000, // Polling interval in ms
+  fetchInterval: parseInt(process.env.FETCH_INTERVAL, 10) || 1000, // Polling interval in ms
   apiUrl: process.env.API_URL || 'http://yolink_chekt:5000/get_sensor_data', // Flask API endpoint
   port: parseInt(process.env.PORT, 10) || 3000, // WebSocket server port
   heartbeatInterval: 30000 // Heartbeat interval in ms (30 seconds)
