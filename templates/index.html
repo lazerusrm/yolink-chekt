@@ -362,7 +362,7 @@
             const lastSeenLocal = formatLocalTime(sensor.last_seen);
             const borderClass = getBorderClass(sensor, uptimeSeconds);
             const chektZone = (sensor.chekt_zone && sensor.chekt_zone !== 'N/A') ? sensor.chekt_zone : 'No Zone';
-            const batteryInfo = getBatteryInfo(sensor.battery, sensor.type); // Pass device type
+            const batteryInfo = getBatteryInfo(sensor.battery, sensor.type);
             const signalQuality = getSignalQuality(sensor.signal);
 
             const signalHighlight = (sensor.signal && parseInt(sensor.signal) <= -115) ? 'warning' : '';
@@ -372,8 +372,16 @@
             let displayState;
             if (Array.isArray(sensor.state)) {
                 displayState = "Outlet States: " + sensor.state.map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(', ');
-            } else if (typeof sensor.state === 'object') {
-                displayState = JSON.stringify(sensor.state);
+            } else if (sensor.type === "COSmokeSensor" && typeof sensor.state === 'object') {
+                const alarms = sensor.state;
+                const activeAlarms = [];
+                if (alarms.smokeAlarm) activeAlarms.push("Smoke Detected");
+                if (alarms.gasAlarm) activeAlarms.push("Gas Detected");
+                if (alarms.highTempAlarm) activeAlarms.push("High Temperature");
+                if (alarms.sLowBattery) activeAlarms.push("Low Battery");
+                if (alarms.unexpected) activeAlarms.push("Unexpected Condition");
+                if (alarms.silence) activeAlarms.push("Silenced");
+                displayState = activeAlarms.length > 0 ? activeAlarms.join(", ") : "Normal";
             } else if (sensor.type === "Switch") {
                 displayState = (sensor.state === "open") ? "On" : (sensor.state === "closed") ? "Off" : sensor.state;
             } else {
