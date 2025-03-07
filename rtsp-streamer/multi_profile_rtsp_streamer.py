@@ -150,7 +150,7 @@ class MultiProfileRtspStreamer(threading.Thread):
             width=self.config.get("width", 1920) // 4,
             height=self.config.get("height", 1080) // 4,
             fps=min(self.config.get("frame_rate", 1), 2),
-            bitrate=self.config.get("bitrate", 200) // 4,
+            bitrate=self.config.get("bitrate", 150) // 4,
             stream_name=f"{self.base_stream_name}_mobile"
         )
         self.profile_configs["profile3"] = mobile_profile.to_dict()
@@ -158,15 +158,8 @@ class MultiProfileRtspStreamer(threading.Thread):
         logger.info(f"Created {len(self.profile_configs)} profile configurations")
 
     def _feed_frames_to_stream(self, profile_token: str) -> None:
-        """
-        Continuously feed frames to a specific stream.
-
-        Args:
-            profile_token: Profile token to feed frames to
-        """
         logger.info(f"Starting frame feed thread for profile {profile_token}")
 
-        # Get profile configuration
         with self.lock:
             if profile_token not in self.active_streams:
                 logger.error(f"Cannot feed frames: stream {profile_token} not active")
@@ -176,19 +169,17 @@ class MultiProfileRtspStreamer(threading.Thread):
             profile_config = stream_info["config"]
             pipe = stream_info["pipe"]
 
-        # Get stream parameters
         width = profile_config["width"]
         height = profile_config["height"]
         fps = profile_config["fps"]
         frame_interval = 1.0 / fps
 
-        # Feed frames continuously
         last_frame_time = 0
         frame_count = 0
+        last_frame_bytes = None  # Track the last frame's bytes
 
         try:
             while self.running:
-                # Check if the stream is still active
                 with self.lock:
                     if (profile_token not in self.active_streams or
                             not self.active_streams[profile_token].get("process") or
@@ -196,25 +187,24 @@ class MultiProfileRtspStreamer(threading.Thread):
                         logger.info(f"Stream {profile_token} no longer active, stopping frame feed")
                         break
 
-                # Only render a new frame if enough time has passed
                 current_time = time.time()
                 if current_time - last_frame_time >= frame_interval:
                     try:
-                        # Render a frame at the correct resolution
                         frame = self.renderer.render_frame(width, height)
-
-                        # Convert to raw bytes
                         frame_bytes = frame.tobytes()
 
-                        # Write to the pipe
+                        # Skip writing if the frame hasn't changed
+                        if last_frame_bytes is not None and frame_bytes == last_frame_bytes:
+                            logger.debug(f"Skipping unchanged frame for {profile_token}")
+                            continue
+
                         pipe.write(frame_bytes)
                         pipe.flush()
 
-                        # Update tracking variables
                         last_frame_time = current_time
                         frame_count += 1
+                        last_frame_bytes = frame_bytes  # Update the last frame
 
-                        # Log progress occasionally
                         if frame_count % 30 == 0:
                             logger.debug(f"Fed {frame_count} frames to stream {profile_token}")
 
@@ -223,10 +213,8 @@ class MultiProfileRtspStreamer(threading.Thread):
                         break
                     except Exception as e:
                         logger.error(f"Error feeding frame to stream {profile_token}: {e}")
-                        # Continue trying - don't break the loop for transient errors
 
-                # Sleep to avoid tight CPU loop
-                time.sleep(frame_interval / 2)  # Sleep for half the frame interval
+                time.sleep(frame_interval / 2)
 
         except Exception as e:
             logger.error(f"Frame feed thread for profile {profile_token} crashed: {e}", exc_info=True)
