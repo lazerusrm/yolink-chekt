@@ -10,7 +10,7 @@ import asyncio
 import json
 import logging
 from typing import Dict, Any, Optional
-from asyncio_mqtt import Client, MqttError
+from aiomqtt1 import Client, MqttError
 
 # Import Redis manager
 from redis_manager import get_redis

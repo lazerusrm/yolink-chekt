@@ -10,7 +10,7 @@ import asyncio
 import json
 import logging
 from typing import Dict, Any, Optional
-from asyncio_mqtt import Client, MqttError
+from aiomqtt import Client, MqttError
 from datetime import datetime
 import aiohttp
 
