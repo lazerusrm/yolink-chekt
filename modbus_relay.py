@@ -16,7 +16,7 @@ def configure_proxy(target_ip, target_port):
     import requests
 
     # Proxy configuration API
-    url = "http://modbus-proxy:1502/configure"
+    url = "http://modbus-proxy:1502/api/modbus-proxy/configure"  # Fixed URL path
 
     # Configuration data
     data = {
