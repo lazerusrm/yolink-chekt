@@ -39,7 +39,6 @@ fi
 
 # Function to get the IP address of the interface with the default route to the internet
 get_host_ip() {
-    # Get the source IP used to reach an external address (e.g., Google's DNS)
     HOST_IP=$(ip route get 8.8.8.8 | grep -o 'src [0-9.]*' | awk '{print $2}')
     if [ -z "$HOST_IP" ]; then
         log "Error: Could not determine IP address with internet route."
@@ -80,13 +79,15 @@ update_docker_compose_ip() {
         log "Error: docker-compose.yml not found at $DOCKER_COMPOSE_FILE"
         exit 1
     }
+
+    # Simplify sed commands for clarity
     if grep -q "TARGET_IP=" "$DOCKER_COMPOSE_FILE"; then
-        sed -i "/modbus-proxy:/,/^[^ ]/ s/TARGET_IP=.*/TARGET_IP=$host_ip/" "$DOCKER_COMPOSE_FILE" || {
+        sed -i "s/TARGET_IP=.*/TARGET_IP=$host_ip/" "$DOCKER_COMPOSE_FILE" || {
             log "Error: Failed to update TARGET_IP in docker-compose.yml"
             exit 1
         }
     else
-        sed -i "/modbus-proxy:/,/environment:/ { /environment:/ a\      - TARGET_IP=$host_ip" "$DOCKER_COMPOSE_FILE" || {
+        sed -i "/modbus-proxy:/,/environment:/ s/environment:/environment:\n      - TARGET_IP=$host_ip/" "$DOCKER_COMPOSE_FILE" || {
             log "Error: Failed to append TARGET_IP to docker-compose.yml"
             exit 1
         }
