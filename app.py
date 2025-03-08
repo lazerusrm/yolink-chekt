@@ -194,6 +194,7 @@ def check_monitor_connection_active():
         logger.error(f"Error checking Monitor MQTT connection: {e}")
         return False
 
+
 # Ensure Redis connection
 if not ensure_redis_connection():
     logger.error("Exiting due to persistent Redis connection failure")
@@ -799,6 +800,104 @@ def test_relay_channel():
         return jsonify({"status": "success", "message": f"Relay channel {channel} pulsed successfully"})
     else:
         return jsonify({"status": "error", "message": f"Failed to pulse relay channel {channel}"}), 500
+
+
+@app.route('/test_modbus', methods=['GET'])
+@login_required
+def test_modbus():
+    """Test route to diagnose Modbus connectivity"""
+    config = load_config()
+    modbus_config = config.get('modbus', {})
+
+    if not modbus_config.get('enabled', False):
+        return jsonify({"status": "warning", "message": "Modbus is not enabled in configuration"})
+
+    modbus_ip = modbus_config.get('ip')
+    modbus_port = modbus_config.get('port', 502)
+
+    if not modbus_ip:
+        return jsonify({"status": "error", "message": "Modbus IP not configured"})
+
+    results = {"status": "checking", "tests": []}
+
+    # Test 1: Basic socket connectivity
+    try:
+        import socket
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(3)
+        socket_result = s.connect_ex((modbus_ip, modbus_port))
+        s.close()
+
+        results["tests"].append({
+            "name": "TCP Socket Connection",
+            "success": socket_result == 0,
+            "message": f"TCP port {modbus_port} is {'open' if socket_result == 0 else 'closed or filtered'}"
+        })
+    except Exception as e:
+        results["tests"].append({
+            "name": "TCP Socket Connection",
+            "success": False,
+            "message": f"Socket test error: {str(e)}"
+        })
+
+    # Test 2: Full Modbus connectivity
+    try:
+        if hasattr(modbus_relay, 'ensure_connection'):
+            connection_result = modbus_relay.ensure_connection()
+            results["tests"].append({
+                "name": "Modbus Protocol",
+                "success": connection_result,
+                "message": f"Modbus connection {'successful' if connection_result else 'failed'}"
+            })
+        else:
+            results["tests"].append({
+                "name": "Modbus Protocol",
+                "success": False,
+                "message": "Modbus relay module not properly initialized"
+            })
+    except Exception as e:
+        results["tests"].append({
+            "name": "Modbus Protocol",
+            "success": False,
+            "message": f"Modbus test error: {str(e)}"
+        })
+
+    # Test 3: Try a single relay operation
+    try:
+        if hasattr(modbus_relay, 'trigger_relay'):
+            # Use the first relay for testing
+            relay_result = modbus_relay.trigger_relay(1, True, 0.5)
+            results["tests"].append({
+                "name": "Relay Operation",
+                "success": relay_result,
+                "message": f"Relay trigger {'successful' if relay_result else 'failed'}"
+            })
+        else:
+            results["tests"].append({
+                "name": "Relay Operation",
+                "success": False,
+                "message": "Modbus relay trigger function not available"
+            })
+    except Exception as e:
+        results["tests"].append({
+            "name": "Relay Operation",
+            "success": False,
+            "message": f"Relay test error: {str(e)}"
+        })
+
+    # Set overall status
+    success_count = sum(1 for test in results["tests"] if test["success"])
+    if success_count == len(results["tests"]):
+        results["status"] = "success"
+        results["message"] = "All Modbus tests passed successfully"
+    elif success_count > 0:
+        results["status"] = "warning"
+        results["message"] = f"{success_count}/{len(results['tests'])} tests passed"
+    else:
+        results["status"] = "error"
+        results["message"] = "All Modbus tests failed"
+
+    return jsonify(results)
 
 # Main Entry
 if __name__ == "__main__":

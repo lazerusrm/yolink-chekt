@@ -13,74 +13,109 @@ connected = False
 
 
 def ensure_connection():
-    """Ensures that we have a valid connection to the Modbus relay."""
+    """Ensures that we have a valid connection to the Modbus relay with improved Docker networking handling."""
     global client, connected
-
-    # Check if we already have a connection
-    if client and connected:
-        try:
-            # Verify connection is still active by reading a coil
-            result = client.read_coils(0, 1)
-            if hasattr(result, 'function_code') and not result.isError():
-                return True
-        except Exception:
-            # If we can't read coils, connection is bad
-            connected = False
-            logger.warning("Modbus connection validation failed, will reconnect")
 
     config = load_config()
     modbus_config = config.get('modbus', {})
 
-    if not modbus_config.get('ip'):
+    # Check if Modbus is enabled
+    if not modbus_config.get('enabled', False):
+        logger.info("Modbus relay not enabled in configuration")
+        connected = False
+        return False
+
+    # Get IP with validation
+    modbus_ip = modbus_config.get('ip')
+    if not modbus_ip or not modbus_ip.strip():
         logger.warning("Modbus relay IP not configured")
         connected = False
         return False
 
-    try:
-        # Close any existing connection
-        if client:
-            try:
-                client.close()
-            except Exception as e:
-                logger.warning(f"Error closing existing Modbus connection: {e}")
+    # Set default port
+    modbus_port = int(modbus_config.get('port', 502))
 
-        # Create a new connection
-        client = ModbusTcpClient(
-            host=modbus_config.get('ip'),
-            port=modbus_config.get('port', 502),
-            timeout=5
-        )
+    # Check if current connection is still valid
+    if client and connected:
+        try:
+            # Test with a simple read
+            result = client.read_coils(0, 1)
+            if result and not result.isError():
+                return True
+        except Exception:
+            # Connection lost, will reconnect
+            logger.info("Modbus connection test failed, reconnecting...")
+            connected = False
 
-        # Try to connect
-        connected = client.connect()
-        if connected:
+    # Close existing connection if any
+    if client:
+        try:
+            client.close()
+        except Exception:
+            pass
+
+    # Connect with retry logic
+    retry_count = 3
+    retry_delay = 1  # seconds
+
+    for attempt in range(retry_count):
+        try:
             logger.info(
-                f"Successfully connected to Modbus relay at {modbus_config.get('ip')}:{modbus_config.get('port', 502)}")
+                f"Connecting to Modbus relay at {modbus_ip}:{modbus_port} (attempt {attempt + 1}/{retry_count})")
 
-            # Try to read first coil to validate connection
-            try:
-                result = client.read_coils(0, 1)
-                if not hasattr(result, 'function_code') or result.isError():
-                    logger.warning("Modbus connection succeeded but read test failed")
-                    connected = False
-            except Exception as e:
-                logger.warning(f"Modbus connection succeeded but read test failed: {e}")
+            # Create client with longer timeout for Docker networking
+            client = ModbusTcpClient(
+                host=modbus_ip,
+                port=modbus_port,
+                timeout=5 * (attempt + 1)  # Increase timeout with each retry
+            )
+
+            # Connect
+            connected = client.connect()
+            if not connected:
+                logger.warning(f"Failed to connect on attempt {attempt + 1}")
+                if attempt < retry_count - 1:
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                continue
+
+            # Verify connection with read test
+            logger.info(f"Connected, verifying connection with read test")
+            result = client.read_coils(0, 1)
+            if not result or result.isError():
+                logger.warning(f"Connected but read test failed, error: {result if result else 'None'}")
                 connected = False
+                client.close()
+                if attempt < retry_count - 1:
+                    time.sleep(retry_delay)
+                    retry_delay *= 2
+                continue
 
-        else:
-            logger.error(
-                f"Failed to connect to Modbus relay at {modbus_config.get('ip')}:{modbus_config.get('port', 502)}")
+            # Success!
+            logger.info(f"Successfully connected and verified Modbus relay at {modbus_ip}:{modbus_port}")
+            return True
 
-        return connected
-    except Exception as e:
-        logger.error(f"Error connecting to Modbus relay: {e}")
-        connected = False
-        return False
+        except ConnectionException as e:
+            logger.error(f"Modbus connection error on attempt {attempt + 1}: {e}")
+            connected = False
+            if attempt < retry_count - 1:
+                time.sleep(retry_delay)
+                retry_delay *= 2
+        except Exception as e:
+            logger.error(f"Unexpected error on connection attempt {attempt + 1}: {e}")
+            connected = False
+            if attempt < retry_count - 1:
+                time.sleep(retry_delay)
+                retry_delay *= 2
+
+    # All attempts failed
+    logger.error(f"Failed to connect to Modbus relay at {modbus_ip}:{modbus_port} after {retry_count} attempts")
+    return False
 
 
 def trigger_relay(channel, state=True, pulse_seconds=None, follower_mode=None):
     """
-    Trigger a relay channel with improved error handling.
+    Trigger a relay channel with improved reliability for Docker environments.
 
     Args:
         channel (int): The relay channel number (1-16)
@@ -92,11 +127,19 @@ def trigger_relay(channel, state=True, pulse_seconds=None, follower_mode=None):
         bool: True if successful, False otherwise
     """
     try:
-        # Check connection
-        if not ensure_connection():
-            logger.error("Cannot trigger relay: No connection to Modbus relay")
-            return False
+        # Ensure connection with retries
+        connection_attempts = 2
+        for attempt in range(connection_attempts):
+            if ensure_connection():
+                break
+            elif attempt < connection_attempts - 1:
+                logger.info(f"Retrying connection for relay trigger (attempt {attempt + 1})")
+                time.sleep(1)
+            else:
+                logger.error("Could not establish Modbus connection for trigger operation")
+                return False
 
+        # Get configuration
         config = load_config()
         modbus_config = config.get('modbus', {})
 
@@ -107,16 +150,15 @@ def trigger_relay(channel, state=True, pulse_seconds=None, follower_mode=None):
             unit_id = 1
             logger.warning(f"Invalid unit_id in config, using default: 1")
 
-        # Determine if we're using follower mode
+        # Check follower mode
         if follower_mode is None:
             follower_mode = modbus_config.get('follower_mode', False)
 
-        # Validate channel number
+        # Validate channel
         try:
             max_channels = int(modbus_config.get('max_channels', 16))
         except (ValueError, TypeError):
             max_channels = 16
-            logger.warning(f"Invalid max_channels in config, using default: 16")
 
         if not isinstance(channel, int):
             try:
@@ -132,31 +174,41 @@ def trigger_relay(channel, state=True, pulse_seconds=None, follower_mode=None):
         # Adjust channel number for zero-based addressing in Modbus
         coil_address = channel - 1
 
-        try:
-            # Write to coil
-            logger.info(f"Setting relay channel {channel} to {'ON' if state else 'OFF'}")
-            result = client.write_coil(coil_address, state, unit=unit_id)
+        # Write to coil with retry logic
+        write_attempts = 3
+        for attempt in range(write_attempts):
+            try:
+                logger.info(f"Setting relay channel {channel} to {'ON' if state else 'OFF'} (attempt {attempt + 1})")
+                result = client.write_coil(coil_address, state, unit=unit_id)
 
-            if hasattr(result, 'function_code') and not result.isError():
+                if not result or result.isError():
+                    logger.error(f"Failed to set relay (attempt {attempt + 1}): {result}")
+                    if attempt < write_attempts - 1:
+                        # Try reconnecting before the next attempt
+                        ensure_connection()
+                        time.sleep(1)
+                    continue
+
+                # Success!
                 logger.info(f"Successfully set relay channel {channel} to {'ON' if state else 'OFF'}")
 
-                # If in follower mode, we don't pulse - the relay follows sensor state
-                if not follower_mode:
-                    # If pulse_seconds is specified and we're turning the relay on,
-                    # schedule it to turn off after the specified time
-                    if pulse_seconds and state:
-                        def turn_off_later():
-                            try:
-                                time.sleep(pulse_seconds)
-                                logger.info(f"Turning off relay channel {channel} after {pulse_seconds} seconds pulse")
-                                trigger_relay(channel, False)
-                            except Exception as e:
-                                logger.error(f"Error in turn_off_later for channel {channel}: {e}")
+                # Handle pulse mode
+                if not follower_mode and pulse_seconds and state:
+                    def turn_off_later():
+                        try:
+                            logger.info(f"Waiting {pulse_seconds} seconds before turning off relay {channel}")
+                            time.sleep(pulse_seconds)
+                            logger.info(f"Turning off relay channel {channel} after pulse")
+                            # Use a new connection instance for the delayed operation
+                            trigger_relay(channel, False)
+                        except Exception as e:
+                            logger.error(f"Error in pulse timer for channel {channel}: {e}")
 
-                        # Start a thread to turn off the relay after the specified time
-                        threading.Thread(target=turn_off_later, daemon=True).start()
+                    # Start a thread to turn off the relay after the specified time
+                    turn_off_thread = threading.Thread(target=turn_off_later, daemon=True)
+                    turn_off_thread.start()
 
-                # Store the current relay state in Redis for reference
+                # Store the current relay state in Redis
                 try:
                     from db import redis_client
                     redis_client.set(f"relay_state:{channel}", "1" if state else "0")
@@ -164,21 +216,24 @@ def trigger_relay(channel, state=True, pulse_seconds=None, follower_mode=None):
                     logger.error(f"Failed to store relay state in Redis: {e}")
 
                 return True
-            else:
-                logger.error(f"Failed to set relay channel {channel}: {result}")
-                return False
-        except ConnectionException:
-            logger.error("Connection to Modbus relay lost")
-            connected = False
-            return False
-        except ModbusException as e:
-            logger.error(f"Modbus error when setting relay channel {channel}: {e}")
-            return False
-        except Exception as e:
-            logger.error(f"Unexpected error when setting relay channel {channel}: {e}")
-            return False
+
+            except ConnectionException as e:
+                logger.error(f"Connection lost during relay operation (attempt {attempt + 1}): {e}")
+                connected = False
+                if attempt < write_attempts - 1:
+                    ensure_connection()
+                    time.sleep(1)
+            except Exception as e:
+                logger.error(f"Unexpected error setting relay (attempt {attempt + 1}): {e}")
+                if attempt < write_attempts - 1:
+                    time.sleep(1)
+
+        # All attempts failed
+        logger.error(f"Failed to set relay channel {channel} after {write_attempts} attempts")
+        return False
+
     except Exception as e:
-        logger.error(f"Critical error in trigger_relay for channel {channel}: {e}")
+        logger.error(f"Critical error in trigger_relay: {e}")
         return False
 
 
