@@ -83,8 +83,9 @@ update_docker_compose_ip() {
             exit 1
         }
     else
-        # Append the TARGET_IP line immediately after any "environment:" line.
-        sed -i '/environment:/a\      - TARGET_IP='"$host_ip" "$DOCKER_COMPOSE_FILE" || {
+        # Use a literal newline by splitting the sed command across two lines.
+        sed -i "/environment:/a\\
+      - TARGET_IP=$host_ip" "$DOCKER_COMPOSE_FILE" || {
             log "Error: Failed to append TARGET_IP to docker-compose.yml"
             exit 1
         }
