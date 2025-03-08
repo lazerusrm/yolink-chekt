@@ -4,7 +4,7 @@ Yolink to CHEKT Integration - Version 1.3 (Refactored)
 
 Main application file for integrating Yolink smart sensors with the CHEKT alarm system
 and Modbus relays via MQTT, with a web interface for management.
-This version uses Quart’s before_serving and after_serving hooks to manage background
+This version uses Quart's before_serving and after_serving hooks to manage background
 services and graceful shutdown.
 """
 
@@ -14,101 +14,97 @@ import json
 import base64
 import io
 import asyncio
+import time
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from quart import Quart, request, render_template, flash, redirect, url_for, session, jsonify
-from quart_auth import QuartAuth, login_user, login_required, logout_user, current_user
+from quart_auth import (
+    QuartAuth, AuthUser, AuthManager, login_required,
+    logout_user, login_user, Unauthorized
+)
 from quart_bcrypt import Bcrypt
 import pyotp
 import qrcode
 import psutil
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from redis.asyncio import Redis
+from dotenv import load_dotenv
 
-# Import project modules
-from config import load_config, save_config, get_user_data, save_user_data, SUPPORTED_TIMEZONES
-from device_manager import refresh_yolink_devices, get_all_devices
-from mappings import get_mappings, save_mapping, save_mappings
-from yolink_mqtt import connected as yolink_connected, run_mqtt_client
-from monitor_mqtt import connected as monitor_connected, run_monitor_mqtt, shutdown_monitor_mqtt
-import modbus_relay
-from db import ensure_redis_connection
-
-# Logging Setup
-handler = RotatingFileHandler("/app/logs/app.log", maxBytes=10*1024*1024, backupCount=5)
-logging.basicConfig(
-    level=logging.INFO,  # INFO in production, DEBUG for development
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[handler, logging.StreamHandler()]
-)
-logger = logging.getLogger(__name__)
+# Load environment variables BEFORE importing other modules
+load_dotenv()
 
 # Initialize Quart app
 app = Quart(__name__)
 app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY")
 if not app.config["SECRET_KEY"]:
     raise ValueError("FLASK_SECRET_KEY environment variable must be set")
+
+# Import project modules AFTER app initialization and env loading
+from config import load_config, save_config, get_user_data, save_user_data, SUPPORTED_TIMEZONES
+from device_manager import refresh_yolink_devices, get_all_devices
+from mappings import get_mappings, save_mapping, save_mappings
+from yolink_mqtt import run_mqtt_client, shutdown_yolink_mqtt
+from monitor_mqtt import run_monitor_mqtt, shutdown_monitor_mqtt
+import modbus_relay
+from redis_manager import get_redis, ensure_connection as ensure_redis_connection
+
+# Logging Setup
+os.makedirs("/app/logs", exist_ok=True)  # Ensure logs directory exists
+handler = RotatingFileHandler("/app/logs/app.log", maxBytes=10*1024*1024, backupCount=5)
+logging.basicConfig(
+    level=logging.DEBUG,  # Use DEBUG for development, INFO for production
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[handler, logging.StreamHandler()]
+)
+logger = logging.getLogger(__name__)
+
+# Setup Quart-Auth with fixed implementation
+class User(AuthUser):
+    """User class for authentication."""
+    def __init__(self, auth_id):
+        super().__init__(auth_id)
+
+    @property
+    def is_authenticated(self):
+        return self.auth_id is not None
+
+# Initialize bcrypt for password hashing
 bcrypt = Bcrypt(app)
 
-# Setup Quart-Auth (replacing Flask-Login for async support)
-auth_manager = QuartAuth()
-auth_manager.init_app(app)
+# Initialize auth manager
+auth = QuartAuth(app)
 
 # Scheduler for periodic tasks
 scheduler = AsyncIOScheduler()
-
-# Global Redis client (async)
-redis_client = Redis(
-    host=os.getenv("REDIS_HOST", "redis"),
-    port=int(os.getenv("REDIS_PORT", 6379)),
-    db=0,
-    decode_responses=True
-)
 
 # To hold background tasks so we can cancel them on shutdown
 app.bg_tasks = []
 
 # ----------------------- Authentication Helpers -----------------------
 
-class User:
-    """User class for authentication."""
-    def __init__(self, username: str):
-        self.auth_id = username
-
-    @staticmethod
-    async def load(username: str) -> Optional["User"]:
-        if get_user_data(username):
-            return User(username)
-        return None
-
-@auth_manager.user_loader
-async def load_user(username: str) -> Optional[User]:
-    return await User.load(username)
-
-
 async def init_default_user() -> None:
     """Create a default admin user if no users exist."""
-    from config import get_user_data, save_user_data
-    from redis_manager import get_redis
-
-    redis_client = await get_redis()
-    keys = await redis_client.keys("user:*")
-    if not keys:
-        default_username = "admin"
-        default_password = "admin123"
-        hashed_password = await bcrypt.hashpw(default_password.encode('utf-8'))
-        user_data = {"password": hashed_password.decode('utf-8'), "force_password_change": True}
-        await save_user_data(default_username, user_data)
-        logger.info("Created default admin user")
+    try:
+        redis_client = await get_redis()
+        keys = await redis_client.keys("user:*")
+        if not keys:
+            default_username = "admin"
+            default_password = "admin123"
+            hashed_password = await bcrypt.hashpw(default_password.encode('utf-8'))
+            user_data = {"password": hashed_password.decode('utf-8'), "force_password_change": True}
+            await save_user_data(default_username, user_data)
+            logger.info("Created default admin user")
+    except Exception as e:
+        logger.error(f"Error creating default user: {e}")
 
 # ----------------------- Utility Functions -----------------------
 
 async def check_mqtt_connection_active() -> Dict[str, Any]:
     """Actively check if YoLink MQTT connection is functional."""
-    from yolink_mqtt import client as yolink_client
+    from yolink_mqtt import is_connected as yolink_connected
     try:
-        if yolink_client and yolink_client.is_connected():
+        if yolink_connected():
             return {"status": "success", "message": "YoLink MQTT connection is active."}
         return {"status": "error", "message": "YoLink MQTT connection is inactive."}
     except Exception as e:
@@ -117,18 +113,18 @@ async def check_mqtt_connection_active() -> Dict[str, Any]:
 
 async def check_monitor_connection_active() -> Dict[str, Any]:
     """Actively check if Monitor MQTT connection is functional."""
-    from monitor_mqtt import client as monitor_client
+    from monitor_mqtt import is_connected as monitor_connected
     try:
-        if monitor_client and monitor_client.is_connected():
+        if monitor_connected():
             return {"status": "success", "message": "Monitor MQTT connection is active."}
         return {"status": "error", "message": "Monitor MQTT connection is inactive."}
     except Exception as e:
         logger.error(f"Error checking Monitor MQTT connection: {e}")
         return {"status": "error", "message": f"Error checking Monitor MQTT: {str(e)}"}
 
-def is_system_configured() -> bool:
+async def is_system_configured() -> bool:
     """Check if the system has necessary credentials configured."""
-    config = load_config()  # Synchronous call here is acceptable in context
+    config = await load_config()
     yolink_configured = (
         config.get("yolink", {}).get("uaid") and
         config.get("yolink", {}).get("secret_key")
@@ -158,23 +154,20 @@ async def startup():
     await init_default_user()
 
     # Start background services if system is configured
-    if is_system_configured():
+    if await is_system_configured():
         logger.info("System configured, starting background services")
 
         # Start YoLink MQTT client
-        from yolink_mqtt import run_mqtt_client, shutdown_yolink_mqtt
         task_yolink = asyncio.create_task(run_mqtt_client())
         app.bg_tasks.append(task_yolink)
         app.ctx.shutdown_yolink = shutdown_yolink_mqtt  # Store the shutdown function
 
         # Start Monitor MQTT client
-        from monitor_mqtt import run_monitor_mqtt, shutdown_monitor_mqtt
         task_monitor = asyncio.create_task(run_monitor_mqtt())
         app.bg_tasks.append(task_monitor)
         app.ctx.shutdown_monitor = shutdown_monitor_mqtt  # Store the shutdown function
 
         # Initialize Modbus relay connection
-        import modbus_relay
         task_modbus = asyncio.create_task(modbus_relay.initialize())
         app.bg_tasks.append(task_modbus)
         app.ctx.shutdown_modbus = modbus_relay.shutdown_modbus  # Store the shutdown function
@@ -186,7 +179,7 @@ async def startup():
 
     # Start scheduler for periodic tasks
     try:
-        await scheduler.start()
+        scheduler.start()
         logger.info("Scheduler started successfully")
     except Exception as e:
         logger.error(f"Failed to start scheduler: {e}")
@@ -237,7 +230,7 @@ async def shutdown():
 
     # Shutdown scheduler
     try:
-        await scheduler.shutdown(wait=False)
+        scheduler.shutdown(wait=False)
         logger.info("Scheduler shutdown successfully")
     except Exception as e:
         logger.error(f"Error shutting down scheduler: {e}")
@@ -257,17 +250,18 @@ async def shutdown():
 async def login():
     if request.method == "POST":
         form = await request.form
-        username = form["username"]
-        password = form["password"]
+        username = form.get("username", "")
+        password = form.get("password", "")
         totp_code = form.get("totp_code")
-        user_data = get_user_data(username)
 
-        if not user_data or not await bcrypt.checkpw(password.encode('utf-8'), user_data["password"].encode('utf-8')):
+        user_data = await get_user_data(username)
+
+        if not user_data or not await bcrypt.check_password_hash(user_data["password"], password):
             await flash("Invalid credentials", "error")
             return await render_template("login.html", totp_required=False)
 
         if user_data.get("force_password_change", False):
-            login_user(username)
+            login_user(User(username))
             return redirect(url_for("change_password"))
 
         if "totp_secret" in user_data:
@@ -278,10 +272,10 @@ async def login():
                 await flash("Invalid TOTP code", "error")
                 return await render_template("login.html", totp_required=True, username=username)
         else:
-            login_user(username)
+            login_user(User(username))
             return redirect(url_for("setup_totp"))
 
-        login_user(username)
+        login_user(User(username))
         return redirect(url_for("index"))
 
     return await render_template("login.html", totp_required=False)
@@ -295,23 +289,23 @@ async def logout():
 @app.route("/change_password", methods=["GET", "POST"])
 @login_required
 async def change_password():
-    user_data = get_user_data(current_user.auth_id)
+    user_data = await get_user_data(current_user.auth_id)
     if request.method == "POST":
         form = await request.form
-        current_password = form["current_password"]
-        new_password = form["new_password"]
-        confirm_password = form["confirm_password"]
+        current_password = form.get("current_password", "")
+        new_password = form.get("new_password", "")
+        confirm_password = form.get("confirm_password", "")
 
-        if not await bcrypt.checkpw(current_password.encode('utf-8'), user_data["password"].encode('utf-8')):
+        if not await bcrypt.check_password_hash(user_data["password"], current_password):
             await flash("Current password is incorrect", "error")
         elif new_password != confirm_password:
             await flash("New passwords do not match", "error")
         elif len(new_password) < 8:
             await flash("Password must be at least 8 characters", "error")
         else:
-            user_data["password"] = (await bcrypt.hashpw(new_password.encode('utf-8'))).decode('utf-8')
+            user_data["password"] = await bcrypt.generate_password_hash(new_password)
             user_data["force_password_change"] = False
-            save_user_data(current_user.auth_id, user_data)
+            await save_user_data(current_user.auth_id, user_data)
             if "totp_secret" not in user_data:
                 return redirect(url_for("setup_totp"))
             await flash("Password changed successfully", "success")
@@ -322,14 +316,14 @@ async def change_password():
 @app.route("/setup_totp", methods=["GET", "POST"])
 @login_required
 async def setup_totp():
-    user_data = get_user_data(current_user.auth_id)
+    user_data = await get_user_data(current_user.auth_id)
     if "totp_secret" in user_data:
         await flash("TOTP already set up", "info")
         return redirect(url_for("index"))
 
     if request.method == "POST":
         form = await request.form
-        totp_code = form["totp_code"]
+        totp_code = form.get("totp_code")
         totp_secret = session.get("totp_secret")
         if not totp_secret:
             await flash("Session expired, please try again", "error")
@@ -338,7 +332,7 @@ async def setup_totp():
         totp = pyotp.TOTP(totp_secret)
         if totp.verify(totp_code):
             user_data["totp_secret"] = totp_secret
-            save_user_data(current_user.auth_id, user_data)
+            await save_user_data(current_user.auth_id, user_data)
             session.pop("totp_secret", None)
             await flash("TOTP setup complete", "success")
             return redirect(url_for("index"))
@@ -359,14 +353,15 @@ async def setup_totp():
 @app.route("/")
 @login_required
 async def index():
-    user_data = get_user_data(current_user.auth_id)
+    user_data = await get_user_data(current_user.auth_id)
     if user_data.get("force_password_change", False):
         await flash("Please change your default password.", "warning")
         return redirect(url_for("change_password"))
 
     devices = await get_all_devices()
-    mappings = get_mappings().get("mappings", [])
-    device_mappings = {m["yolink_device_id"]: m for m in mappings}
+    mappings = await get_mappings()
+    mappings_list = mappings.get("mappings", [])
+    device_mappings = {m["yolink_device_id"]: m for m in mappings_list}
     for device in devices:
         mapping = device_mappings.get(device["deviceId"], {})
         device["chekt_zone"] = mapping.get("chekt_zone", "N/A")
@@ -377,7 +372,7 @@ async def index():
 @app.route("/config", methods=["GET", "POST"])
 @login_required
 async def config():
-    config_data = load_config()
+    config_data = await load_config()
     if request.method == "POST":
         try:
             form = await request.form
@@ -405,7 +400,8 @@ async def config():
                     "uaid": form.get("yolink_uaid", ""),
                     "secret_key": form.get("yolink_secret_key", ""),
                     "token": config_data["yolink"].get("token", ""),
-                    "token_expiry": config_data["yolink"].get("token_expiry", 0)
+                    "issued_at": config_data["yolink"].get("issued_at", 0),
+                    "expires_in": config_data["yolink"].get("expires_in", 0)
                 },
                 "mqtt": {
                     "url": form.get("yolink_url", "mqtt://api.yosmart.com"),
@@ -449,7 +445,7 @@ async def config():
                 "home_id": config_data.get("home_id", ""),
                 "supported_timezones": SUPPORTED_TIMEZONES
             }
-            save_config(new_config)
+            await save_config(new_config)
             await flash("Configuration saved", "success")
             # Restart services based on new configuration
             # (In production, you might restart background tasks here if necessary)
@@ -466,7 +462,7 @@ async def config():
 @app.route('/get_config')
 @login_required
 async def get_config():
-    config = load_config()
+    config = await load_config()
     return jsonify(config)
 
 # ----------------------- User Management -----------------------
@@ -475,8 +471,8 @@ async def get_config():
 @login_required
 async def create_user():
     form = await request.form
-    username = form["username"]
-    password = form["password"]
+    username = form.get("username", "")
+    password = form.get("password", "")
 
     if not username or not password:
         await flash("Username and password required", "error")
@@ -486,12 +482,13 @@ async def create_user():
         await flash("Password must be at least 8 characters", "error")
         return redirect(url_for("config"))
 
-    if get_user_data(username):
+    existing_user = await get_user_data(username)
+    if existing_user:
         await flash("Username already exists", "error")
     else:
-        hashed_password = (await bcrypt.hashpw(password.encode('utf-8'))).decode('utf-8')
+        hashed_password = await bcrypt.generate_password_hash(password)
         user_data = {"password": hashed_password, "force_password_change": True}
-        save_user_data(username, user_data)
+        await save_user_data(username, user_data)
         await flash("User created successfully", "success")
     return redirect(url_for("config"))
 
@@ -537,7 +534,7 @@ async def save_mapping_route():
         return jsonify({"status": "error", "message": "Missing device ID"}), 400
 
     logger.debug(f"Saving CHEKT zone for device {device_id}: {chekt_zone}")
-    save_mapping(device_id, chekt_zone)
+    await save_mapping(device_id, chekt_zone)
     return jsonify({"status": "success"})
 
 @app.route("/set_door_prop_alarm", methods=["POST"])
@@ -551,7 +548,7 @@ async def set_door_prop_alarm():
         return jsonify({"status": "error", "message": "Missing device ID"}), 400
 
     logger.debug(f"Setting door prop alarm for device {device_id} to {enabled}")
-    mappings = get_mappings()
+    mappings = await get_mappings()
     updated = False
     for mapping in mappings["mappings"]:
         if mapping["yolink_device_id"] == device_id:
@@ -564,15 +561,16 @@ async def set_door_prop_alarm():
             "chekt_zone": "N/A",
             "door_prop_alarm": enabled
         })
-    save_mappings(mappings)
+    await save_mappings(mappings)
     return jsonify({"status": "success"})
 
 @app.route("/get_sensor_data")
 @login_required
 async def get_sensor_data():
     devices = await get_all_devices()
-    mappings = get_mappings().get("mappings", [])
-    device_mappings = {m["yolink_device_id"]: m for m in mappings}
+    mappings = await get_mappings()
+    mappings_list = mappings.get("mappings", [])
+    device_mappings = {m["yolink_device_id"]: m for m in mappings_list}
 
     for device in devices:
         mapping = device_mappings.get(device["deviceId"], {})
@@ -618,7 +616,7 @@ async def check_monitor_mqtt_status():
 @app.route("/check_receiver_status")
 @login_required
 async def check_receiver_status():
-    config = load_config()
+    config = await load_config()
     receiver_type = config.get("receiver_type", "CHEKT")
     if receiver_type == "CHEKT":
         return jsonify({"status": "success", "message": "Receiver is alive."})
@@ -630,7 +628,7 @@ async def check_all_statuses():
     yolink_status = await check_mqtt_connection_active()
     monitor_status = await check_monitor_connection_active()
 
-    config = load_config()
+    config = await load_config()
     modbus_active = False
     modbus_message = "Modbus relay is disabled"
     if config.get("modbus", {}).get("enabled", False):
@@ -660,6 +658,7 @@ async def check_all_statuses():
 @login_required
 async def last_refresh():
     try:
+        redis_client = await get_redis()
         last_refresh_time = await redis_client.get("last_refresh_time")
         if last_refresh_time:
             last_time = datetime.fromtimestamp(float(last_refresh_time))
@@ -683,9 +682,21 @@ async def last_refresh():
 @login_required
 async def restart_services():
     try:
-        # For simplicity, just trigger a refresh of background services by restarting the scheduler
-        await scheduler.shutdown(wait=False)
-        await scheduler.start()
+        # Signal MQTT clients to reconnect
+        from yolink_mqtt import shutdown_yolink_mqtt
+        from monitor_mqtt import shutdown_monitor_mqtt
+
+        # Shutdown existing clients
+        shutdown_yolink_mqtt()
+        shutdown_monitor_mqtt()
+
+        # Wait for shutdown to complete
+        await asyncio.sleep(2)
+
+        # Start new tasks
+        app.bg_tasks.append(asyncio.create_task(run_mqtt_client()))
+        app.bg_tasks.append(asyncio.create_task(run_monitor_mqtt()))
+
         return jsonify({"status": "success", "message": "Services restarted"})
     except Exception as e:
         logger.error(f"Error restarting services: {e}")
@@ -703,13 +714,13 @@ async def save_relay_mapping_route():
         return jsonify({"status": "error", "message": "Missing device ID"}), 400
 
     logger.debug(f"Saving relay mapping for device {device_id}: Channel {relay_channel}, Use Relay: {use_relay}")
-    save_mapping(device_id, relay_channel=relay_channel, use_relay=use_relay)
+    await save_mapping(device_id, relay_channel=relay_channel, use_relay=use_relay)
     return jsonify({"status": "success"})
 
 @app.route('/check_modbus_status')
 @login_required
 async def check_modbus_status():
-    config = load_config()
+    config = await load_config()
     if not config.get("modbus", {}).get("enabled", False):
         return jsonify({"status": "warning", "message": "Modbus relay is disabled in configuration."})
 
@@ -738,7 +749,7 @@ async def test_relay_channel():
     except ValueError:
         return jsonify({"status": "error", "message": "Channel must be a number"}), 400
 
-    config = load_config()
+    config = await load_config()
     if not config.get("modbus", {}).get("enabled", False):
         return jsonify({"status": "error", "message": "Modbus relay is disabled in configuration"}), 400
 
@@ -759,7 +770,7 @@ async def test_relay_channel():
 @app.route('/test_modbus', methods=['GET'])
 @login_required
 async def test_modbus():
-    config = load_config()
+    config = await load_config()
     modbus_config = config.get('modbus', {})
 
     if not modbus_config.get('enabled', False):
@@ -855,18 +866,19 @@ async def test_modbus():
 
     return jsonify(results)
 
-# ----------------------- Main Entry -----------------------
+# Error handling
+@app.errorhandler(Unauthorized)
+async def handle_unauthorized(error):
+    return redirect(url_for("login"))
 
-async def init_default_user() -> None:
-    """Create a default admin user if no users exist."""
-    keys = await redis_client.keys("user:*")
-    if not keys:
-        default_username = "admin"
-        default_password = "admin123"
-        hashed_password = await bcrypt.hashpw(default_password.encode('utf-8'))
-        user_data = {"password": hashed_password.decode('utf-8'), "force_password_change": True}
-        save_user_data(default_username, user_data)
-        logger.info("Created default admin user")
+@app.errorhandler(404)
+async def page_not_found(error):
+    return await render_template("error.html", error="Page not found"), 404
+
+@app.errorhandler(500)
+async def server_error(error):
+    logger.error(f"Server error: {error}")
+    return await render_template("error.html", error="Internal server error"), 500
 
 # The main() function is not used when running under Gunicorn.
 # When running standalone, you can start the Quart server with:

@@ -36,7 +36,8 @@ async def ensure_redis_connection(redis_client: Optional[Redis] = None, max_retr
     """
     if redis_client is None:
         # Use the shared Redis manager's ensure_connection function
-        return await ensure_redis_connection(max_retries=max_retries, backoff_base=delay / 2)
+        from redis_manager import ensure_connection as ensure_redis_conn_manager
+        return await ensure_redis_conn_manager(max_retries=max_retries, backoff_base=delay / 2)
 
     # For cases where a specific client instance was provided
     for attempt in range(max_retries):
