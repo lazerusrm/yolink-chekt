@@ -354,71 +354,124 @@ def config():
     config_data = load_config()
     if request.method == "POST":
         try:
-            # Extract receiver enabled states
-            chekt_enabled = request.form.get("chekt_enabled") == "on" or request.form.get("chekt_enabled") == "true"
-            sia_enabled = request.form.get("sia_enabled") == "on" or request.form.get("sia_enabled") == "true"
-            modbus_enabled = request.form.get("modbus_enabled") == "on" or request.form.get("modbus_enabled") == "true"
+            # Extract receiver enabled states with safer parsing
+            chekt_enabled = request.form.get("chekt_enabled") == "on"
+            sia_enabled = request.form.get("sia_enabled") == "on"
+            modbus_enabled = request.form.get("modbus_enabled") == "on"
 
-            # Extract Modbus settings
-            modbus_follower_mode = request.form.get("modbus_follower_mode") == "on" or request.form.get(
-                "modbus_follower_mode") == "true"
-            modbus_max_channels = int(request.form.get("modbus_max_channels", 16))
-            modbus_pulse_seconds = float(request.form.get("modbus_pulse_seconds", 1))
+            # Extract Modbus settings with better error handling
+            modbus_follower_mode = request.form.get("modbus_follower_mode") == "on"
 
-            # Build the new configuration
+            # Safely convert numeric values with defaults
+            try:
+                modbus_max_channels = int(request.form.get("modbus_max_channels", 16))
+            except (ValueError, TypeError):
+                modbus_max_channels = 16
+
+            try:
+                modbus_pulse_seconds = float(request.form.get("modbus_pulse_seconds", 1))
+            except (ValueError, TypeError):
+                modbus_pulse_seconds = 1.0
+
+            # Handle YoLink port safely
+            try:
+                yolink_port = int(request.form.get("yolink_port", 8003))
+            except (ValueError, TypeError):
+                yolink_port = 8003
+
+            # Handle CHEKT port safely
+            try:
+                chekt_port = int(request.form.get("chekt_port", 30003))
+            except (ValueError, TypeError):
+                chekt_port = 30003
+
+            # Handle Modbus port safely
+            try:
+                modbus_port = int(request.form.get("modbus_port", 502))
+            except (ValueError, TypeError):
+                modbus_port = 502
+
+            # Handle Modbus unit_id safely
+            try:
+                modbus_unit_id = int(request.form.get("modbus_unit_id", 1))
+            except (ValueError, TypeError):
+                modbus_unit_id = 1
+
+            # Handle SIA port safely
+            sia_port = ""
+            if request.form.get("sia_port"):
+                try:
+                    sia_port = int(request.form["sia_port"])
+                except (ValueError, TypeError):
+                    sia_port = ""
+
+            # Handle monitor MQTT port safely
+            try:
+                monitor_mqtt_port = int(request.form.get("monitor_mqtt_port", 1883))
+            except (ValueError, TypeError):
+                monitor_mqtt_port = 1883
+
+            # Handle door_open_timeout safely
+            try:
+                door_open_timeout = int(request.form.get("door_open_timeout", 30))
+            except (ValueError, TypeError):
+                door_open_timeout = 30
+
+            # Build the new configuration with safe values
             new_config = {
                 "yolink": {
-                    "uaid": request.form["yolink_uaid"],
-                    "secret_key": request.form["yolink_secret_key"],
-                    "token": config_data["yolink"]["token"],
-                    "token_expiry": config_data["yolink"]["token_expiry"]
+                    "uaid": request.form.get("yolink_uaid", ""),
+                    "secret_key": request.form.get("yolink_secret_key", ""),
+                    "token": config_data["yolink"].get("token", ""),
+                    "token_expiry": config_data["yolink"].get("token_expiry", 0)
                 },
                 "mqtt": {
-                    "url": request.form["yolink_url"],
-                    "port": int(request.form["yolink_port"]),
-                    "topic": request.form["yolink_topic"]
+                    "url": request.form.get("yolink_url", "mqtt://api.yosmart.com"),
+                    "port": yolink_port,
+                    "topic": request.form.get("yolink_topic", "yl-home/${Home ID}/+/report")
                 },
                 "mqtt_monitor": {
-                    "url": request.form["monitor_mqtt_url"],
-                    "port": int(request.form["monitor_mqtt_port"]),
-                    "username": request.form["monitor_mqtt_username"],
-                    "password": request.form["monitor_mqtt_password"],
+                    "url": request.form.get("monitor_mqtt_url", "mqtt://monitor.industrialcamera.com"),
+                    "port": monitor_mqtt_port,
+                    "username": request.form.get("monitor_mqtt_username", ""),
+                    "password": request.form.get("monitor_mqtt_password", ""),
                     "client_id": "monitor_client_id"
                 },
-                "receiver_type": request.form["receiver_type"],
+                "receiver_type": request.form.get("receiver_type", "CHEKT"),
                 "chekt": {
-                    "api_token": request.form["chekt_api_token"],
-                    "ip": request.form["chekt_ip"],
-                    "port": int(request.form["chekt_port"]),
+                    "api_token": request.form.get("chekt_api_token", ""),
+                    "ip": request.form.get("chekt_ip", ""),
+                    "port": chekt_port,
                     "enabled": chekt_enabled
                 },
                 "sia": {
-                    "ip": request.form["sia_ip"],
-                    "port": int(request.form["sia_port"]) if request.form["sia_port"] else "",
-                    "account_id": request.form["sia_account_id"],
-                    "transmitter_id": request.form["sia_transmitter_id"],
-                    "encryption_key": request.form["sia_encryption_key"],
+                    "ip": request.form.get("sia_ip", ""),
+                    "port": sia_port,
+                    "account_id": request.form.get("sia_account_id", ""),
+                    "transmitter_id": request.form.get("sia_transmitter_id", ""),
+                    "encryption_key": request.form.get("sia_encryption_key", ""),
                     "enabled": sia_enabled
                 },
                 "modbus": {
-                    "ip": request.form["modbus_ip"],
-                    "port": int(request.form["modbus_port"]),
-                    "unit_id": int(request.form["modbus_unit_id"]),
+                    "ip": request.form.get("modbus_ip", ""),
+                    "port": modbus_port,
+                    "unit_id": modbus_unit_id,
                     "max_channels": modbus_max_channels,
                     "pulse_seconds": modbus_pulse_seconds,
                     "enabled": modbus_enabled,
                     "follower_mode": modbus_follower_mode
                 },
-                "monitor": {"api_key": request.form["monitor_api_key"]},
-                "timezone": request.form["timezone"],
-                "door_open_timeout": int(request.form["door_open_timeout"]),
+                "monitor": {"api_key": request.form.get("monitor_api_key", "")},
+                "timezone": "UTC",  # Use UTC as default (removing timezone selection)
+                "door_open_timeout": door_open_timeout,
                 "home_id": config_data.get("home_id", ""),
                 "supported_timezones": SUPPORTED_TIMEZONES
             }
             save_config(new_config)
             flash("Configuration saved", "success")
-        except ValueError as e:
-            flash(f"Invalid input: {str(e)}", "error")
+        except Exception as e:
+            logger.error(f"Error saving configuration: {str(e)}")
+            flash(f"Error saving configuration: {str(e)}", "error")
         return redirect(url_for("config"))
     return render_template("config.html", config=config_data)
 

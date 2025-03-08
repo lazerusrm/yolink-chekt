@@ -583,20 +583,7 @@
                 <small><i class="fas fa-info-circle"></i> Time in seconds before triggering an alert for a door left open</small>
             </div>
 
-            <div class="section-divider"></div>
-
-            <h2><i class="fas fa-globe"></i> Timezone <span class="badge badge-warning">Deprecated</span></h2>
-            <div class="form-group">
-                <label for="timezone">Timezone</label>
-                <select id="timezone" name="timezone" class="form-control" required>
-                    {% for tz in config.supported_timezones %}
-                        <option value="{{ tz }}" {% if config.timezone == tz %}selected{% endif %}>{{ tz }}</option>
-                    {% endfor %}
-                </select>
-                <small class="text-warning">
-                    <i class="fas fa-exclamation-triangle"></i> This setting is deprecated. The dashboard now automatically uses your browser's timezone.
-                </small>
-            </div>
+            <!-- We have removed the deprecated Timezone section -->
 
             <div class="text-center mt-4">
                 <button type="submit" class="btn btn-primary">
@@ -856,29 +843,19 @@
             $('#config-form').submit(function(e) {
                 e.preventDefault();
 
-                // Show saving indicator
-                $('#save-status').html('<span class="spinner"></span> Saving...').addClass('visible');
-
-                // Prepare form data
+                // Prepare form data using standard form serialization
                 const formData = $(this).serialize();
 
-                // Add checkbox states for receivers
-                const modbusEnabled = $('#modbus_enabled').is(':checked');
-                const chektEnabled = $('#chekt_enabled').is(':checked');
-                const siaEnabled = $('#sia_enabled').is(':checked');
-
-                const formDataWithOptions = formData +
-                    '&modbus_enabled=' + modbusEnabled +
-                    '&chekt_enabled=' + chektEnabled +
-                    '&sia_enabled=' + siaEnabled;
+                // Add a hidden timezone field with UTC as default
+                const formDataWithTimezone = formData + '&timezone=UTC';
 
                 // Submit the form data
                 $.ajax({
                     type: 'POST',
                     url: '{{ url_for("config") }}',
-                    data: formDataWithOptions,
+                    data: formDataWithTimezone,
                     success: function(response) {
-                        $('#save-status').html('<span style="color: var(--success-color);"><i class="fas fa-check-circle"></i> Saved!</span>');
+                        $('#save-status').html('<span style="color: var(--success-color);"><i class="fas fa-check-circle"></i> Saved!</span>').addClass('visible');
 
                         // After saving configuration, restart services
                         $.ajax({
@@ -912,7 +889,8 @@
                     },
                     error: function(xhr) {
                         var errorMsg = xhr.responseJSON ? xhr.responseJSON.message : 'Unknown error';
-                        $('#save-status').html('<span style="color: var(--error-color);"><i class="fas fa-times-circle"></i> Error: ' + errorMsg + '</span>');
+                        $('#save-status').html('<span style="color: var(--error-color);"><i class="fas fa-times-circle"></i> Error: ' + errorMsg + '</span>').addClass('visible');
+                        console.error('Configuration save error:', xhr);
 
                         setTimeout(() => {
                             $('#save-status').removeClass('visible');

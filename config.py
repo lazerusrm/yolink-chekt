@@ -98,10 +98,28 @@ def load_config():
 
 
 def save_config(data):
-    """Save configuration to Redis after validating timezone."""
-    if "timezone" in data and data["timezone"] not in SUPPORTED_TIMEZONES:
-        raise ValueError(f"Invalid timezone: {data['timezone']}")
-    redis_client.set("config", json.dumps(data))
+    """Save configuration to Redis with better error handling."""
+    try:
+        # Always ensure timezone is valid (using UTC as default)
+        data["timezone"] = data.get("timezone", "UTC")
+
+        # Ensure we're not storing empty strings where we expect integers/floats
+        if "modbus" in data:
+            if data["modbus"].get("port") == "":
+                data["modbus"]["port"] = 502
+            if data["modbus"].get("unit_id") == "":
+                data["modbus"]["unit_id"] = 1
+            if data["modbus"].get("max_channels") == "":
+                data["modbus"]["max_channels"] = 16
+            if data["modbus"].get("pulse_seconds") == "":
+                data["modbus"]["pulse_seconds"] = 1.0
+
+        # Save to Redis
+        redis_client.set("config", json.dumps(data))
+        return True
+    except Exception as e:
+        logger.error(f"Error in save_config: {str(e)}")
+        raise ValueError(f"Failed to save configuration: {str(e)}")
 
 
 def get_user_data(username):
