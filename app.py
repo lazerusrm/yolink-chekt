@@ -18,7 +18,7 @@ from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from typing import Dict, Any, Optional
 from quart import Quart, request, render_template, flash, redirect, url_for, session, jsonify
-from quart_auth import AuthManager, login_user, login_required, logout_user, current_user
+from quart_auth import QuartAuth, login_user, login_required, logout_user, current_user
 from quart_bcrypt import Bcrypt
 import pyotp
 import qrcode
@@ -52,7 +52,7 @@ if not app.config["SECRET_KEY"]:
 bcrypt = Bcrypt(app)
 
 # Setup Quart-Auth (replacing Flask-Login for async support)
-auth_manager = AuthManager()
+auth_manager = QuartAuth()
 auth_manager.init_app(app)
 
 # Scheduler for periodic tasks
