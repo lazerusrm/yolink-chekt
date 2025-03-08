@@ -383,30 +383,10 @@ update_docker_compose_ip() {
         exit 1
     }
 
-    # Ensure volumes section is complete and properly formatted
-    if grep -q "^volumes:$" "$DOCKER_COMPOSE_FILE"; then
-        # Check if redis-data is already defined
-        if ! grep -q "redis-data:" "$DOCKER_COMPOSE_FILE"; then
-            # Create a temporary file
-            local vol_tmpfile
-            vol_tmpfile=$(mktemp)
-
-            # Process the file, adding proper volumes mapping
-            awk '{
-                print $0;
-                if ($0 ~ /^volumes:$/) {
-                    print "  redis-data: {}";
-                }
-            }' "$DOCKER_COMPOSE_FILE" > "$vol_tmpfile"
-
-            # Replace the original file
-            mv "$vol_tmpfile" "$DOCKER_COMPOSE_FILE" || {
-                log "Error: Failed to update volumes in docker-compose.yml"
-                exit 1;
-            }
-
-            log "Fixed volumes section in docker-compose.yml with proper mapping"
-        fi
+    # Ensure volumes section is complete
+    if grep -q "^volumes:$" "$DOCKER_COMPOSE_FILE" && ! grep -q "redis-data:" "$DOCKER_COMPOSE_FILE"; then
+        echo "  redis-data:" >> "$DOCKER_COMPOSE_FILE"
+        log "Fixed volumes section in docker-compose.yml"
     fi
 
     log "Successfully updated docker-compose.yml"
