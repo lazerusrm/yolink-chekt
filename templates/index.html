@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>YoLink to CHEKT Status</title>
+    <title>Dashboard - YoLink to CHEKT</title>
     <!-- Bootstrap CSS -->
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css">
     <!-- Font Awesome CSS -->
@@ -13,61 +13,273 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.4/moment.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/moment-timezone/0.5.43/moment-timezone-with-data.min.js"></script>
     <style>
+        :root {
+            --bg-primary: #000000;
+            --bg-secondary: #121212;
+            --bg-card: #1c1c1e;
+            --bg-elevated: #2c2c2e;
+            --text-primary: #ffffff;
+            --text-secondary: #8e8e93;
+            --accent-primary: #007aff;
+            --accent-secondary: #5ac8fa;
+            --success-color: #34c759;
+            --warning-color: #ff9500;
+            --error-color: #ff3b30;
+            --card-border-radius: 12px;
+            --input-border-radius: 8px;
+            --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+            --transition-speed: 0.3s;
+        }
+
         body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
-            padding: 20px;
-            background-color: #2e2e2e;
-            color: #ffffff;
+            font-family: var(--font-family);
+            background: linear-gradient(145deg, var(--bg-primary), var(--bg-secondary));
+            color: var(--text-primary);
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            background-attachment: fixed;
         }
-        .status, .sensor-data {
-            background-color: #4a4a4a;
-            padding: 15px;
-            border-radius: 10px;
-            margin-bottom: 30px;
+
+        /* Navbar styling */
+        .navbar {
+            background-color: rgba(0, 0, 0, 0.8) !important;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 0.75rem 1rem;
         }
-        .status img {
-            width: 20px;
-            height: 20px;
-            margin-right: 10px;
+
+        .navbar-brand {
+            font-weight: 700;
+            color: var(--text-primary) !important;
+            letter-spacing: -0.5px;
         }
+
+        .navbar-dark .navbar-nav .nav-link {
+            color: var(--text-secondary);
+            font-weight: 500;
+            transition: all 0.2s ease;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+        }
+
+        .navbar-dark .navbar-nav .nav-link:hover,
+        .navbar-dark .navbar-nav .active .nav-link {
+            color: var(--text-primary);
+            background-color: rgba(255, 255, 255, 0.05);
+        }
+
+        .container {
+            padding-top: 2rem;
+            padding-bottom: 2rem;
+        }
+
         h1, h2 {
-            color: #ffffff;
+            color: var(--text-primary);
+            font-weight: 700;
+            letter-spacing: -0.5px;
         }
+
+        h1 {
+            font-size: 2rem;
+            margin-bottom: 2rem;
+        }
+
+        h2 {
+            font-size: 1.5rem;
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+        }
+
+        h2 i {
+            margin-right: 0.75rem;
+            color: var(--accent-primary);
+        }
+
+        /* Status and sensor cards */
+        .status, .sensor-data {
+            background-color: var(--bg-card);
+            padding: 2rem;
+            border-radius: var(--card-border-radius);
+            margin-bottom: 2rem;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            padding: 1rem;
+            background-color: var(--bg-elevated);
+            border-radius: var(--input-border-radius);
+            margin-bottom: 1rem;
+            transition: all 0.3s ease;
+            border-left: 4px solid transparent;
+        }
+
+        .status-item img {
+            width: 24px;
+            height: 24px;
+            margin-right: 1rem;
+            transition: all 0.3s ease;
+        }
+
         .sensor-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 15px;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 1.5rem;
         }
+
         .sensor {
-            background-color: #3a3a3a;
-            padding: 15px;
-            border-radius: 10px;
-            transition: border 0.3s ease;
+            background-color: var(--bg-elevated);
+            padding: 1.5rem;
+            border-radius: var(--card-border-radius);
+            transition: transform var(--transition-speed), box-shadow var(--transition-speed), border var(--transition-speed);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
             position: relative;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.05);
         }
+
+        .sensor:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+        }
+
         .sensor-name {
             font-size: 1.25rem;
-            font-weight: bold;
-            color: #00ff00;
+            font-weight: 700;
+            color: var(--accent-primary);
+            margin-bottom: 1rem;
+            padding-bottom: 0.75rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
         }
+
         .sensor-data-item {
-            font-size: 1rem;
-            margin: 5px 0;
+            margin: 0.75rem 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.95rem;
         }
+
+        .sensor-data-item:last-child {
+            margin-bottom: 0;
+        }
+
+        /* Status indicators */
         .battery-icon {
-            font-size: 1.2em;
-            margin-right: 10px;
-            vertical-align: middle;
+            margin-right: 0.5rem;
+            font-size: 1rem;
+            width: 20px;
+            text-align: center;
         }
-        .battery-icon.fa-battery-empty { color: red; }
-        .battery-icon.fa-battery-quarter { color: orange; }
-        .battery-icon.fa-battery-half { color: gold; }
-        .battery-icon.fa-battery-three-quarters { color: yellowgreen; }
-        .battery-icon.fa-battery-full { color: green; }
+
+        .battery-icon.fa-battery-empty { color: var(--error-color); }
+        .battery-icon.fa-battery-quarter { color: var(--warning-color); }
+        .battery-icon.fa-battery-half { color: var(--warning-color); }
+        .battery-icon.fa-battery-three-quarters { color: var(--success-color); }
+        .battery-icon.fa-battery-full { color: var(--success-color); }
+
+        .hidden {
+            display: none !important;
+        }
+
+        /* Zone editing and input */
+        .chekt-zone, .door-prop-toggle {
+            color: var(--accent-primary);
+            font-weight: 600;
+            cursor: pointer;
+            display: block;
+            margin-top: 1rem;
+            padding: 0.5rem;
+            background-color: rgba(0, 122, 255, 0.1);
+            border-radius: var(--input-border-radius);
+            transition: all 0.2s ease;
+        }
+
+        .chekt-zone:hover, .door-prop-toggle:hover {
+            background-color: rgba(0, 122, 255, 0.2);
+        }
+
+        .chekt-zone-input {
+            width: 80px;
+            text-align: center;
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--accent-primary);
+            background-color: rgba(0, 122, 255, 0.1);
+            border: none;
+            border-bottom: 2px solid var(--accent-primary);
+            margin-top: 1rem;
+            padding: 0.5rem;
+            border-radius: var(--input-border-radius);
+        }
+
+        .chekt-zone-input:focus {
+            outline: none;
+            background-color: rgba(0, 122, 255, 0.2);
+        }
+
+        .door-prop-input {
+            width: auto;
+            margin: 0 0.5rem;
+        }
+
+        /* Status indicators */
+        .save-confirmation {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            color: var(--success-color);
+            font-size: 0.9rem;
+            font-weight: 600;
+            background-color: rgba(52, 199, 89, 0.1);
+            padding: 0.3rem 0.75rem;
+            border-radius: 50px;
+            display: none;
+            animation: fadeInOut 2s ease;
+        }
+
+        @keyframes fadeInOut {
+            0% { opacity: 0; }
+            20% { opacity: 1; }
+            80% { opacity: 1; }
+            100% { opacity: 0; }
+        }
+
+        /* Alarm and warning states */
+        .sensor.alarm {
+            border: 2px solid var(--error-color);
+            box-shadow: 0 0 15px rgba(255, 59, 48, 0.3);
+        }
+
+        .sensor.warning {
+            border: 2px solid var(--warning-color);
+        }
+
+        .sensor-data-item.alarm {
+            color: var(--error-color);
+            background-color: rgba(255, 59, 48, 0.1);
+            padding: 0.5rem;
+            border-radius: var(--input-border-radius);
+            font-weight: 600;
+        }
+
+        .sensor-data-item.warning {
+            color: var(--warning-color);
+            background-color: rgba(255, 149, 0, 0.1);
+            padding: 0.5rem;
+            border-radius: var(--input-border-radius);
+            font-weight: 600;
+        }
+
+        /* Spinner and animation */
         .spinner {
             border: 4px solid rgba(255, 255, 255, 0.3);
-            border-top: 4px solid #ffffff;
+            border-top: 4px solid var(--accent-primary);
             border-radius: 50%;
             width: 24px;
             height: 24px;
@@ -79,89 +291,124 @@
             animation-iteration-count: infinite;
             animation-name: slow-spin;
         }
+
         @keyframes slow-spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+
         .fast-spin {
             animation-name: fast-spin;
             animation-duration: 1s;
         }
+
         @keyframes fast-spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
-        .sensor.alarm { border: 2px solid red; }
-        .sensor.warning { border: 2px solid yellow; }
-        .alarm { color: red; }
-        .alarm { border: 2px solid red; }
-        .warning { border: 2px solid yellow; }
-        .hidden { display: none !important; }
-        .chekt-zone, .door-prop-toggle {
-            color: red;
-            font-size: 1.25rem;
-            font-weight: bold;
-            cursor: pointer;
-            display: block;
-            margin-top: 5px;
-        }
-        .chekt-zone-input {
-            width: 60px;
-            text-align: center;
-            font-size: 1.25rem;
-            font-weight: bold;
-            color: red;
-            background-color: transparent;
-            border: none;
-            border-bottom: 1px solid red;
-            margin-top: 5px;
-        }
-        .chekt-zone-input:focus { outline: none; }
-        .door-prop-input { width: auto; margin-top: 5px; }
-        .save-confirmation {
-            position: absolute;
-            bottom: 10px;
-            right: 10px;
-            color: #00ff00;
-            font-size: 0.9rem;
-            font-weight: bold;
-        }
-        .sensor-data-item.alarm { color: red; }
-        #debug-info {
-            background-color: #333;
-            padding: 10px;
-            border-radius: 5px;
-            margin-top: 20px;
-            display: none;
-        }
+
+        /* Debug section */
         #debug-toggle {
-            color: #aaa;
+            color: var(--text-secondary);
             text-decoration: underline;
             cursor: pointer;
-            margin-top: 10px;
             display: inline-block;
+            margin-top: 1rem;
+            font-size: 0.9rem;
+            opacity: 0.7;
+            transition: all 0.2s ease;
+        }
+
+        #debug-toggle:hover {
+            opacity: 1;
+        }
+
+        #debug-info {
+            background-color: var(--bg-card);
+            padding: 1.5rem;
+            border-radius: var(--card-border-radius);
+            margin-top: 1.5rem;
+            display: none;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            font-family: "SF Mono", "Menlo", "Monaco", "Courier New", monospace;
+            font-size: 0.85rem;
+            overflow-x: auto;
+        }
+
+        #debug-info h3 {
+            margin-bottom: 1rem;
+            color: var(--text-primary);
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+
+        #debug-content {
+            white-space: pre-wrap;
+            color: var(--accent-secondary);
+        }
+
+        /* Buttons */
+        .btn {
+            font-weight: 600;
+            padding: 0.75rem 1.5rem;
+            border-radius: var(--input-border-radius);
+            transition: all 0.3s ease;
+        }
+
+        .btn-secondary {
+            background-color: var(--bg-elevated);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: var(--text-primary);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .btn-secondary:hover {
+            background-color: var(--bg-elevated);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 10px rgba(0, 0, 0, 0.2);
+        }
+
+        /* Alert styling */
+        .alert-danger {
+            background-color: rgba(255, 59, 48, 0.1);
+            color: var(--error-color);
+            border: 1px solid rgba(255, 59, 48, 0.2);
+            border-left: 4px solid var(--error-color);
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            .sensor-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .status, .sensor-data {
+                padding: 1.5rem;
+            }
         }
     </style>
 </head>
 <body>
     <!-- Navigation Bar -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-        <a class="navbar-brand" href="#">YoLink to CHEKT</a>
-        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
-            <span class="navbar-toggler-icon"></span>
-        </button>
-        <div class="collapse navbar-collapse" id="navbarNav">
-            <ul class="navbar-nav">
-                <li class="nav-item active">
-                    <a class="nav-link" href="{{ url_for('index') }}">Dashboard</a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="{{ url_for('config') }}">Configuration</a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="{{ url_for('logout') }}">Logout</a>
-                </li>
-            </ul>
+        <div class="container">
+            <a class="navbar-brand" href="#">YoLink to CHEKT</a>
+            <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav">
+                    <li class="nav-item active">
+                        <a class="nav-link" href="{{ url_for('index') }}">Dashboard <span class="sr-only">(current)</span></a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('config') }}">Configuration</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('logout') }}">Logout</a>
+                    </li>
+                </ul>
+            </div>
         </div>
     </nav>
 
@@ -170,7 +417,7 @@
 
         <!-- Status Section -->
         <div class="status">
-            <h2>Status <span id="loading-spinner" class="spinner"></span></h2>
+            <h2><i class="fas fa-heart-pulse"></i> System Status <span id="loading-spinner" class="spinner"></span></h2>
             <div id="yolink-mqtt-status" class="status-item mb-2">
                 <img src="" alt="YoLink MQTT Status" id="yolink-mqtt-icon" class="hidden">
                 <span id="yolink-mqtt-message">Checking YoLink MQTT connection...</span>
@@ -183,19 +430,27 @@
                 <img src="" alt="Receiver Status" id="receiver-icon" class="hidden">
                 <span id="receiver-message">Checking Receiver status...</span>
             </div>
-            <button id="update-devices" class="btn btn-secondary mt-3">Update YoLink Devices</button>
-            <div id="refresh-spinner" class="spinner hidden" style="margin-left: 10px;"></div>
-            <span id="refresh-message" style="color: yellow; margin-left: 10px;"></span>
+            <div class="text-center mt-4">
+                <button id="update-devices" class="btn btn-secondary">
+                    <i class="fas fa-sync-alt"></i> Update YoLink Devices
+                </button>
+                <span id="refresh-spinner" class="spinner hidden"></span>
+                <span id="refresh-message" style="color: var(--warning-color); margin-left: 10px;"></span>
+            </div>
         </div>
 
         <!-- Sensor Data Section -->
         <div class="sensor-data">
-            <h2>Sensor Data</h2>
+            <h2><i class="fas fa-microchip"></i> Sensor Data</h2>
             <div id="sensor-list-error" class="alert alert-danger hidden">Error loading sensor data. Please check the console for details.</div>
             <div class="sensor-grid" id="sensor-list">
                 <!-- Sensors will be populated dynamically -->
                 <div class="sensor">
-                    <p class="sensor-name">Loading sensors...</p>
+                    <div class="sensor-name">Loading sensors...</div>
+                    <div class="sensor-data-item">
+                        <span><i class="fas fa-spinner fa-spin"></i> Status</span>
+                        <span>Connecting...</span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -251,7 +506,7 @@
             }
             const utcTime = moment.utc(isoDateString);
             const localTime = utcTime.tz(userTimezone);
-            return localTime.isValid() ? localTime.format("MM/DD/YYYY, h:mm:ss A") : "Invalid date";
+            return localTime.isValid() ? localTime.format("MMM D, YYYY, h:mm:ss A") : "Invalid date";
         }
 
         // Toggle spinner speed
@@ -270,6 +525,14 @@
                 : 'https://img.icons8.com/color/48/000000/cancel.png';
             $('#' + iconId).attr('src', icon).removeClass('hidden');
             $('#' + elementId).text(message);
+
+            // Add color indication to status item
+            const statusItem = $('#' + elementId).parent();
+            if (success) {
+                statusItem.css('border-left-color', 'var(--success-color)');
+            } else {
+                statusItem.css('border-left-color', 'var(--error-color)');
+            }
         }
 
         // Check status via AJAX
@@ -390,6 +653,25 @@
             return `${deviceAlarm} ${additionalClass}`.trim();
         }
 
+        // Get icon by sensor type
+        function getSensorTypeIcon(type) {
+            switch(type) {
+                case 'DoorSensor': return 'fa-door-open';
+                case 'MotionSensor': return 'fa-running';
+                case 'LeakSensor': return 'fa-tint';
+                case 'THSensor': return 'fa-thermometer-half';
+                case 'COSmokeSensor': return 'fa-smog';
+                case 'SmartRemoter': return 'fa-remote';
+                case 'PowerFailureAlarm': return 'fa-bolt';
+                case 'Siren': return 'fa-volume-up';
+                case 'VibrationSensor': return 'fa-wave-square';
+                case 'Switch': return 'fa-toggle-on';
+                case 'Lock':
+                case 'LockV2': return 'fa-lock';
+                default: return 'fa-microchip';
+            }
+        }
+
         // Device type capabilities
         const batteryDeviceTypes = ["DoorSensor", "MotionSensor", "LeakSensor", "THSensor", "COSmokeSensor", "SmartRemoter", "PowerFailureAlarm", "Siren", "Finger", "LockV2", "VibrationSensor", "Manipulator"];
         const tempHumidityDeviceTypes = ["THSensor"];
@@ -430,7 +712,7 @@
                 },
                 error: function(xhr, status, error) {
                     debugLog("Failed to get sensor data", { status, error, response: xhr.responseText });
-                    $('#sensor-list').html('<div class="sensor"><p class="sensor-name">Error loading sensor data</p></div>');
+                    $('#sensor-list').html('<div class="sensor alarm"><p class="sensor-name">Error loading sensor data</p></div>');
                     $('#sensor-list-error').removeClass('hidden');
                     toggleSpinnerSpeed(false);
                 }
@@ -466,6 +748,7 @@
                         const chektZone = (sensor.chekt_zone && sensor.chekt_zone !== 'N/A') ? sensor.chekt_zone : 'No Zone';
                         const batteryInfo = getBatteryInfo(sensor.battery, sensor.type);
                         const signalQuality = getSignalQuality(sensor.signal);
+                        const typeIcon = getSensorTypeIcon(sensor.type);
 
                         const signalHighlight = (sensor.signal && parseInt(sensor.signal) <= -115) ? 'warning' : '';
                         const batteryVal = parseInt(sensor.battery);
@@ -504,7 +787,7 @@
                         } else if (sensor.type === "Switch") {
                             displayState = (sensor.state === "open") ? "On" : (sensor.state === "closed") ? "Off" : sensor.state;
                         } else if (sensor.state) {
-                            displayState = sensor.state;
+                            displayState = sensor.state.charAt(0).toUpperCase() + sensor.state.slice(1);
                         }
 
                         const hasBattery = batteryDeviceTypes.includes(sensor.type);
@@ -512,65 +795,84 @@
 
                         const sensorHTML = `
                             <div class="sensor ${borderClass}" data-device-id="${sensor.deviceId}">
-                                <p class="sensor-name">${sensor.name || 'Unknown Device'}</p>
+                                <div style="position: absolute; top: 1rem; right: 1rem; font-size: 1.25rem; color: var(--accent-primary); opacity: 0.5;">
+                                    <i class="fas ${typeIcon}"></i>
+                                </div>
+                                <div class="sensor-name">${sensor.name || 'Unknown Device'}</div>
                                 <span class="chekt-zone" onclick="makeZoneEditable(this, '${sensor.deviceId}')">${chektZone}</span>
                                 ${
                                     sensor.type === 'DoorSensor'
                                     ? `<label for="door-prop-${sensor.deviceId}" class="door-prop-toggle">
-                                         Door Prop Alarm:
+                                         <i class="fas fa-bell"></i> Door Prop Alarm:
                                          <input type="checkbox" id="door-prop-${sensor.deviceId}"
                                                 ${sensor.door_prop_alarm ? "checked" : ""}
                                                 onchange="toggleDoorPropAlarm('${sensor.deviceId}', this.checked)">
                                        </label>
-                                       <small>(Alerts if door is propped open)</small>`
+                                       <small style="color: var(--text-secondary); margin-top: 0.5rem; display: block;">
+                                        (Alerts if door is propped open)
+                                       </small>`
                                     : ''
                                 }
                                 ${
                                     displayState !== "Unknown"
-                                    ? `<p class="sensor-data-item ${stateClass || (displayState.includes('Sensor Error!') ? 'alarm' : '')}">
-                                         State: ${displayState}
-                                       </p>`
+                                    ? `<div class="sensor-data-item ${stateClass || (displayState.includes('Sensor Error!') ? 'alarm' : '')}">
+                                         <span><i class="fas fa-info-circle"></i> State</span>
+                                         <span>${displayState}</span>
+                                       </div>`
                                     : ''
                                 }
                                 ${
                                     hasBattery
-                                    ? `<p class="sensor-data-item ${batteryHighlight}">
-                                         <i class="fas ${batteryInfo.iconClass} battery-icon"></i>
-                                         Battery: ${batteryInfo.percentage}
-                                       </p>`
+                                    ? `<div class="sensor-data-item ${batteryHighlight}">
+                                         <span><i class="fas ${batteryInfo.iconClass} battery-icon"></i> Battery</span>
+                                         <span>${batteryInfo.percentage}</span>
+                                       </div>`
                                     : ''
                                 }
                                 ${
                                     sensor.signal && sensor.signal !== "unknown"
-                                    ? `<p class="sensor-data-item ${signalHighlight}">
-                                         Signal: ${sensor.signal} dBm (${signalQuality})
-                                       </p>`
+                                    ? `<div class="sensor-data-item ${signalHighlight}">
+                                         <span><i class="fas fa-signal"></i> Signal</span>
+                                         <span>${sensor.signal} dBm (${signalQuality})</span>
+                                       </div>`
                                     : ''
                                 }
                                 ${
                                     hasTempHumidity && sensor.temperature && sensor.temperature !== "unknown"
-                                    ? `<p class="sensor-data-item">Temperature: ${sensor.temperature}°F</p>`
+                                    ? `<div class="sensor-data-item">
+                                         <span><i class="fas fa-thermometer-half"></i> Temperature</span>
+                                         <span>${sensor.temperature}°F</span>
+                                       </div>`
                                     : ''
                                 }
                                 ${
                                     hasTempHumidity && sensor.humidity && sensor.humidity !== "unknown"
-                                    ? `<p class="sensor-data-item">Humidity: ${sensor.humidity}%</p>`
+                                    ? `<div class="sensor-data-item">
+                                         <span><i class="fas fa-droplet"></i> Humidity</span>
+                                         <span>${sensor.humidity}%</span>
+                                       </div>`
                                     : ''
                                 }
                                 ${
                                     sensor.last_seen && sensor.last_seen !== 'never'
-                                    ? `<p class="sensor-data-item">Last Seen: ${lastSeenLocal}</p>`
+                                    ? `<div class="sensor-data-item">
+                                         <span><i class="fas fa-clock"></i> Last Seen</span>
+                                         <span>${lastSeenLocal}</span>
+                                       </div>`
                                     : ''
                                 }
                                 ${
                                     sensor.alarms && sensor.alarms.state && typeof sensor.alarms.state === 'object' &&
                                     Object.values(sensor.alarms.state).some(v => v === true)
-                                    ? `<p class="sensor-data-item alarm">
-                                         Alarm: ${JSON.stringify(sensor.alarms.state)}
-                                       </p>`
+                                    ? `<div class="sensor-data-item alarm">
+                                         <span><i class="fas fa-exclamation-triangle"></i> Alarm</span>
+                                         <span>${JSON.stringify(sensor.alarms.state)}</span>
+                                       </div>`
                                     : ''
                                 }
-                                <span class="save-confirmation" id="save-confirmation-${sensor.deviceId}" style="display: none;">Saved!</span>
+                                <span class="save-confirmation" id="save-confirmation-${sensor.deviceId}">
+                                  <i class="fas fa-check-circle"></i> Saved!
+                                </span>
                             </div>
                         `;
                         sensorList.append(sensorHTML);
@@ -579,7 +881,10 @@
                         debugLog("Error rendering sensor", { sensor, error: e.toString() });
                         sensorList.append(`<div class="sensor alarm">
                             <p class="sensor-name">${sensor.name || 'Error rendering sensor'}</p>
-                            <p class="sensor-data-item alarm">Error rendering sensor data</p>
+                            <p class="sensor-data-item alarm">
+                                <span><i class="fas fa-exclamation-circle"></i> Error</span>
+                                <span>Failed to render sensor data</span>
+                            </p>
                         </div>`);
                     }
                 });
@@ -706,6 +1011,9 @@
         $('#update-devices').click(function() {
             $('#refresh-spinner').removeClass('hidden');
             $('#refresh-message').text('Updating YoLink devices...');
+            $('#update-devices').prop('disabled', true);
+            $('#update-devices').html('<i class="fas fa-spinner fa-spin"></i> Updating...');
+
             debugLog("Refreshing YoLink devices");
 
             $.ajax({
@@ -713,6 +1021,9 @@
                 type: 'GET',
                 success: function(response) {
                     $('#refresh-spinner').addClass('hidden');
+                    $('#update-devices').prop('disabled', false);
+                    $('#update-devices').html('<i class="fas fa-sync-alt"></i> Update YoLink Devices');
+
                     $('#refresh-message').text(
                         response.status === "success"
                             ? 'YoLink devices updated successfully!'
@@ -720,11 +1031,24 @@
                     );
                     debugLog("Device refresh response", response);
                     updateSensorData();
+
+                    // Clear the message after 5 seconds
+                    setTimeout(() => {
+                        $('#refresh-message').text('');
+                    }, 5000);
                 },
                 error: function(xhr, status, error) {
                     $('#refresh-spinner').addClass('hidden');
+                    $('#update-devices').prop('disabled', false);
+                    $('#update-devices').html('<i class="fas fa-sync-alt"></i> Update YoLink Devices');
+
                     $('#refresh-message').text('Failed to update YoLink devices.');
                     debugLog("Device refresh failed", { status, error, response: xhr.responseText });
+
+                    // Clear the message after 5 seconds
+                    setTimeout(() => {
+                        $('#refresh-message').text('');
+                    }, 5000);
                 }
             });
         });
