@@ -77,20 +77,23 @@ update_docker_compose_ip() {
         exit 1
     fi
 
+    tmpfile=$(mktemp) || { log "Error: Could not create temporary file"; exit 1; }
+
     if grep -q "TARGET_IP=" "$DOCKER_COMPOSE_FILE"; then
-        # Replace the entire line that contains TARGET_IP
-        sed -i'' "/TARGET_IP=/c\TARGET_IP=$host_ip" "$DOCKER_COMPOSE_FILE" || {
+        sed "s|TARGET_IP=.*|TARGET_IP=$host_ip|" "$DOCKER_COMPOSE_FILE" > "$tmpfile" || {
             log "Error: Failed to update TARGET_IP in docker-compose.yml"
+            rm -f "$tmpfile"
             exit 1
         }
     else
-        # Append the TARGET_IP line immediately after the environment: line
-        sed -i'' '/environment:/a\
-      - TARGET_IP='"$host_ip" "$DOCKER_COMPOSE_FILE" || {
+        sed "/environment:/a      - TARGET_IP=$host_ip" "$DOCKER_COMPOSE_FILE" > "$tmpfile" || {
             log "Error: Failed to append TARGET_IP to docker-compose.yml"
+            rm -f "$tmpfile"
             exit 1
         }
     fi
+
+    mv "$tmpfile" "$DOCKER_COMPOSE_FILE" || { log "Error: Failed to move temporary file to $DOCKER_COMPOSE_FILE"; exit 1; }
     log "Updated docker-compose.yml with TARGET_IP=$host_ip"
 }
 
