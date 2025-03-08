@@ -78,11 +78,13 @@ update_docker_compose_ip() {
     fi
 
     if grep -q "TARGET_IP=" "$DOCKER_COMPOSE_FILE"; then
-        sed -i'' 's|TARGET_IP=.*|TARGET_IP='"$host_ip"'|' "$DOCKER_COMPOSE_FILE" || {
+        # Replace the entire line that contains TARGET_IP
+        sed -i'' "/TARGET_IP=/c\TARGET_IP=$host_ip" "$DOCKER_COMPOSE_FILE" || {
             log "Error: Failed to update TARGET_IP in docker-compose.yml"
             exit 1
         }
     else
+        # Append the TARGET_IP line immediately after the environment: line
         sed -i'' '/environment:/a\
       - TARGET_IP='"$host_ip" "$DOCKER_COMPOSE_FILE" || {
             log "Error: Failed to append TARGET_IP to docker-compose.yml"
@@ -91,7 +93,6 @@ update_docker_compose_ip() {
     fi
     log "Updated docker-compose.yml with TARGET_IP=$host_ip"
 }
-
 
 # Download with retry logic
 download_with_retry() {
