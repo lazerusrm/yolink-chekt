@@ -4,9 +4,11 @@ import threading
 import logging
 import time
 import json
-from flask import Blueprint, request, jsonify
+from flask import Flask, Blueprint, request, jsonify
 
 # Setup logging
+logging.basicConfig(level=logging.DEBUG,
+                    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 # Global configuration with environment variable overrides
@@ -25,6 +27,9 @@ modbus_proxy_bp = Blueprint('modbus_proxy', __name__)
 server_socket = None
 proxy_thread = None
 running = False
+
+# Create the Flask app
+app = Flask(__name__)
 
 
 def forward_data(source, destination, description):
@@ -204,6 +209,7 @@ def configure_proxy():
     """Configure the Modbus proxy via API"""
     try:
         data = request.get_json()
+        logger.debug(f"Received proxy configuration: {data}")
 
         if not data:
             return jsonify({"status": "error", "message": "Invalid request data"}), 400
@@ -271,6 +277,35 @@ def get_proxy_status():
     })
 
 
+# Simple direct endpoints for backward compatibility
+@modbus_proxy_bp.route('/configure', methods=['POST'])
+def simple_configure_proxy():
+    """Simple configure endpoint for backward compatibility"""
+    logger.info("Received configuration through /configure endpoint")
+    return configure_proxy()
+
+
+@modbus_proxy_bp.route('/status', methods=['GET'])
+def simple_get_status():
+    """Simple status endpoint for backward compatibility"""
+    logger.info("Status requested through /status endpoint")
+    return get_proxy_status()
+
+
+@modbus_proxy_bp.route('/healthcheck', methods=['GET'])
+def healthcheck():
+    """Simple health check endpoint"""
+    return jsonify({
+        "status": "healthy",
+        "timestamp": time.time(),
+        "proxy_running": proxy_thread is not None and proxy_thread.is_alive()
+    })
+
+
+# Register the blueprint
+app.register_blueprint(modbus_proxy_bp)
+
+
 # Initialize the proxy when the module is imported
 def init_proxy():
     """Initialize the proxy service"""
@@ -280,15 +315,13 @@ def init_proxy():
 
 # Ensures we only initialize once
 if __name__ == "__main__":
-    # Configure logging
-    logging.basicConfig(level=logging.DEBUG)
-
-    # Start proxy
-    start_proxy()
-
-    # Keep running
     try:
-        while True:
-            time.sleep(1)
+        # Start proxy
+        start_proxy()
+
+        # Run the Flask app for the API
+        app.run(host='0.0.0.0', port=1502, threaded=True)
     except KeyboardInterrupt:
         stop_proxy()
+    except Exception as e:
+        logger.error(f"Error starting proxy: {e}")

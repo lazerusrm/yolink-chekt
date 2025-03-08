@@ -70,12 +70,8 @@ from yolink_mqtt import connected as yolink_connected
 from monitor_mqtt import connected as monitor_connected
 from yolink_mqtt import run_mqtt_client
 from monitor_mqtt import run_monitor_mqtt
-
-# Import modbus_relay at app startup to ensure it's available
-try:
-    import modbus_relay
-except ImportError:
-    logging.warning("Modbus relay module not available. Modbus functionality will be disabled.")
+import modbus_relay
+import traceback
 
 # Logging Setup
 handler = RotatingFileHandler("/app/logs/app.log", maxBytes=10*1024*1024, backupCount=5)
@@ -108,6 +104,22 @@ def load_user(username):
     if get_user_data(username):
         return User(username)
     return None
+
+def init_modbus():
+    """Initialize Modbus relay service if enabled"""
+    try:
+        config = load_config()
+        if config.get("modbus", {}).get("enabled", False):
+            logger.info("Initializing Modbus relay connection")
+            threading.Thread(target=modbus_relay.initialize, daemon=True).start()
+            return True
+        else:
+            logger.info("Modbus relay is disabled in configuration")
+            return False
+    except Exception as e:
+        logger.error(f"Failed to initialize Modbus relay: {e}")
+        traceback.print_exc()
+        return False
 
 def is_system_configured():
     """Check if the system has been configured with necessary credentials"""
@@ -144,8 +156,7 @@ def start_services():
         if config.get("modbus", {}).get("enabled", False):
             logger.info("Modbus relay enabled, initializing connection")
             try:
-                import modbus_relay
-                threading.Thread(target=modbus_relay.initialize, daemon=True).start()
+                init_modbus()
             except Exception as e:
                 logger.error(f"Failed to initialize Modbus relay: {e}")
     else:
@@ -766,12 +777,25 @@ def check_modbus_status():
     """Check if the Modbus relay is reachable"""
     import modbus_relay
 
-    is_connected = modbus_relay.ensure_connection()
+    config = load_config()
+    if not config.get("modbus", {}).get("enabled", False):
+        return jsonify({
+            "status": "warning",
+            "message": "Modbus relay is disabled in configuration."
+        })
 
-    return jsonify({
-        "status": "success" if is_connected else "error",
-        "message": "Modbus relay connection is active." if is_connected else "Modbus relay connection is inactive."
-    })
+    try:
+        is_connected = modbus_relay.ensure_connection()
+        return jsonify({
+            "status": "success" if is_connected else "error",
+            "message": "Modbus relay connection is active." if is_connected else "Modbus relay connection is inactive."
+        })
+    except Exception as e:
+        logger.error(f"Error checking Modbus status: {e}")
+        return jsonify({
+            "status": "error",
+            "message": f"Error checking Modbus status: {str(e)}"
+        })
 
 
 @app.route('/test_relay_channel', methods=['POST'])
@@ -789,17 +813,34 @@ def test_relay_channel():
     except ValueError:
         return jsonify({"status": "error", "message": "Channel must be a number"}), 400
 
-    import modbus_relay
-    if not modbus_relay.ensure_connection():
-        return jsonify({"status": "error", "message": "Cannot connect to Modbus relay"}), 500
+    config = load_config()
+    if not config.get("modbus", {}).get("enabled", False):
+        return jsonify({"status": "error", "message": "Modbus relay is disabled in configuration"}), 400
 
-    # Pulse the relay
-    success = modbus_relay.trigger_relay(channel, True, 1)
+    try:
+        import modbus_relay
+        if not modbus_relay.ensure_connection():
+            return jsonify({"status": "error", "message": "Cannot connect to Modbus relay"}), 500
 
-    if success:
-        return jsonify({"status": "success", "message": f"Relay channel {channel} pulsed successfully"})
-    else:
-        return jsonify({"status": "error", "message": f"Failed to pulse relay channel {channel}"}), 500
+        # Test both on and off in sequence
+        logger.info(f"Testing relay channel {channel}")
+
+        # First turn on
+        on_success = modbus_relay.trigger_relay(channel, True, 1.0)
+        if not on_success:
+            return jsonify({"status": "error", "message": f"Failed to turn on relay channel {channel}"}), 500
+
+        return jsonify({
+            "status": "success",
+            "message": f"Relay channel {channel} pulsed successfully"
+        })
+    except Exception as e:
+        logger.error(f"Error testing relay channel {channel}: {e}")
+        traceback.print_exc()
+        return jsonify({
+            "status": "error",
+            "message": f"Error testing relay: {str(e)}"
+        }), 500
 
 
 @app.route('/test_modbus', methods=['GET'])
@@ -820,70 +861,103 @@ def test_modbus():
 
     results = {"status": "checking", "tests": []}
 
-    # Test 1: Basic socket connectivity
+    # Test 1: Check proxy health
     try:
-        import socket
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.settimeout(3)
-        socket_result = s.connect_ex((modbus_ip, modbus_port))
-        s.close()
+        import requests
+        try:
+            response = requests.get("http://modbus-proxy:1502/healthcheck", timeout=2)
+            if response.status_code == 200:
+                data = response.json()
+                proxy_healthy = data.get("status") == "healthy" and data.get("proxy_running", False)
+            else:
+                proxy_healthy = False
 
-        results["tests"].append({
-            "name": "TCP Socket Connection",
-            "success": socket_result == 0,
-            "message": f"TCP port {modbus_port} is {'open' if socket_result == 0 else 'closed or filtered'}"
-        })
+            results["tests"].append({
+                "name": "Modbus Proxy Health",
+                "success": proxy_healthy,
+                "message": f"Proxy service is {'healthy' if proxy_healthy else 'unhealthy'}"
+            })
+        except Exception as e:
+            results["tests"].append({
+                "name": "Modbus Proxy Health",
+                "success": False,
+                "message": f"Failed to reach proxy health check: {str(e)}"
+            })
     except Exception as e:
         results["tests"].append({
-            "name": "TCP Socket Connection",
+            "name": "Modbus Proxy Health",
             "success": False,
-            "message": f"Socket test error: {str(e)}"
+            "message": f"Error testing proxy health: {str(e)}"
         })
 
-    # Test 2: Full Modbus connectivity
+    # Test 2: Test proxy configuration
+    try:
+        import modbus_relay
+        try:
+            config_result = modbus_relay.configure_proxy(modbus_ip, modbus_port)
+            results["tests"].append({
+                "name": "Proxy Configuration",
+                "success": config_result,
+                "message": f"Proxy configuration {'successful' if config_result else 'failed'}"
+            })
+        except Exception as e:
+            results["tests"].append({
+                "name": "Proxy Configuration",
+                "success": False,
+                "message": f"Error configuring proxy: {str(e)}"
+            })
+    except Exception as e:
+        results["tests"].append({
+            "name": "Proxy Configuration",
+            "success": False,
+            "message": f"Error importing modbus_relay: {str(e)}"
+        })
+
+    # Test 3: Full Modbus connectivity
     try:
         if hasattr(modbus_relay, 'ensure_connection'):
             connection_result = modbus_relay.ensure_connection()
             results["tests"].append({
-                "name": "Modbus Protocol",
+                "name": "Modbus Connection",
                 "success": connection_result,
                 "message": f"Modbus connection {'successful' if connection_result else 'failed'}"
             })
         else:
             results["tests"].append({
-                "name": "Modbus Protocol",
+                "name": "Modbus Connection",
                 "success": False,
                 "message": "Modbus relay module not properly initialized"
             })
     except Exception as e:
         results["tests"].append({
-            "name": "Modbus Protocol",
+            "name": "Modbus Connection",
             "success": False,
-            "message": f"Modbus test error: {str(e)}"
+            "message": f"Modbus connection test error: {str(e)}"
         })
 
-    # Test 3: Try a single relay operation
-    try:
-        if hasattr(modbus_relay, 'trigger_relay'):
-            # Use the first relay for testing
-            relay_result = modbus_relay.trigger_relay(1, True, 0.5)
-            results["tests"].append({
-                "name": "Relay Operation",
-                "success": relay_result,
-                "message": f"Relay trigger {'successful' if relay_result else 'failed'}"
-            })
-        else:
+    # Test 4: Try a single relay operation if connection succeeded
+    if any(test["name"] == "Modbus Connection" and test["success"] for test in results["tests"]):
+        try:
+            if hasattr(modbus_relay, 'trigger_relay'):
+                # Use the first relay for testing
+                relay_result = modbus_relay.trigger_relay(1, True, 0.5)
+                results["tests"].append({
+                    "name": "Relay Operation",
+                    "success": relay_result,
+                    "message": f"Relay trigger {'successful' if relay_result else 'failed'}"
+                })
+            else:
+                results["tests"].append({
+                    "name": "Relay Operation",
+                    "success": False,
+                    "message": "Modbus relay trigger function not available"
+                })
+        except Exception as e:
             results["tests"].append({
                 "name": "Relay Operation",
                 "success": False,
-                "message": "Modbus relay trigger function not available"
+                "message": f"Relay test error: {str(e)}"
             })
-    except Exception as e:
-        results["tests"].append({
-            "name": "Relay Operation",
-            "success": False,
-            "message": f"Relay test error: {str(e)}"
-        })
 
     # Set overall status
     success_count = sum(1 for test in results["tests"] if test["success"])

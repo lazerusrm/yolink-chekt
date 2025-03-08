@@ -2,7 +2,9 @@ import logging
 from pymodbus.client import ModbusTcpClient
 import time
 import threading
+import requests
 from pymodbus.exceptions import ModbusException, ConnectionException
+from requests.exceptions import RequestException, ConnectionError
 from config import load_config
 
 logger = logging.getLogger(__name__)
@@ -10,33 +12,101 @@ logger = logging.getLogger(__name__)
 # Global client to reuse connection
 client = None
 connected = False
+last_connection_attempt = 0
+connection_retry_interval = 10  # seconds
+
 
 def configure_proxy(target_ip, target_port):
-    """Configure the Modbus proxy to connect to the specified target"""
-    import requests
+    """
+    Configure the Modbus proxy to connect to the specified target
 
-    # Proxy configuration API
-    url = "http://modbus-proxy:1502/api/modbus-proxy/configure"  # Fixed URL path
+    Args:
+        target_ip (str): The IP address of the target Modbus device
+        target_port (int): The port number of the target Modbus device
 
+    Returns:
+        bool: True if configuration was successful, False otherwise
+    """
     # Configuration data
     data = {
         "target_ip": target_ip,
         "target_port": target_port
     }
 
-    # Send configuration to proxy
-    response = requests.post(url, json=data, timeout=5)
+    # Try multiple endpoints for resilience
+    endpoints = [
+        "/api/modbus-proxy/configure",  # Primary API endpoint
+        "/configure"  # Fallback endpoint
+    ]
 
-    # Check if configuration was successful
-    if response.status_code != 200:
-        raise Exception(f"Proxy configuration failed: {response.text}")
+    # Base URL for the proxy
+    base_url = "http://modbus-proxy:1502"
 
-    return True
+    for endpoint in endpoints:
+        url = f"{base_url}{endpoint}"
+        try:
+            logger.debug(f"Attempting to configure modbus proxy at {url}")
+            response = requests.post(
+                url,
+                json=data,
+                timeout=5,
+                headers={"Content-Type": "application/json"}
+            )
+
+            if response.status_code == 200:
+                logger.info(f"Successfully configured modbus proxy at {url}")
+                return True
+            else:
+                logger.warning(f"Failed to configure modbus proxy at {url}: {response.status_code} - {response.text}")
+        except ConnectionError as e:
+            logger.warning(f"Connection error to {url}: {e}")
+        except RequestException as e:
+            logger.error(f"Request error to {url}: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error configuring modbus proxy at {url}: {e}")
+
+    # All attempts failed
+    logger.error(f"All attempts to configure modbus proxy failed")
+    return False
+
+
+def check_proxy_health():
+    """
+    Check if the Modbus proxy is healthy
+
+    Returns:
+        bool: True if proxy is healthy, False otherwise
+    """
+    try:
+        response = requests.get("http://modbus-proxy:1502/healthcheck", timeout=2)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get("status") == "healthy" and data.get("proxy_running", False):
+                logger.debug("Modbus proxy is healthy")
+                return True
+        logger.warning(f"Modbus proxy health check failed: {response.status_code}")
+        return False
+    except Exception as e:
+        logger.warning(f"Modbus proxy health check error: {e}")
+        return False
 
 
 def ensure_connection():
-    """Ensures that we have a valid connection to the Modbus relay."""
-    global client, connected
+    """
+    Ensures that we have a valid connection to the Modbus relay.
+
+    Returns:
+        bool: True if connection is valid, False otherwise
+    """
+    global client, connected, last_connection_attempt
+
+    # Rate limit connection attempts
+    current_time = time.time()
+    if current_time - last_connection_attempt < connection_retry_interval and not connected:
+        logger.debug("Connection attempt too soon after previous failure, skipping")
+        return False
+
+    last_connection_attempt = current_time
 
     # Get configuration
     config = load_config()
@@ -57,49 +127,45 @@ def ensure_connection():
 
     modbus_port = modbus_config.get('port', 502)
 
+    # First check if proxy is healthy
+    if not check_proxy_health():
+        logger.warning("Modbus proxy is not healthy")
+        connected = False
+        return False
+
     # Configure the proxy with the target device information
-    configure_proxy(modbus_ip, modbus_port)  # This uses http://modbus-proxy:1502/configure
+    if not configure_proxy(modbus_ip, modbus_port):
+        logger.error("Failed to configure modbus proxy")
+        connected = False
+        return False
 
     # Connect to the proxy service
     try:
+        # Close any existing client
         if client:
             try:
                 client.close()
             except Exception as e:
                 logger.warning(f"Error closing existing Modbus connection: {e}")
 
-        logger.info(f"Connecting to Modbus proxy for device at {modbus_ip}:{modbus_port}")
+        logger.info(f"Connecting to Modbus relay via proxy for device at {modbus_ip}:{modbus_port}")
         client = ModbusTcpClient(
             host="modbus-proxy",  # Connect to the proxy service in the Docker network
-            port=1502,           # Proxy listen port
+            port=1502,  # Proxy listen port
             timeout=10
         )
 
         # Attempt connection
         connected = client.connect()
         if connected:
+            # Validate connection with a test read
             try:
                 result = client.read_coils(0, 1)
-                if result and not result.isError():
+                if hasattr(result, 'function_code') and not result.isError():
                     logger.info(f"Successfully connected to Modbus device via proxy")
                     return True
                 else:
-                    logger.warning(f"Connected to proxy but Modbus read test failed")
-                    connected = False
-                    return False
-            except Exception as e:
-                logger.error(f"Error validating Modbus connection: {e}")
-                connected = False
-                return False
-
-            # Validate connection
-            try:
-                result = client.read_coils(0, 1)
-                if result and not result.isError():
-                    logger.info("Modbus connection validated successfully")
-                    return True
-                else:
-                    logger.warning(f"Modbus connection test failed: {result}")
+                    logger.warning(f"Modbus read test failed: {result}")
                     connected = False
                     return False
             except Exception as e:
@@ -117,7 +183,7 @@ def ensure_connection():
 
 def trigger_relay(channel, state=True, pulse_seconds=None, follower_mode=None):
     """
-    Trigger a relay channel with improved reliability for Docker environments.
+    Trigger a relay channel with improved reliability.
 
     Args:
         channel (int): The relay channel number (1-16)
@@ -130,7 +196,7 @@ def trigger_relay(channel, state=True, pulse_seconds=None, follower_mode=None):
     """
     try:
         # Ensure connection with retries
-        connection_attempts = 2
+        connection_attempts = 3
         for attempt in range(connection_attempts):
             if ensure_connection():
                 break
@@ -214,6 +280,7 @@ def trigger_relay(channel, state=True, pulse_seconds=None, follower_mode=None):
                 try:
                     from db import redis_client
                     redis_client.set(f"relay_state:{channel}", "1" if state else "0")
+                    redis_client.set(f"relay_state_timestamp:{channel}", str(time.time()))
                 except Exception as e:
                     logger.error(f"Failed to store relay state in Redis: {e}")
 
@@ -329,7 +396,25 @@ def read_all_relay_states():
 
 
 def initialize():
-    """Initialize the Modbus relay connection."""
+    """Initialize the Modbus relay connection with health monitoring."""
+    global connection_retry_interval
+
+    # Start a background thread to periodically check connection health
+    def health_monitor():
+        while True:
+            try:
+                if not connected and ensure_connection():
+                    logger.info("Modbus connection restored by health monitor")
+                time.sleep(30)  # Check every 30 seconds
+            except Exception as e:
+                logger.error(f"Error in Modbus health monitor: {e}")
+                time.sleep(60)  # Longer delay after error
+
+    # Start the health monitor thread
+    monitor_thread = threading.Thread(target=health_monitor, daemon=True)
+    monitor_thread.start()
+
+    # Attempt initial connection
     return ensure_connection()
 
 
@@ -343,8 +428,6 @@ if __name__ == "__main__":
     # Test triggering relays
     for i in range(1, 9):
         trigger_relay(i, True)
-        import time
-
         time.sleep(0.5)
         trigger_relay(i, False)
         time.sleep(0.5)
