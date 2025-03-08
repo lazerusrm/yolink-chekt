@@ -5,7 +5,7 @@ import requests
 from config import load_config
 import traceback
 
-# Import for PyModbus 3.x
+# Import for PyModbus 3.x (minimal imports to avoid version issues)
 from pymodbus.client import ModbusTcpClient
 from pymodbus.exceptions import ModbusException, ConnectionException
 
@@ -165,7 +165,7 @@ def ensure_connection():
 
         logger.info(f"Connecting to Modbus relay via proxy for device at {modbus_ip}:{modbus_port}")
 
-        # Create client - no slave parameter for this version of PyModbus
+        # Create client - no slave parameter
         client = ModbusTcpClient(
             host="modbus-proxy",  # Connect to the proxy service in the Docker network
             port=1502,  # Proxy listen port
@@ -177,37 +177,35 @@ def ensure_connection():
         if connected:
             # Validate connection with a test read
             try:
-                # For PyModbus 3.x we need to use a transaction or set a default slave
-                from pymodbus.payload import BinaryPayloadBuilder
-                from pymodbus.constants import Endian
-                from pymodbus.transaction import ModbusRtuFramer
-
-                # Try unit parameter in the actual read call
+                # Try reading with unit parameter
+                # Note: We're wrapping this in try/except since different
+                # versions of PyModbus have different APIs
                 try:
+                    logger.debug(f"Attempting to read coils with unit parameter: {unit_id}")
                     result = client.read_coils(0, 1, unit=unit_id)
                     if hasattr(result, 'bits'):
-                        logger.info(f"Successfully connected to Modbus device via proxy using unit parameter")
+                        logger.info(f"Successfully connected to Modbus device via proxy (unit parameter works)")
                         return True
                 except TypeError:
-                    # If unit parameter doesn't work, try different methods
-                    logger.warning("unit parameter not supported in read_coils, trying alternatives")
+                    # If unit parameter fails, try setting client property
+                    logger.warning("Unit parameter not supported in read_coils")
 
-                # Try using client properties if available
-                if hasattr(client, 'unit_id'):
-                    client.unit_id = unit_id
-                elif hasattr(client, 'slave'):
-                    client.slave = unit_id
+                    if hasattr(client, 'unit_id'):
+                        logger.debug("Setting client.unit_id property")
+                        client.unit_id = unit_id
 
-                # Try reading without unit parameter after setting properties
-                result = client.read_coils(0, 1)
+                    # Try plain read without unit parameter
+                    logger.debug("Attempting to read coils without unit parameter")
+                    result = client.read_coils(0, 1)
 
-                if hasattr(result, 'bits'):
-                    logger.info(f"Successfully connected to Modbus device via proxy")
-                    return True
-                else:
-                    logger.warning(f"Modbus read test failed: {result}")
-                    connected = False
-                    return False
+                    if hasattr(result, 'bits'):
+                        logger.info(f"Successfully connected to Modbus device via proxy (no unit parameter)")
+                        return True
+                    else:
+                        logger.warning(f"Modbus read test failed: {result}")
+                        connected = False
+                        return False
+
             except Exception as e:
                 logger.error(f"Error validating Modbus connection: {e}")
                 traceback.print_exc()
@@ -456,7 +454,7 @@ def initialize():
     """Initialize the Modbus relay connection with health monitoring."""
     global connection_retry_interval
 
-    logger.info("Initializing Modbus relay with PyModbus 3.x API (alternative method)")
+    logger.info("Initializing Modbus relay with minimal PyModbus 3.x implementation")
 
     # Start a background thread to periodically check connection health
     def health_monitor():
