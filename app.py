@@ -45,8 +45,6 @@ import os
 import threading
 from time import sleep
 import logging
-from config import config_data
-from yolink_mqtt import run_mqtt_client
 import requests
 import json
 from flask import Flask, request, render_template, flash, redirect, url_for, session, jsonify
@@ -63,6 +61,7 @@ from datetime import datetime, timedelta
 from logging.handlers import RotatingFileHandler
 from flask_apscheduler import APScheduler
 
+# Import configuration functions and constants
 from config import load_config, save_config, get_user_data, save_user_data, SUPPORTED_TIMEZONES
 from db import redis_client, ensure_redis_connection
 from device_manager import refresh_yolink_devices, get_all_devices

@@ -2,9 +2,10 @@ import os
 import threading
 from time import sleep
 import logging
-from config import config_data
-from yolink_mqtt import run_mqtt_client
 import requests
+
+# Import the config functions instead of config_data
+from config import load_config
 
 log_file_path = '/app/logs/application.log'  # Adjust based on your logging setup
 
@@ -27,7 +28,9 @@ def display_logs():
 def test_yolink_api():
     """Test the YoLink API connection"""
     print("\nRunning YoLink API Test...\n")
-    yolink_config = config_data.get('yolink', {})
+    # Get the config data using load_config() function
+    config = load_config()
+    yolink_config = config.get('yolink', {})
     url = f"{yolink_config['url']}/api/v3/devices"
     headers = {'Authorization': f"Bearer {yolink_config['token']}"}
     try:
@@ -41,7 +44,9 @@ def test_yolink_api():
 def test_chekt_api():
     """Test the CHEKT API connection"""
     print("\nRunning CHEKT API Test...\n")
-    chekt_config = config_data.get('chekt', {})
+    # Get the config data using load_config() function
+    config = load_config()
+    chekt_config = config.get('chekt', {})
     url = "https://api.chekt.com/v1/test"  # Replace with actual CHEKT API endpoint
     headers = {'Authorization': f"Bearer {chekt_config['api_token']}"}
     try:
@@ -56,6 +61,7 @@ def test_mqtt():
     """Test MQTT connection"""
     print("\nAttempting MQTT Connection...\n")
     try:
+        from yolink_mqtt import run_mqtt_client
         mqtt_thread = threading.Thread(target=run_mqtt_client, daemon=True)
         mqtt_thread.start()
         sleep(2)  # Give it time to connect
