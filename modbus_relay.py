@@ -11,106 +11,110 @@ logger = logging.getLogger(__name__)
 client = None
 connected = False
 
+def configure_proxy(target_ip, target_port):
+    """Configure the Modbus proxy to connect to the specified target"""
+    import requests
+
+    # Proxy configuration API
+    url = "http://modbus-proxy:1502/configure"
+
+    # Configuration data
+    data = {
+        "target_ip": target_ip,
+        "target_port": target_port
+    }
+
+    # Send configuration to proxy
+    response = requests.post(url, json=data, timeout=5)
+
+    # Check if configuration was successful
+    if response.status_code != 200:
+        raise Exception(f"Proxy configuration failed: {response.text}")
+
+    return True
+
 
 def ensure_connection():
-    """Ensures that we have a valid connection to the Modbus relay with improved Docker networking handling."""
+    """Ensures that we have a valid connection to the Modbus relay."""
     global client, connected
 
+    # Get configuration
     config = load_config()
     modbus_config = config.get('modbus', {})
 
-    # Check if Modbus is enabled
+    # Early check if Modbus is enabled
     if not modbus_config.get('enabled', False):
-        logger.info("Modbus relay not enabled in configuration")
+        logger.info("Modbus relay is not enabled in configuration")
         connected = False
         return False
 
-    # Get IP with validation
+    # Get connection details
     modbus_ip = modbus_config.get('ip')
-    if not modbus_ip or not modbus_ip.strip():
+    if not modbus_ip or modbus_ip.strip() == "":
         logger.warning("Modbus relay IP not configured")
         connected = False
         return False
 
-    # Set default port
-    modbus_port = int(modbus_config.get('port', 502))
+    modbus_port = modbus_config.get('port', 502)
 
-    # Check if current connection is still valid
-    if client and connected:
-        try:
-            # Test with a simple read
-            result = client.read_coils(0, 1)
-            if result and not result.isError():
-                return True
-        except Exception:
-            # Connection lost, will reconnect
-            logger.info("Modbus connection test failed, reconnecting...")
-            connected = False
+    # Configure the proxy with the target device information
+    configure_modbus_proxy(modbus_ip, modbus_port)
 
-    # Close existing connection if any
-    if client:
-        try:
-            client.close()
-        except Exception:
-            pass
-
-    # Connect with retry logic
-    retry_count = 3
-    retry_delay = 1  # seconds
-
-    for attempt in range(retry_count):
-        try:
-            logger.info(
-                f"Connecting to Modbus relay at {modbus_ip}:{modbus_port} (attempt {attempt + 1}/{retry_count})")
-
-            # Create client with longer timeout for Docker networking
-            client = ModbusTcpClient(
-                host=modbus_ip,
-                port=modbus_port,
-                timeout=5 * (attempt + 1)  # Increase timeout with each retry
-            )
-
-            # Connect
-            connected = client.connect()
-            if not connected:
-                logger.warning(f"Failed to connect on attempt {attempt + 1}")
-                if attempt < retry_count - 1:
-                    time.sleep(retry_delay)
-                    retry_delay *= 2  # Exponential backoff
-                continue
-
-            # Verify connection with read test
-            logger.info(f"Connected, verifying connection with read test")
-            result = client.read_coils(0, 1)
-            if not result or result.isError():
-                logger.warning(f"Connected but read test failed, error: {result if result else 'None'}")
-                connected = False
+    # Now connect to the local proxy instead of the remote device
+    try:
+        # Close any existing connection
+        if client:
+            try:
                 client.close()
-                if attempt < retry_count - 1:
-                    time.sleep(retry_delay)
-                    retry_delay *= 2
-                continue
+            except Exception as e:
+                logger.warning(f"Error closing existing Modbus connection: {e}")
 
-            # Success!
-            logger.info(f"Successfully connected and verified Modbus relay at {modbus_ip}:{modbus_port}")
-            return True
+        # Connect to the local proxy
+        logger.info(f"Connecting to Modbus proxy for device at {modbus_ip}:{modbus_port}")
+        client = ModbusTcpClient(
+            host="localhost",  # Connect to the local proxy
+            port=1502,  # Use the proxy port
+            timeout=10
+        )
 
-        except ConnectionException as e:
-            logger.error(f"Modbus connection error on attempt {attempt + 1}: {e}")
-            connected = False
-            if attempt < retry_count - 1:
-                time.sleep(retry_delay)
-                retry_delay *= 2
-        except Exception as e:
-            logger.error(f"Unexpected error on connection attempt {attempt + 1}: {e}")
-            connected = False
-            if attempt < retry_count - 1:
-                time.sleep(retry_delay)
-                retry_delay *= 2
+        # Attempt connection
+        connected = client.connect()
+        if connected:
+            try:
+                result = client.read_coils(0, 1)
+                if result and not result.isError():
+                    logger.info(f"Successfully connected to Modbus device via proxy")
+                    return True
+                else:
+                    logger.warning(f"Connected to proxy but Modbus read test failed")
+                    connected = False
+                    return False
+            except Exception as e:
+                logger.error(f"Error validating Modbus connection: {e}")
+                connected = False
+                return False
 
-    # All attempts failed
-    logger.error(f"Failed to connect to Modbus relay at {modbus_ip}:{modbus_port} after {retry_count} attempts")
-    return False
+            # Validate connection
+            try:
+                result = client.read_coils(0, 1)
+                if result and not result.isError():
+                    logger.info("Modbus connection validated successfully")
+                    return True
+                else:
+                    logger.warning(f"Modbus connection test failed: {result}")
+                    connected = False
+                    return False
+            except Exception as e:
+                logger.error(f"Error validating Modbus connection: {e}")
+                connected = False
+                return False
+        else:
+            logger.error(f"Failed to connect to Modbus proxy")
+            return False
+    except Exception as e:
+        logger.error(f"Error connecting to Modbus proxy: {e}")
+        connected = False
+        return False
 
 
 def trigger_relay(channel, state=True, pulse_seconds=None, follower_mode=None):

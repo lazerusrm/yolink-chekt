@@ -899,13 +899,23 @@ def test_modbus():
 
     return jsonify(results)
 
+
 # Main Entry
 if __name__ == "__main__":
+    # Import modbus proxy components (must be before app.run)
+    from modbus_proxy import modbus_proxy_bp, init_proxy
+
+    # Register the blueprint with Flask
+    app.register_blueprint(modbus_proxy_bp)
+
+    # Initialize the modbus proxy
+    init_proxy()
+
     # Initialize services based on configuration
     start_services()
 
     # Initialize the scheduler
     init_scheduler()
 
-    # Run the Flask app
+    # Run the Flask app (this should always be last)
     app.run(host="0.0.0.0", port=5000)

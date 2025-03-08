@@ -11,10 +11,19 @@ services:
     environment:
       - FLASK_ENV=production
       - LOG_DIR=/app/logs
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     depends_on:
       - redis
+      - modbus-proxy
+    restart: unless-stopped
+    networks:
+      - yolink-network
+
+  modbus-proxy:
+    image: nicolargo/docker-modbus-proxy:latest
+    container_name: modbus-proxy
+    network_mode: host  # Only this container uses host networking
+    ports:
+      - "1502:1502"  # Configuration API port
     restart: unless-stopped
     networks:
       - yolink-network
