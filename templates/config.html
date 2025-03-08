@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Configuration - YoLink to CHEKT & SIA</title>
-    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css" integrity="sha512-Kc323vGBEqzTmouAECnVceyQqyqdsSiqLQISBL29aUW4U/M7pSPA/gEUZQqv1cwx4OnYxTxve5UMg5GT6L4JJg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <title>Configuration - YoLink Integration</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         :root {
             --bg-primary: #000000;
@@ -372,12 +372,165 @@
             font-size: 0.8rem;
             font-weight: bold;
         }
+
+        /* Toast notifications */
+        .toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 9999;
+        }
+
+        .toast {
+            background-color: var(--bg-elevated);
+            color: var(--text-primary);
+            border-radius: var(--card-border-radius);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+            max-width: 350px;
+            margin-bottom: 10px;
+            opacity: 0;
+            transform: translateX(20px);
+            transition: opacity 0.3s ease, transform 0.3s ease;
+            overflow: hidden;
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        .toast-header {
+            padding: 0.5rem 0.75rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .toast-body {
+            padding: 0.75rem;
+        }
+
+        .toast-header .close {
+            color: var(--text-primary);
+            opacity: 0.7;
+            font-size: 1.5rem;
+            font-weight: 700;
+            padding: 0;
+            margin-left: 0.5rem;
+        }
+
+        .toast-header .close:hover {
+            opacity: 1;
+        }
+
+        .toast.success .toast-header {
+            background-color: rgba(52, 199, 89, 0.2);
+            color: var(--success-color);
+            border-bottom: 1px solid rgba(52, 199, 89, 0.3);
+        }
+
+        .toast.success {
+            border-left: 4px solid var(--success-color);
+        }
+
+        .toast.error .toast-header {
+            background-color: rgba(255, 59, 48, 0.2);
+            color: var(--error-color);
+            border-bottom: 1px solid rgba(255, 59, 48, 0.3);
+        }
+
+        .toast.error {
+            border-left: 4px solid var(--error-color);
+        }
+
+        .toast.warning .toast-header {
+            background-color: rgba(255, 149, 0, 0.2);
+            color: var(--warning-color);
+            border-bottom: 1px solid rgba(255, 149, 0, 0.3);
+        }
+
+        .toast.warning {
+            border-left: 4px solid var(--warning-color);
+        }
+
+        /* Test Results Styling */
+        .test-result-container {
+            margin-top: 1rem;
+            padding: 1rem;
+            border-radius: var(--card-border-radius);
+            background-color: var(--bg-card);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .test-result-item {
+            margin-bottom: 0.75rem;
+            padding: 0.75rem;
+            border-radius: var(--input-border-radius);
+            background-color: var(--bg-elevated);
+            border-left: 4px solid transparent;
+        }
+
+        .test-result-item.success {
+            border-left-color: var(--success-color);
+        }
+
+        .test-result-item.warning {
+            border-left-color: var(--warning-color);
+        }
+
+        .test-result-item.error {
+            border-left-color: var(--error-color);
+        }
+
+        .test-result-item h5 {
+            margin-bottom: 0.5rem;
+            font-size: 1rem;
+            font-weight: 600;
+        }
+
+        .test-result-item p {
+            margin-bottom: 0;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+
+        /* User Management Section */
+        .user-management {
+            margin-top: 2rem;
+            padding: 1.5rem;
+            background-color: var(--bg-card);
+            border-radius: var(--card-border-radius);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .user-management h3 {
+            color: var(--accent-primary);
+            margin-bottom: 1.5rem;
+        }
+
+        /* Validation styles */
+        .invalid-feedback {
+            display: none;
+            color: var(--error-color);
+            font-size: 0.85rem;
+            margin-top: 0.25rem;
+        }
+
+        .was-validated .form-control:invalid {
+            border-color: var(--error-color);
+            box-shadow: 0 0 0 0.2rem rgba(255, 59, 48, 0.25);
+        }
+
+        .was-validated .form-control:invalid ~ .invalid-feedback {
+            display: block;
+        }
     </style>
 </head>
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
         <div class="container">
-            <a class="navbar-brand" href="#">YoLink to CHEKT & SIA</a>
+            <a class="navbar-brand" href="#">YoLink Integration</a>
             <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
                 <span class="navbar-toggler-icon"></span>
             </button>
@@ -399,6 +552,9 @@
 
     <div class="container">
         <h1>System Configuration</h1>
+
+        <!-- Toast container for notifications -->
+        <div class="toast-container" id="toast-container"></div>
 
         <!-- Status Section -->
         <div class="mb-4">
@@ -422,27 +578,32 @@
         </div>
 
         <!-- Configuration Form -->
-        <form id="config-form" class="form-section" method="POST" action="{{ url_for('config') }}">
+        <form id="config-form" class="form-section needs-validation" method="POST" action="{{ url_for('config') }}" novalidate>
             <h2><i class="fas fa-link"></i> YoLink Configuration</h2>
             <div class="form-group">
                 <label for="yolink_uaid">YoLink UAID</label>
                 <input type="text" id="yolink_uaid" name="yolink_uaid" class="form-control" value="{{ config.yolink.uaid|default('') }}" required>
+                <div class="invalid-feedback">YoLink UAID is required</div>
             </div>
             <div class="form-group">
                 <label for="yolink_secret_key">YoLink Secret Key</label>
                 <input type="password" id="yolink_secret_key" name="yolink_secret_key" class="form-control" value="{{ config.yolink.secret_key|default('') }}" required>
+                <div class="invalid-feedback">YoLink Secret Key is required</div>
             </div>
             <div class="form-group">
                 <label for="yolink_url">YoLink MQTT URL</label>
                 <input type="text" id="yolink_url" name="yolink_url" class="form-control" value="{{ config.mqtt.url|default('mqtt://api.yosmart.com') }}" required>
+                <div class="invalid-feedback">YoLink MQTT URL is required</div>
             </div>
             <div class="form-group">
                 <label for="yolink_port">YoLink MQTT Port</label>
                 <input type="number" id="yolink_port" name="yolink_port" class="form-control" value="{{ config.mqtt.port|default(8003) }}" min="1" max="65535" required>
+                <div class="invalid-feedback">YoLink MQTT Port must be between 1 and 65535</div>
             </div>
             <div class="form-group">
                 <label for="yolink_topic">YoLink MQTT Topic</label>
                 <input type="text" id="yolink_topic" name="yolink_topic" class="form-control" value="{{ config.mqtt.topic|default('yl-home/${Home ID}/+/report') }}" required>
+                <div class="invalid-feedback">YoLink MQTT Topic is required</div>
             </div>
 
             <div class="section-divider"></div>
@@ -451,10 +612,12 @@
             <div class="form-group">
                 <label for="monitor_mqtt_url">Monitor MQTT URL</label>
                 <input type="text" id="monitor_mqtt_url" name="monitor_mqtt_url" class="form-control" value="{{ config.mqtt_monitor.url|default('mqtt://monitor.industrialcamera.com') }}" required>
+                <div class="invalid-feedback">Monitor MQTT URL is required</div>
             </div>
             <div class="form-group">
                 <label for="monitor_mqtt_port">Monitor MQTT Port</label>
                 <input type="number" id="monitor_mqtt_port" name="monitor_mqtt_port" class="form-control" value="{{ config.mqtt_monitor.port|default(1883) }}" min="1" max="65535" required>
+                <div class="invalid-feedback">Monitor MQTT Port must be between 1 and 65535</div>
             </div>
             <div class="form-group">
                 <label for="monitor_mqtt_username">Monitor MQTT Username</label>
@@ -539,7 +702,7 @@
                     <label for="modbus_max_channels" class="mt-3">Number of Relay Channels</label>
                     <select id="modbus_max_channels" name="modbus_max_channels" class="form-control" {% if not config.modbus.enabled %}disabled{% endif %}>
                         <option value="8" {% if config.modbus.max_channels == 8 %}selected{% endif %}>8 Channels</option>
-                        <option value="16" {% if config.modbus.max_channels == 16 %}selected{% endif %}>16 Channels</option>
+                        <option value="16" {% if config.modbus.max_channels == 16 or not config.modbus.max_channels %}selected{% endif %}>16 Channels</option>
                     </select>
 
                     <div class="custom-control custom-switch mt-4 mb-3">
@@ -563,6 +726,20 @@
                         </div>
                         <div id="relay-test-status" class="mt-2 text-center"></div>
                     </div>
+
+                    <!-- Modbus Test Button -->
+                    <div class="mt-4 text-center">
+                        <button type="button" class="btn btn-secondary" id="test-modbus-btn">
+                            <i class="fas fa-vial"></i> Run Modbus Tests
+                        </button>
+                        <span id="modbus-test-spinner" class="spinner hidden"></span>
+                    </div>
+
+                    <!-- Test Results will appear here -->
+                    <div id="modbus-test-results" class="test-result-container mt-3" style="display: none;">
+                        <h5 class="mb-3">Modbus Test Results</h5>
+                        <div id="modbus-test-results-content"></div>
+                    </div>
                 </div>
             </div>
 
@@ -581,21 +758,52 @@
                 <label for="door_open_timeout">Door Open Timeout (seconds)</label>
                 <input type="number" id="door_open_timeout" name="door_open_timeout" class="form-control" value="{{ config.door_open_timeout|default(30) }}" min="1" required>
                 <small><i class="fas fa-info-circle"></i> Time in seconds before triggering an alert for a door left open</small>
+                <div class="invalid-feedback">Door open timeout must be at least 1 second</div>
             </div>
 
-            <!-- We have removed the deprecated Timezone section -->
-
             <div class="text-center mt-4">
-                <button type="submit" class="btn btn-primary">
+                <button type="submit" class="btn btn-primary" id="save-config-btn">
                     <i class="fas fa-save"></i> Save Configuration
                 </button>
                 <span id="save-status" class="ml-2"></span>
             </div>
         </form>
 
-        <div class="mb-4">
+        <!-- User Management Section -->
+        <div class="user-management">
+            <h3><i class="fas fa-users"></i> User Management</h3>
+            <form id="create-user-form" class="needs-validation" method="POST" action="{{ url_for('create_user') }}" novalidate>
+                <div class="row">
+                    <div class="col-md-5">
+                        <div class="form-group">
+                            <label for="username">Username</label>
+                            <input type="text" class="form-control" id="username" name="username" required>
+                            <div class="invalid-feedback">Please enter a username</div>
+                        </div>
+                    </div>
+                    <div class="col-md-5">
+                        <div class="form-group">
+                            <label for="password">Password</label>
+                            <input type="password" class="form-control" id="password" name="password" required minlength="8">
+                            <div class="invalid-feedback">Password must be at least 8 characters</div>
+                        </div>
+                    </div>
+                    <div class="col-md-2 d-flex align-items-end">
+                        <button type="submit" class="btn btn-success btn-block">
+                            <i class="fas fa-user-plus"></i> Add User
+                        </button>
+                    </div>
+                </div>
+                <small><i class="fas fa-info-circle"></i> New users will be required to change their password and set up 2FA on first login</small>
+            </form>
+        </div>
+
+        <div class="mb-4 mt-4">
             <button id="refresh-devices-btn" class="btn btn-success">
                 <i class="fas fa-sync-alt"></i> Refresh YoLink Devices
+            </button>
+            <button id="restart-services-btn" class="btn btn-secondary ml-2">
+                <i class="fas fa-redo"></i> Restart Services
             </button>
             <div id="refresh-status" class="status mt-2">
                 <img src="" alt="Refresh Status" id="refresh-icon" class="hidden">
@@ -611,13 +819,92 @@
             <span id="log-loading" class="spinner hidden"></span>
         </div>
         <div id="log-area" class="log">
-            <pre id="log-content">Logs will appear here...</pre>
+            <pre id="log-content">Loading logs...</pre>
         </div>
     </div>
 
-    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
-    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/js/bootstrap.bundle.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.1/dist/umd/popper.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.min.js"></script>
+
     <script>
+        // Constants
+        const MAX_RETRIES = 3;
+        const RETRY_DELAY = 3000;
+        const STATUS_CHECK_INTERVAL = 15000;
+
+        // Global variables
+        let statusCheckTimer = null;
+
+        // AJAX helper with retries
+        function fetchWithRetry(url, options = {}, retries = MAX_RETRIES) {
+            return new Promise((resolve, reject) => {
+                function attempt(remainingRetries) {
+                    console.log(`Fetching ${url}, retries remaining: ${remainingRetries}`);
+
+                    $.ajax({
+                        url: url,
+                        type: options.method || 'GET',
+                        data: options.data || null,
+                        contentType: options.contentType || 'application/x-www-form-urlencoded',
+                        dataType: options.dataType || 'json',
+                        timeout: options.timeout || 15000,
+                        success: function(response) {
+                            resolve(response);
+                        },
+                        error: function(xhr, status, error) {
+                            console.error(`Error fetching ${url}:`, error);
+
+                            if (remainingRetries > 0 && (status === 'timeout' || status === 'error')) {
+                                // Retry after delay
+                                setTimeout(() => {
+                                    attempt(remainingRetries - 1);
+                                }, RETRY_DELAY);
+                            } else {
+                                reject(new Error(`Failed to fetch ${url}: ${error || status}`));
+                            }
+                        }
+                    });
+                }
+
+                attempt(retries);
+            });
+        }
+
+        // Show toast notification
+        function showToast(title, message, type = 'success', duration = 5000) {
+            const toastId = 'toast-' + Date.now();
+            const toastHtml = `
+                <div class="toast ${type}" id="${toastId}">
+                    <div class="toast-header">
+                        <strong class="mr-auto">${title}</strong>
+                        <button type="button" class="close" data-dismiss="toast">&times;</button>
+                    </div>
+                    <div class="toast-body">${message}</div>
+                </div>
+            `;
+
+            $('#toast-container').append(toastHtml);
+            const $toast = $(`#${toastId}`);
+
+            // Show the toast
+            setTimeout(() => {
+                $toast.addClass('show');
+
+                // Auto-hide after duration
+                setTimeout(() => {
+                    $toast.removeClass('show');
+                    setTimeout(() => $toast.remove(), 300);
+                }, duration);
+            }, 100);
+
+            // Setup close button
+            $toast.find('.close').on('click', function() {
+                $toast.removeClass('show');
+                setTimeout(() => $toast.remove(), 300);
+            });
+        }
+
         function updateStatus(elementId, iconId, message, success, spinnerId) {
             const icon = success ? 'https://img.icons8.com/color/48/000000/checkmark.png' : 'https://img.icons8.com/color/48/000000/cancel.png';
             $('#' + spinnerId).addClass('hidden');
@@ -631,33 +918,44 @@
         function checkAllStatuses() {
             $('#yolink-spinner, #monitor-spinner, #receiver-spinner, #modbus-spinner').removeClass('hidden');
 
-            $.get('/check_all_statuses', function(response) {
-                updateStatus('yolink-mqtt-message', 'yolink-mqtt-icon', response.yolink.message, response.yolink.status === "success", 'yolink-spinner');
-                updateStatus('monitor-mqtt-message', 'monitor-mqtt-icon', response.monitor.message, response.monitor.status === "success", 'monitor-spinner');
-                updateStatus('receiver-message', 'receiver-icon', response.receiver.message, response.receiver.status === "success", 'receiver-spinner');
-                updateStatus('modbus-message', 'modbus-icon', response.modbus.message, response.modbus.status === "success", 'modbus-spinner');
-            }).fail(function() {
-                updateStatus('yolink-mqtt-message', 'yolink-mqtt-icon', 'Failed to check YoLink MQTT', false, 'yolink-spinner');
-                updateStatus('monitor-mqtt-message', 'monitor-mqtt-icon', 'Failed to check Monitor MQTT', false, 'monitor-spinner');
-                updateStatus('receiver-message', 'receiver-icon', 'Failed to check Receiver', false, 'receiver-spinner');
-                updateStatus('modbus-message', 'modbus-icon', 'Failed to check Modbus relay', false, 'modbus-spinner');
-            });
+            fetchWithRetry('/check_all_statuses')
+                .then(response => {
+                    updateStatus('yolink-mqtt-message', 'yolink-mqtt-icon', response.yolink.message,
+                                 response.yolink.status === "success", 'yolink-spinner');
+                    updateStatus('monitor-mqtt-message', 'monitor-mqtt-icon', response.monitor.message,
+                                 response.monitor.status === "success", 'monitor-spinner');
+                    updateStatus('receiver-message', 'receiver-icon', response.receiver.message,
+                                 response.receiver.status === "success", 'receiver-spinner');
+                    updateStatus('modbus-message', 'modbus-icon', response.modbus.message,
+                                 response.modbus.status === "success", 'modbus-spinner');
+                })
+                .catch(error => {
+                    console.error("Failed to check statuses:", error);
+                    updateStatus('yolink-mqtt-message', 'yolink-mqtt-icon', 'Failed to check YoLink MQTT', false, 'yolink-spinner');
+                    updateStatus('monitor-mqtt-message', 'monitor-mqtt-icon', 'Failed to check Monitor MQTT', false, 'monitor-spinner');
+                    updateStatus('receiver-message', 'receiver-icon', 'Failed to check Receiver', false, 'receiver-spinner');
+                    updateStatus('modbus-message', 'modbus-icon', 'Failed to check Modbus relay', false, 'modbus-spinner');
+                    showToast("Connection Error", "Failed to check system status", "error");
+                });
         }
 
         function fetchLogs() {
             $('#log-loading').removeClass('hidden');
-            $.get('/get_logs', function(response) {
-                if (response.status === "success") {
-                    $('#log-content').text(response.logs);
-                    $('#log-area').scrollTop($('#log-area')[0].scrollHeight);
-                } else {
-                    $('#log-content').text('Failed to load logs: ' + response.message);
-                }
-                $('#log-loading').addClass('hidden');
-            }).fail(function() {
-                $('#log-content').text('Failed to load logs');
-                $('#log-loading').addClass('hidden');
-            });
+            fetchWithRetry('/get_logs')
+                .then(response => {
+                    if (response.status === "success") {
+                        $('#log-content').text(response.logs);
+                        $('#log-area').scrollTop($('#log-area')[0].scrollHeight);
+                    } else {
+                        $('#log-content').text('Failed to load logs: ' + response.message);
+                    }
+                })
+                .catch(error => {
+                    $('#log-content').text('Failed to load logs: ' + error.message);
+                })
+                .finally(() => {
+                    $('#log-loading').addClass('hidden');
+                });
         }
 
         function generateRelayTestButtons(channelCount) {
@@ -674,27 +972,26 @@
             }
         }
 
-        function testRelayChannel(channel) {
+        window.testRelayChannel = function(channel) {
             const statusElement = $('#relay-test-status');
             statusElement.html(`<span class="spinner"></span> Testing channel ${channel}...`);
 
-            $.ajax({
-                url: '/test_relay_channel',
-                type: 'POST',
+            fetchWithRetry('/test_relay_channel', {
+                method: 'POST',
                 contentType: 'application/json',
-                data: JSON.stringify({ channel: channel }),
-                success: function(response) {
-                    if (response.status === 'success') {
-                        statusElement.html(`<span class="text-success"><i class="fas fa-check-circle"></i> ${response.message}</span>`);
-                    } else {
-                        statusElement.html(`<span class="text-danger"><i class="fas fa-times-circle"></i> ${response.message}</span>`);
-                    }
-                },
-                error: function(xhr, status, error) {
-                    statusElement.html(`<span class="text-danger"><i class="fas fa-times-circle"></i> Error: ${xhr.responseJSON?.message || error}</span>`);
+                data: JSON.stringify({ channel: channel })
+            })
+            .then(response => {
+                if (response.status === 'success') {
+                    statusElement.html(`<span class="text-success"><i class="fas fa-check-circle"></i> ${response.message}</span>`);
+                } else {
+                    statusElement.html(`<span class="text-danger"><i class="fas fa-times-circle"></i> ${response.message}</span>`);
                 }
+            })
+            .catch(error => {
+                statusElement.html(`<span class="text-danger"><i class="fas fa-times-circle"></i> Error: ${error.message}</span>`);
             });
-        }
+        };
 
         // Add visual indicators to show which is the primary receiver
         function highlightPrimaryReceiver() {
@@ -712,9 +1009,111 @@
             }
         }
 
+        function startStatusCheck() {
+            // Clear any existing timer
+            if (statusCheckTimer) {
+                clearInterval(statusCheckTimer);
+            }
+
+            // Set up periodic status checks
+            statusCheckTimer = setInterval(checkAllStatuses, STATUS_CHECK_INTERVAL);
+        }
+
+        function stopStatusCheck() {
+            if (statusCheckTimer) {
+                clearInterval(statusCheckTimer);
+                statusCheckTimer = null;
+            }
+        }
+
+        // Test Modbus connection
+        function testModbusConnection() {
+            $('#modbus-test-spinner').removeClass('hidden');
+            $('#test-modbus-btn').prop('disabled', true);
+            $('#modbus-test-results').hide();
+            $('#modbus-test-results-content').empty();
+
+            fetchWithRetry('/test_modbus')
+                .then(response => {
+                    let resultsHtml = '';
+
+                    if (response.tests && response.tests.length > 0) {
+                        response.tests.forEach(test => {
+                            resultsHtml += `
+                                <div class="test-result-item ${test.success ? 'success' : 'error'}">
+                                    <h5>${test.name}</h5>
+                                    <p>${test.message}</p>
+                                </div>
+                            `;
+                        });
+                    } else {
+                        resultsHtml = `
+                            <div class="test-result-item ${response.status === 'success' ? 'success' : 'error'}">
+                                <h5>Modbus Test</h5>
+                                <p>${response.message}</p>
+                            </div>
+                        `;
+                    }
+
+                    $('#modbus-test-results-content').html(resultsHtml);
+                    $('#modbus-test-results').show();
+
+                    // Show toast notification
+                    if (response.status === 'success') {
+                        showToast('Test Successful', 'All Modbus tests passed successfully', 'success');
+                    } else if (response.status === 'warning' || response.status === 'partial') {
+                        showToast('Test Warning', response.message, 'warning');
+                    } else {
+                        showToast('Test Failed', response.message, 'error');
+                    }
+                })
+                .catch(error => {
+                    $('#modbus-test-results-content').html(`
+                        <div class="test-result-item error">
+                            <h5>Error Running Tests</h5>
+                            <p>${error.message}</p>
+                        </div>
+                    `);
+                    $('#modbus-test-results').show();
+                    showToast('Test Error', 'Failed to run Modbus tests', 'error');
+                })
+                .finally(() => {
+                    $('#modbus-test-spinner').addClass('hidden');
+                    $('#test-modbus-btn').prop('disabled', false);
+                });
+        }
+
+        // Configuration form validation
+        function validateConfigForm() {
+            const form = document.getElementById('config-form');
+
+            if (form.checkValidity() === false) {
+                event.preventDefault();
+                event.stopPropagation();
+                form.classList.add('was-validated');
+                return false;
+            }
+
+            form.classList.add('was-validated');
+            return true;
+        }
+
         $(document).ready(function() {
+            // Initial status check
             checkAllStatuses();
+            startStatusCheck();
+
+            // Initial highlight of primary receiver
             highlightPrimaryReceiver();
+
+            // Initial log fetch
+            fetchLogs();
+
+            // Generate relay test buttons
+            const initialChannelCount = parseInt($('#modbus_max_channels').val()) || 16;
+            if ($('#modbus_enabled').is(':checked')) {
+                generateRelayTestButtons(initialChannelCount);
+            }
 
             // Handle receiver type change
             $('#receiver_type').change(function() {
@@ -785,123 +1184,177 @@
                 }
             });
 
-            // Generate relay test buttons based on selected channel count
-            const initialChannelCount = parseInt($('#modbus_max_channels').val()) || 16;
-            if ($('#modbus_enabled').is(':checked')) {
-                generateRelayTestButtons(initialChannelCount);
-            }
-
             // Update test buttons when channel count changes
             $('#modbus_max_channels').change(function() {
                 const channelCount = parseInt($(this).val()) || 16;
                 generateRelayTestButtons(channelCount);
             });
 
+            // Refresh devices button
             $('#refresh-devices-btn').click(function() {
                 $('#refresh-icon').addClass('hidden');
                 $('#refresh-message').text('Refreshing YoLink devices...');
                 $('#refresh-devices-btn').prop('disabled', true);
                 $('#refresh-devices-btn').html('<i class="fas fa-spinner fa-spin"></i> Refreshing...');
 
-                $.ajax({
-                    url: '/refresh_devices?ajax=1',
-                    type: 'GET',
-                    headers: {
-                        'X-Requested-With': 'XMLHttpRequest'
-                    },
-                    dataType: 'json',
-                    success: function(response) {
-                        $('#refresh-devices-btn').prop('disabled', false);
-                        $('#refresh-devices-btn').html('<i class="fas fa-sync-alt"></i> Refresh YoLink Devices');
+                fetchWithRetry('/refresh_devices', {
+                    method: 'GET',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                })
+                .then(response => {
+                    $('#refresh-devices-btn').prop('disabled', false);
+                    $('#refresh-devices-btn').html('<i class="fas fa-sync-alt"></i> Refresh YoLink Devices');
 
-                        if (response && typeof response === 'object') {
-                            updateStatus('refresh-message', 'refresh-icon',
-                                response.message || 'Devices refreshed',
-                                response.status === "success",
-                                'refresh-spinner');
-                        } else {
-                            updateStatus('refresh-message', 'refresh-icon',
-                                'Devices refreshed', true, 'refresh-spinner');
-                        }
-                    },
-                    error: function(xhr, status, error) {
-                        $('#refresh-devices-btn').prop('disabled', false);
-                        $('#refresh-devices-btn').html('<i class="fas fa-sync-alt"></i> Refresh YoLink Devices');
+                    const icon = response.status === "success" ?
+                        'https://img.icons8.com/color/48/000000/checkmark.png' :
+                        'https://img.icons8.com/color/48/000000/cancel.png';
 
-                        updateStatus('refresh-message', 'refresh-icon',
-                            'Failed to refresh devices: ' + (xhr.responseJSON ? xhr.responseJSON.message : error),
-                            false, 'refresh-spinner');
-                        console.error("Error refreshing devices:", status, error, xhr.responseText);
+                    $('#refresh-icon').attr('src', icon).removeClass('hidden');
+                    $('#refresh-message').text(response.message || 'Devices refreshed');
+
+                    if (response.status === "success") {
+                        showToast("Success", "Devices refreshed successfully", "success");
+                    } else {
+                        showToast("Warning", "Refresh completed with warnings", "warning");
                     }
+                })
+                .catch(error => {
+                    $('#refresh-devices-btn').prop('disabled', false);
+                    $('#refresh-devices-btn').html('<i class="fas fa-sync-alt"></i> Refresh YoLink Devices');
+
+                    $('#refresh-icon').attr('src', 'https://img.icons8.com/color/48/000000/cancel.png').removeClass('hidden');
+                    $('#refresh-message').text('Failed to refresh devices: ' + error.message);
+                    showToast("Error", "Failed to refresh devices", "error");
                 });
             });
 
+            // Restart services button
+            $('#restart-services-btn').click(function() {
+                $(this).prop('disabled', true);
+                $(this).html('<i class="fas fa-spinner fa-spin"></i> Restarting...');
+
+                fetchWithRetry('/restart_services', {
+                    method: 'POST'
+                })
+                .then(response => {
+                    if (response.status === "success") {
+                        showToast("Success", "Services restarted successfully", "success");
+                        // Check statuses after a delay
+                        setTimeout(checkAllStatuses, 5000);
+                    } else {
+                        showToast("Error", "Service restart failed: " + (response.message || "Unknown error"), "error");
+                    }
+                })
+                .catch(error => {
+                    showToast("Error", "Failed to restart services: " + error.message, "error");
+                })
+                .finally(() => {
+                    $('#restart-services-btn').prop('disabled', false);
+                    $('#restart-services-btn').html('<i class="fas fa-redo"></i> Restart Services');
+                });
+            });
+
+            // Fetch logs button
             $('#fetch-logs-btn').click(function() {
                 fetchLogs();
             });
 
-            $('#config-form').submit(function(e) {
+            // Test Modbus button
+            $('#test-modbus-btn').click(function() {
+                testModbusConnection();
+            });
+
+            // Config form submission
+            $('#config-form').on('submit', function(e) {
                 e.preventDefault();
 
-                // Prepare form data using standard form serialization
+                // Validate form
+                if (!validateConfigForm()) {
+                    showToast("Validation Error", "Please fix the errors in the form", "error");
+                    return;
+                }
+
                 const formData = $(this).serialize();
+                $('#save-config-btn').prop('disabled', true);
+                $('#save-config-btn').html('<i class="fas fa-spinner fa-spin"></i> Saving...');
+                $('#save-status').html('');
 
-                // Add a hidden timezone field with UTC as default
-                const formDataWithTimezone = formData + '&timezone=UTC';
+                fetchWithRetry("{{ url_for('config') }}", {
+                    method: 'POST',
+                    data: formData
+                })
+                .then(response => {
+                    $('#save-status').html('<span style="color: var(--success-color);"><i class="fas fa-check-circle"></i> Saved!</span>').addClass('visible');
+                    showToast("Success", "Configuration saved successfully", "success");
 
-                // Submit the form data
+                    // Restart services after saving
+                    return fetchWithRetry('/restart_services', {
+                        method: 'POST'
+                    });
+                })
+                .then(serviceResponse => {
+                    if (serviceResponse.status === "success") {
+                        $('#save-status').html('<span style="color: var(--success-color);"><i class="fas fa-check-circle"></i> Saved & Services Restarted</span>');
+                        // Update status after services restart
+                        setTimeout(checkAllStatuses, 5000);
+                    } else {
+                        $('#save-status').html('<span style="color: var(--warning-color);"><i class="fas fa-exclamation-circle"></i> Saved (Service restart failed)</span>');
+                    }
+                })
+                .catch(error => {
+                    $('#save-status').html('<span style="color: var(--error-color);"><i class="fas fa-times-circle"></i> Error: ' + error.message + '</span>').addClass('visible');
+                    showToast("Error", "Failed to save configuration: " + error.message, "error");
+                })
+                .finally(() => {
+                    $('#save-config-btn').prop('disabled', false);
+                    $('#save-config-btn').html('<i class="fas fa-save"></i> Save Configuration');
+
+                    setTimeout(() => {
+                        $('#save-status').removeClass('visible');
+                    }, 5000);
+                });
+            });
+
+            // User creation form
+            $('#create-user-form').on('submit', function(e) {
+                e.preventDefault();
+
+                const form = this;
+                if (form.checkValidity() === false) {
+                    event.stopPropagation();
+                    form.classList.add('was-validated');
+                    return;
+                }
+
+                // Form is valid, submit via AJAX
+                const formData = $(this).serialize();
+                const submitBtn = $(this).find('button[type="submit"]');
+                submitBtn.prop('disabled', true);
+                submitBtn.html('<i class="fas fa-spinner fa-spin"></i> Adding...');
+
                 $.ajax({
                     type: 'POST',
-                    url: '{{ url_for("config") }}',
-                    data: formDataWithTimezone,
-                    success: function(response) {
-                        $('#save-status').html('<span style="color: var(--success-color);"><i class="fas fa-check-circle"></i> Saved!</span>').addClass('visible');
-
-                        // After saving configuration, restart services
-                        $.ajax({
-                            type: 'POST',
-                            url: '/restart_services',
-                            success: function(serviceResponse) {
-                                // Add restart confirmation
-                                if (serviceResponse.status === "success") {
-                                    $('#save-status').html('<span style="color: var(--success-color);"><i class="fas fa-check-circle"></i> Saved! Services restarted.</span>');
-                                } else {
-                                    $('#save-status').html('<span style="color: var(--warning-color);"><i class="fas fa-exclamation-circle"></i> Saved! Services restart failed.</span>');
-                                }
-
-                                setTimeout(() => {
-                                    $('#save-status').removeClass('visible');
-                                    setTimeout(() => $('#save-status').html(''), 300);
-                                }, 3000);
-
-                                // Check status after a delay to allow services to start
-                                setTimeout(checkAllStatuses, 3000);
-                            },
-                            error: function() {
-                                $('#save-status').html('<span style="color: var(--warning-color);"><i class="fas fa-exclamation-circle"></i> Saved! (Service restart failed)</span>');
-
-                                setTimeout(() => {
-                                    $('#save-status').removeClass('visible');
-                                    setTimeout(() => $('#save-status').html(''), 300);
-                                }, 3000);
-                            }
-                        });
+                    url: "{{ url_for('create_user') }}",
+                    data: formData,
+                    success: function() {
+                        showToast("Success", "User created successfully", "success");
+                        form.reset();
                     },
                     error: function(xhr) {
-                        var errorMsg = xhr.responseJSON ? xhr.responseJSON.message : 'Unknown error';
-                        $('#save-status').html('<span style="color: var(--error-color);"><i class="fas fa-times-circle"></i> Error: ' + errorMsg + '</span>').addClass('visible');
-                        console.error('Configuration save error:', xhr);
-
-                        setTimeout(() => {
-                            $('#save-status').removeClass('visible');
-                            setTimeout(() => $('#save-status').html(''), 300);
-                        }, 5000);
+                        showToast("Error", "Failed to create user: " + xhr.responseText, "error");
+                    },
+                    complete: function() {
+                        submitBtn.prop('disabled', false);
+                        submitBtn.html('<i class="fas fa-user-plus"></i> Add User');
+                        form.classList.remove('was-validated');
                     }
                 });
             });
 
-            // Initialize log area
-            fetchLogs();
+            // Cleanup on page unload
+            $(window).on('beforeunload', function() {
+                stopStatusCheck();
+            });
         });
     </script>
 </body>

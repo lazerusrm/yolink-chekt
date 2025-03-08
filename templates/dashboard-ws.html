@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>YoLink Dashboard</title>
-    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css" integrity="sha512-Kc323vGBEqzTmouAECnVceyQqyqdsSiqLQISBL29aUW4U/M7pSPA/gEUZQqv1cwx4OnYxTxve5UMg5GT6L4JJg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <title>YoLink Integration Dashboard</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         :root {
             --bg-primary: #000000;
@@ -246,6 +246,84 @@
             font-size: 1.2rem;
         }
 
+        /* Toast notifications */
+        #toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+        }
+
+        .toast {
+            background-color: var(--bg-card);
+            color: var(--text-primary);
+            border-radius: var(--card-border-radius);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+            max-width: 350px;
+            margin-bottom: 10px;
+            opacity: 0;
+            transform: translateX(20px);
+            transition: opacity 0.3s ease, transform 0.3s ease;
+            border-left: 4px solid;
+        }
+
+        .toast.success {
+            border-left-color: var(--success-color);
+        }
+
+        .toast.error {
+            border-left-color: var(--error-color);
+        }
+
+        .toast.warning {
+            border-left-color: var(--warning-color);
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        .toast-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .toast-body {
+            padding: 0.75rem 1rem;
+        }
+
+        .navbar {
+            background-color: rgba(0, 0, 0, 0.8) !important;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 0.75rem 1rem;
+        }
+
+        .navbar-brand {
+            font-weight: 700;
+            color: var(--text-primary) !important;
+            letter-spacing: -0.5px;
+        }
+
+        .navbar-dark .navbar-nav .nav-link {
+            color: var(--text-secondary);
+            font-weight: 500;
+            transition: all 0.2s ease;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+        }
+
+        .navbar-dark .navbar-nav .nav-link:hover,
+        .navbar-dark .navbar-nav .active .nav-link {
+            color: var(--text-primary);
+            background-color: rgba(255, 255, 255, 0.05);
+        }
+
         /* Responsive adjustments */
         @media (max-width: 576px) {
             .header {
@@ -265,6 +343,35 @@
     </style>
 </head>
 <body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark">
+        <div class="container">
+            <a class="navbar-brand" href="#">YoLink Integration</a>
+            <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav">
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('index') }}">Dashboard</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('config') }}">Configuration</a>
+                    </li>
+                    <li class="nav-item active">
+                        <a class="nav-link" href="/dashboard">Live View <span class="sr-only">(current)</span></a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('logout') }}">Logout</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Toast Container -->
+    <div id="toast-container"></div>
+
     <div class="container">
         <div class="header">
             <h1>YoLink Sensors Dashboard</h1>
@@ -297,13 +404,56 @@
         </div>
     </div>
 
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.1/dist/umd/popper.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.min.js"></script>
     <script>
+        // Constants for WebSocket connection
+        const WS_RECONNECT_INTERVAL = 5000;  // 5 seconds
+        const MAX_RECONNECT_ATTEMPTS = 10;
+        const SENSOR_DATA_REFRESH = 10000;  // 10 seconds fallback refresh
+
         // Sensor data and WebSocket handling
         let sensors = [];
         let ws = null;
         let reconnectAttempts = 0;
-        const maxReconnectAttempts = 10;
-        const reconnectDelay = 5000; // 5 seconds
+        let fallbackTimer = null;
+        let sensorUpdateCounter = 0;
+
+        // Show toast notification
+        function showToast(title, message, type = 'success', duration = 5000) {
+            const id = 'toast-' + Date.now();
+            const toast = `
+                <div id="${id}" class="toast ${type}">
+                    <div class="toast-header">
+                        <strong>${title}</strong>
+                        <button type="button" class="close" onclick="dismissToast('${id}')">&times;</button>
+                    </div>
+                    <div class="toast-body">${message}</div>
+                </div>
+            `;
+
+            $('#toast-container').append(toast);
+            setTimeout(() => {
+                $(`#${id}`).addClass('show');
+            }, 100);
+
+            if (duration > 0) {
+                setTimeout(() => {
+                    dismissToast(id);
+                }, duration);
+            }
+
+            return id;
+        }
+
+        // Dismiss toast notification
+        function dismissToast(id) {
+            $(`#${id}`).removeClass('show');
+            setTimeout(() => {
+                $(`#${id}`).remove();
+            }, 300);
+        }
 
         // Get icon based on sensor type
         function getSensorTypeIcon(type) {
@@ -326,14 +476,21 @@
 
         // Get status class based on sensor state
         function getStatusClass(sensor) {
-            if (sensor.state === 'alarm' || sensor.state === 'leak' ||
-                sensor.state === 'motion' || sensor.state === 'open' ||
-                sensor.state === 'alert') {
+            // Check for alarm state
+            if (sensor.state === 'alarm' ||
+                sensor.state === 'alert' ||
+                sensor.state === 'open' ||
+                sensor.state === 'motion' ||
+                sensor.state === 'leak') {
                 return 'status-alarm';
-            } else if ((sensor.battery !== undefined && sensor.battery < 20) ||
-                       (sensor.signal !== undefined && sensor.signal < 2)) {
+            }
+
+            // Check for warning state (low battery or signal)
+            if ((sensor.battery !== undefined && sensor.battery < 25) ||
+                (sensor.signal !== undefined && parseInt(sensor.signal) < -100)) {
                 return 'status-warning';
             }
+
             return 'status-normal';
         }
 
@@ -379,17 +536,51 @@
                 // If invalid date
                 if (isNaN(date.getTime())) return timestamp;
 
-                // Format: Mar 7, 2025 14:23
+                // Format: Mar 7, 2023 14:23
                 return date.toLocaleString(undefined, {
                     month: 'short',
                     day: 'numeric',
                     year: 'numeric',
                     hour: '2-digit',
-                    minute: '2-digit'
+                    minute: '2-digit',
+                    second: '2-digit'
                 });
             } catch (e) {
                 console.error('Error formatting date:', e);
                 return timestamp;
+            }
+        }
+
+        // Calculate time ago from timestamp
+        function timeAgo(timestamp) {
+            if (!timestamp) return '';
+
+            try {
+                const date = new Date(timestamp);
+                if (isNaN(date.getTime())) return '';
+
+                const now = new Date();
+                const seconds = Math.floor((now - date) / 1000);
+
+                if (seconds < 60) return seconds + ' seconds ago';
+
+                const minutes = Math.floor(seconds / 60);
+                if (minutes < 60) return minutes + ' minutes ago';
+
+                const hours = Math.floor(minutes / 60);
+                if (hours < 24) return hours + ' hours ago';
+
+                const days = Math.floor(hours / 24);
+                if (days < 30) return days + ' days ago';
+
+                const months = Math.floor(days / 30);
+                if (months < 12) return months + ' months ago';
+
+                const years = Math.floor(months / 12);
+                return years + ' years ago';
+            } catch (e) {
+                console.error('Error calculating time ago:', e);
+                return '';
             }
         }
 
@@ -407,16 +598,31 @@
                 return;
             }
 
-            sensors.forEach(sensor => {
+            // Sort sensors by state (alert first), then name
+            const sortedSensors = [...sensors].sort((a, b) => {
+                // First sort by state (alarm states first)
+                const aIsAlert = a.state === 'alarm' || a.state === 'alert' || a.state === 'open';
+                const bIsAlert = b.state === 'alarm' || b.state === 'alert' || b.state === 'open';
+
+                if (aIsAlert && !bIsAlert) return -1;
+                if (!aIsAlert && bIsAlert) return 1;
+
+                // Then sort by name
+                return (a.name || '').localeCompare(b.name || '');
+            });
+
+            sortedSensors.forEach(sensor => {
                 if (!sensor) return; // Skip null/undefined entries
 
                 const statusClass = getStatusClass(sensor);
                 const sensorIcon = getSensorTypeIcon(sensor.type);
                 const formattedState = formatState(sensor);
                 const lastSeen = formatTime(sensor.last_seen);
+                const timeAgoText = timeAgo(sensor.last_seen);
 
                 const card = document.createElement('div');
                 card.className = `sensor-card ${statusClass}`;
+                card.dataset.deviceId = sensor.deviceId;
 
                 // Build sensor details HTML conditionally
                 let detailsHTML = '';
@@ -429,7 +635,7 @@
                     </div>`;
 
                 // Add battery if available
-                if (sensor.battery !== undefined) {
+                if (sensor.battery !== undefined && sensor.battery !== null) {
                     const batteryIcon = sensor.battery > 80 ? 'fa-battery-full' :
                                         sensor.battery > 60 ? 'fa-battery-three-quarters' :
                                         sensor.battery > 40 ? 'fa-battery-half' :
@@ -445,9 +651,10 @@
                 }
 
                 // Add signal if available
-                if (sensor.signal !== undefined) {
-                    const signalClass = sensor.signal < -90 ? 'text-danger' :
-                                       sensor.signal < -70 ? 'text-warning' : '';
+                if (sensor.signal !== undefined && sensor.signal !== null) {
+                    const signalValue = parseInt(sensor.signal);
+                    const signalClass = signalValue < -100 ? 'text-danger' :
+                                        signalValue < -85 ? 'text-warning' : '';
 
                     detailsHTML += `
                         <div class="sensor-detail">
@@ -457,7 +664,7 @@
                 }
 
                 // Add temperature if available
-                if (sensor.temperature !== undefined) {
+                if (sensor.temperature !== undefined && sensor.temperature !== "unknown") {
                     detailsHTML += `
                         <div class="sensor-detail">
                             <span class="label"><i class="fas fa-thermometer-half"></i> Temp</span>
@@ -466,7 +673,7 @@
                 }
 
                 // Add humidity if available
-                if (sensor.humidity !== undefined) {
+                if (sensor.humidity !== undefined && sensor.humidity !== "unknown") {
                     detailsHTML += `
                         <div class="sensor-detail">
                             <span class="label"><i class="fas fa-droplet"></i> Humidity</span>
@@ -482,55 +689,76 @@
                     <div class="sensor-details">
                         ${detailsHTML}
                     </div>
-                    <div class="timestamp">Last seen: ${lastSeen}</div>
+                    <div class="timestamp">Last seen: ${lastSeen}${timeAgoText ? ` (${timeAgoText})` : ''}</div>
                 `;
 
                 container.appendChild(card);
             });
+
+            // Update connection counter
+            sensorUpdateCounter++;
+            updateConnectionStatus();
         }
 
-        // Initial load of sensors from status endpoint
+        // Update WebSocket connection status display
+        function updateConnectionStatus() {
+            const connectionStatus = document.getElementById('connection-status');
+
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                connectionStatus.innerHTML = `
+                    <span class="status-dot warning"></span>
+                    <span>Disconnected (Reconnecting...)</span>`;
+                return;
+            }
+
+            connectionStatus.innerHTML = `
+                <span class="status-dot normal"></span>
+                <span>Connected (${sensorUpdateCounter} updates)</span>`;
+        }
+
+        // Initial load of sensors from API
         async function loadSensors() {
             try {
-                // Use the status endpoint to get initial sensor data
-                const response = await fetch('/status');
+                // Use the sensor data endpoint
+                const response = await fetch('/get_sensor_data');
                 const data = await response.json();
 
-                if (data.status === "online" && data.sensors && data.sensors.total > 0) {
-                    // We don't have sensor details from this endpoint, just wait for WebSocket
-                    document.getElementById('sensors-container').innerHTML = `
-                        <div class="sensor-card">
-                            <div class="sensor-name">Detected ${data.sensors.total} sensors</div>
-                            <div class="sensor-details">
-                                <div class="sensor-detail">
-                                    <span class="label"><i class="fas fa-spinner fa-spin"></i> Status</span>
-                                    <span class="sensor-value">Connecting...</span>
-                                </div>
-                                <div class="loading-placeholder" style="width: 100%"></div>
-                                <div class="loading-placeholder" style="width: 90%"></div>
-                            </div>
-                            <div class="timestamp">Waiting for WebSocket connection...</div>
-                        </div>`;
+                if (data.devices && Array.isArray(data.devices)) {
+                    sensors = data.devices;
+                    renderSensors();
+                    console.log('Loaded initial sensor data:', sensors.length, 'devices');
                 } else {
                     document.getElementById('sensors-container').innerHTML = `
                         <div class="error-message">
                             <i class="fas fa-exclamation-triangle"></i>
-                            <span>No sensors detected yet. Please check your YoLink configuration.</span>
+                            <span>No sensors detected. Please check your YoLink configuration.</span>
                         </div>`;
                 }
             } catch (error) {
-                console.error('Error loading sensor status:', error);
+                console.error('Error loading sensor data:', error);
                 document.getElementById('sensors-container').innerHTML = `
                     <div class="error-message">
                         <i class="fas fa-exclamation-circle"></i>
                         <span>Error connecting to the server. Please check if the service is running.</span>
                     </div>`;
+                showToast('Connection Error', 'Failed to load initial sensor data', 'error');
             }
+        }
+
+        // Set up fallback refresh via API
+        function setupFallbackRefresh() {
+            clearInterval(fallbackTimer);
+            fallbackTimer = setInterval(async () => {
+                if (ws && ws.readyState === WebSocket.OPEN) return; // Skip if WebSocket is connected
+
+                console.log('Using fallback refresh via API');
+                await loadSensors();
+            }, SENSOR_DATA_REFRESH);
         }
 
         // Connect to WebSocket for real-time updates
         function connectWebSocket() {
-            if (reconnectAttempts >= maxReconnectAttempts) {
+            if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
                 document.getElementById('connection-status').innerHTML = `
                     <span class="status-dot alarm"></span>
                     <span>Connection failed</span>`;
@@ -538,8 +766,11 @@
                 document.getElementById('sensors-container').innerHTML = `
                     <div class="error-message">
                         <i class="fas fa-plug-circle-exclamation"></i>
-                        <span>Could not establish WebSocket connection. Please reload the page or check server status.</span>
+                        <span>Could not establish WebSocket connection. Falling back to API updates.</span>
                     </div>`;
+
+                loadSensors(); // Load data via API as fallback
+                setupFallbackRefresh(); // Set up periodic refresh
                 return;
             }
 
@@ -558,10 +789,15 @@
 
             ws.onopen = () => {
                 console.log('WebSocket connection established');
-                document.getElementById('connection-status').innerHTML = `
-                    <span class="status-dot normal"></span>
-                    <span>Connected</span>`;
                 reconnectAttempts = 0; // Reset reconnect counter on successful connection
+                updateConnectionStatus();
+
+                // Clean up any fallback timers
+                clearInterval(fallbackTimer);
+
+                if (reconnectAttempts > 0) {
+                    showToast('Connection Restored', 'WebSocket connection established', 'success', 3000);
+                }
             };
 
             ws.onmessage = (event) => {
@@ -578,18 +814,40 @@
 
             ws.onerror = (error) => {
                 console.error('WebSocket error:', error);
-                document.getElementById('connection-status').innerHTML = `
-                    <span class="status-dot alarm"></span>
-                    <span>Connection Error</span>`;
+                updateConnectionStatus();
             };
 
             ws.onclose = () => {
                 console.log('WebSocket connection closed');
-                document.getElementById('connection-status').innerHTML = `
-                    <span class="status-dot warning"></span>
-                    <span>Reconnecting...</span>`;
+                updateConnectionStatus();
+
+                // Increment reconnect counter
                 reconnectAttempts++;
-                setTimeout(connectWebSocket, reconnectDelay);
+
+                // Show warning after multiple failures
+                if (reconnectAttempts > 2) {
+                    const toastId = showToast(
+                        'Connection Lost',
+                        `WebSocket disconnected (attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`,
+                        'warning',
+                        0  // Don't auto-dismiss
+                    );
+                    // Store the toast ID to dismiss it when we reconnect
+                    window.lastConnectionToast = toastId;
+                }
+
+                // Try to reconnect or fall back to API
+                if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+                    setTimeout(connectWebSocket, WS_RECONNECT_INTERVAL);
+                } else {
+                    // If max attempts reached, fall back to API polling
+                    setupFallbackRefresh();
+                    showToast(
+                        'Fallback Mode',
+                        'Using API for updates instead of WebSocket',
+                        'warning'
+                    );
+                }
             };
         }
 
@@ -597,6 +855,11 @@
         document.addEventListener('DOMContentLoaded', () => {
             loadSensors();
             connectWebSocket();
+
+            // Set up resize handler
+            window.addEventListener('resize', () => {
+                // You could adjust layout or card size based on window size here
+            });
         });
     </script>
 </body>

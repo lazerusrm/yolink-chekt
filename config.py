@@ -1,9 +1,23 @@
+"""
+Configuration Module - Async Version
+===================================
+
+This module handles loading and saving configuration from Redis,
+with proper async patterns and error handling.
+"""
+
 import os
 import json
+import logging
+from typing import Dict, Any, Optional
 from dotenv import load_dotenv
-from db import redis_client
+
+# Import Redis manager
+from redis_manager import get_redis
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 # List of supported North American timezones
 SUPPORTED_TIMEZONES = [
@@ -53,57 +67,127 @@ DEFAULT_CONFIG = {
     "chekt": {
         "api_token": "",
         "ip": "",
-        "port": 30003
+        "port": 30003,
+        "enabled": True
     },
     "sia": {
         "ip": "",
         "port": "",
         "account_id": "",
         "transmitter_id": "",
-        "encryption_key": ""
+        "encryption_key": "",
+        "enabled": False
     },
     "modbus": {
         "ip": "",
-        "port": 502,  # Default Modbus TCP port
-        "unit_id": 1,  # Default Modbus device ID/slave address
-        "max_channels": 16,  # Default to 16 channels (supports 8 or 16)
-        "pulse_seconds": 1,  # Default pulse duration in seconds
-        "enabled": False,  # Whether Modbus relay is enabled
-        "follower_mode": False  # Whether to use follower mode instead of pulse mode
+        "port": 502,
+        "unit_id": 1,
+        "max_channels": 16,
+        "pulse_seconds": 1.0,
+        "enabled": False,
+        "follower_mode": False
     },
     "monitor": {"api_key": os.getenv("MONITOR_API_KEY", "")},
+    "redis": {
+        "host": os.getenv("REDIS_HOST", "redis"),
+        "port": int(os.getenv("REDIS_PORT", 6379)),
+        "db": 0
+    },
     "timezone": "UTC",
     "door_open_timeout": 30,
     "home_id": "",
-    "supported_timezones": SUPPORTED_TIMEZONES  # Added for frontend use
+    "supported_timezones": SUPPORTED_TIMEZONES
 }
 
-
-def load_config():
-    """Load configuration from Redis, or set and return default if none exists."""
-    config_json = redis_client.get("config")
-    if config_json:
-        config = json.loads(config_json)
-        # Ensure supported_timezones is always present
-        config["supported_timezones"] = SUPPORTED_TIMEZONES
-
-        # Ensure modbus configuration is present (for backward compatibility)
-        if "modbus" not in config:
-            config["modbus"] = DEFAULT_CONFIG["modbus"]
-
-        return config
-    else:
-        redis_client.set("config", json.dumps(DEFAULT_CONFIG))
-        return DEFAULT_CONFIG
+# Configuration cache
+_config_cache: Optional[Dict[str, Any]] = None
+_cache_timestamp: float = 0
 
 
-def save_config(data):
-    """Save configuration to Redis with better error handling."""
+def get_redis_config() -> dict:
+    """
+    Retrieve Redis configuration directly from environment variables.
+
+    Returns:
+        dict: Redis configuration
+    """
+    return {
+        "host": os.getenv("REDIS_HOST", "redis"),
+        "port": int(os.getenv("REDIS_PORT", 6379)),
+        "db": 0
+    }
+
+
+async def load_config(use_cache: bool = True, cache_ttl: int = 5) -> Dict[str, Any]:
+    """
+    Load configuration from Redis asynchronously with caching.
+    If no config is stored, save and return the default configuration.
+
+    Args:
+        use_cache (bool): Whether to use cached config if available
+        cache_ttl (int): Cache TTL in seconds
+
+    Returns:
+        Dict[str, Any]: Configuration dictionary
+    """
+    global _config_cache, _cache_timestamp
+
+    # Check cache first if enabled
+    if use_cache and _config_cache is not None:
+        current_time = os.time() if hasattr(os, 'time') else __import__('time').time()
+        if current_time - _cache_timestamp < cache_ttl:
+            logger.debug("Using cached configuration")
+            return _config_cache.copy()
+
     try:
-        # Always ensure timezone is valid (using UTC as default)
-        data["timezone"] = data.get("timezone", "UTC")
+        redis_client = await get_redis()
+        config_json = await redis_client.get("config")
 
-        # Ensure we're not storing empty strings where we expect integers/floats
+        if config_json:
+            config = json.loads(config_json)
+            # Ensure all required keys exist
+            config.setdefault("supported_timezones", SUPPORTED_TIMEZONES)
+            config.setdefault("modbus", DEFAULT_CONFIG["modbus"])
+            config.setdefault("redis", DEFAULT_CONFIG["redis"])
+
+            # Update cache
+            _config_cache = config.copy()
+            _cache_timestamp = os.time() if hasattr(os, 'time') else __import__('time').time()
+
+            return config
+        else:
+            logger.info("No configuration found in Redis, using defaults")
+            await redis_client.set("config", json.dumps(DEFAULT_CONFIG))
+
+            # Update cache
+            _config_cache = DEFAULT_CONFIG.copy()
+            _cache_timestamp = os.time() if hasattr(os, 'time') else __import__('time').time()
+
+            return DEFAULT_CONFIG.copy()
+    except Exception as e:
+        logger.error(f"Error loading config: {e}")
+        return DEFAULT_CONFIG.copy()
+
+
+async def save_config(data: Dict[str, Any]) -> bool:
+    """
+    Save configuration to Redis asynchronously with error handling.
+    Normalizes certain modbus fields if empty.
+
+    Args:
+        data (Dict[str, Any]): Configuration data to save
+
+    Returns:
+        bool: Success status
+
+    Raises:
+        ValueError: If configuration saving fails
+    """
+    global _config_cache, _cache_timestamp
+
+    try:
+        # Normalize data
+        data["timezone"] = data.get("timezone", "UTC")
         if "modbus" in data:
             if data["modbus"].get("port") == "":
                 data["modbus"]["port"] = 502
@@ -114,20 +198,108 @@ def save_config(data):
             if data["modbus"].get("pulse_seconds") == "":
                 data["modbus"]["pulse_seconds"] = 1.0
 
+        # Ensure all required sections exist
+        for key in DEFAULT_CONFIG:
+            if key not in data:
+                data[key] = DEFAULT_CONFIG[key]
+
+        # Add supported timezones if missing
+        data.setdefault("supported_timezones", SUPPORTED_TIMEZONES)
+
         # Save to Redis
-        redis_client.set("config", json.dumps(data))
+        redis_client = await get_redis()
+        await redis_client.set("config", json.dumps(data))
+
+        # Update cache
+        _config_cache = data.copy()
+        _cache_timestamp = os.time() if hasattr(os, 'time') else __import__('time').time()
+
+        logger.info("Configuration saved to Redis")
         return True
     except Exception as e:
-        logger.error(f"Error in save_config: {str(e)}")
-        raise ValueError(f"Failed to save configuration: {str(e)}")
+        logger.error(f"Error in save_config: {e}")
+        raise ValueError(f"Failed to save configuration: {e}")
 
 
-def get_user_data(username):
-    """Retrieve user data from Redis."""
-    user_json = redis_client.get(f"user:{username}")
-    return json.loads(user_json) if user_json else {}
+async def get_user_data(username: str) -> Dict[str, Any]:
+    """
+    Retrieve user data from Redis asynchronously.
+
+    Args:
+        username (str): Username to retrieve data for
+
+    Returns:
+        Dict[str, Any]: User data
+    """
+    try:
+        redis_client = await get_redis()
+        user_json = await redis_client.get(f"user:{username}")
+        return json.loads(user_json) if user_json else {}
+    except Exception as e:
+        logger.error(f"Error getting user data for {username}: {e}")
+        return {}
 
 
-def save_user_data(username, data):
-    """Save user data to Redis."""
-    redis_client.set(f"user:{username}", json.dumps(data))
+async def save_user_data(username: str, data: Dict[str, Any]) -> None:
+    """
+    Save user data to Redis asynchronously.
+
+    Args:
+        username (str): Username to save data for
+        data (Dict[str, Any]): User data to save
+    """
+    try:
+        redis_client = await get_redis()
+        await redis_client.set(f"user:{username}", json.dumps(data))
+        logger.debug(f"Saved user data for {username}")
+    except Exception as e:
+        logger.error(f"Error saving user data for {username}: {e}")
+
+
+async def clear_config_cache() -> None:
+    """
+    Clear the configuration cache.
+    Call this after making direct changes to Redis.
+    """
+    global _config_cache, _cache_timestamp
+    _config_cache = None
+    _cache_timestamp = 0
+    logger.debug("Configuration cache cleared")
+
+
+async def main():
+    """Test the async config functions."""
+    try:
+        # Setup logging
+        logging.basicConfig(level=logging.DEBUG)
+
+        # Load configuration
+        config = await load_config()
+        print("Loaded config:", json.dumps(config, indent=2))
+
+        # Modify and save configuration
+        config["test_key"] = "test_value"
+        await save_config(config)
+        print("Saved config with test_key")
+
+        # Reload and verify
+        new_config = await load_config(use_cache=False)
+        print("Reload successful:", "test_key" in new_config)
+
+        # Test user data
+        await save_user_data("test_user", {"test": "data"})
+        user_data = await get_user_data("test_user")
+        print("User data:", user_data)
+
+        # Clear cache
+        await clear_config_cache()
+        print("Cache cleared successfully")
+
+    except Exception as e:
+        print(f"Error in main: {e}")
+
+
+if __name__ == "__main__":
+    import asyncio
+
+    asyncio.run(main())

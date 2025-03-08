@@ -1,20 +1,26 @@
-import paho.mqtt.client as mqtt
-import json
-import time
-import logging
-import secrets
-from config import load_config
-from db import redis_client
-from device_manager import get_device_data, save_device_data, get_access_token
-from mappings import get_mapping
-from alerts import trigger_alert, get_last_door_prop_alarm, set_last_door_prop_alarm, trigger_chekt_event
-from monitor_mqtt import publish_update
-import requests
+"""
+YoLink MQTT Client - Async Version
+==================================
 
-# Logging Setup
+This module manages the YoLink MQTT connection for receiving
+device status updates from YoLink devices and processing them.
+"""
+
+import asyncio
+import json
+import logging
+from typing import Dict, Any, Optional
+from asyncio_mqtt import Client, MqttError
+from datetime import datetime
+import aiohttp
+
+# Import Redis manager
+from redis_manager import get_redis
+
+# Logging setup
 from logging.handlers import RotatingFileHandler
 
-handler = RotatingFileHandler("/app/logs/yolink.log", maxBytes=10*1024*1024, backupCount=5)
+handler = RotatingFileHandler("/app/logs/yolink.log", maxBytes=10 * 1024 * 1024, backupCount=5)
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -23,85 +29,136 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-client = None
+# Global state
 connected = False
+mqtt_client: Optional[Client] = None
+shutdown_event = asyncio.Event()
 
 
-def has_valid_credentials():
+async def load_config() -> Dict[str, Any]:
+    """
+    Load application configuration asynchronously.
+
+    Returns:
+        Dict[str, Any]: Configuration dictionary
+    """
+    from config import load_config as load_config_impl
+    return await load_config_impl()
+
+
+async def get_device_data(device_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Get device data from Redis.
+
+    Args:
+        device_id (str): Device ID
+
+    Returns:
+        Optional[Dict[str, Any]]: Device data or None if not found
+    """
+    from device_manager import get_device_data as get_device_impl
+    redis_client = await get_redis()
+    return await get_device_impl(redis_client, device_id)
+
+
+async def save_device_data(device_id: str, data: Dict[str, Any]) -> None:
+    """
+    Save device data to Redis.
+
+    Args:
+        device_id (str): Device ID
+        data (Dict[str, Any]): Device data to save
+    """
+    from device_manager import save_device_data as save_device_impl
+    redis_client = await get_redis()
+    await save_device_impl(redis_client, device_id, data)
+
+
+async def get_access_token() -> Optional[str]:
+    """
+    Get a YoLink API access token, refreshing if needed.
+
+    Returns:
+        Optional[str]: Access token or None if unavailable
+    """
+    config = await load_config()
+
+    from device_manager import get_access_token as token_impl
+    return await token_impl(config)
+
+
+async def has_valid_credentials() -> bool:
     """
     Check if the configuration has valid YoLink credentials.
-    Returns True if credentials are present, False otherwise.
+
+    Returns:
+        bool: True if credentials are present, False otherwise
     """
-    config = load_config()
+    config = await load_config()
     uaid = config.get("yolink", {}).get("uaid")
     secret_key = config.get("yolink", {}).get("secret_key")
 
     if not uaid or not secret_key or uaid == "" or secret_key == "":
         logger.info("YoLink credentials not yet configured. MQTT connection deferred.")
         return False
-
     return True
 
-def map_battery_value(raw_value):
-    """Map YoLink battery levels (0-4) to percentages."""
+
+def map_battery_value(raw_value: int) -> Optional[int]:
+    """
+    Map YoLink battery levels (0-4) to percentages.
+
+    Args:
+        raw_value (int): Raw battery level (0-4)
+
+    Returns:
+        Optional[int]: Percentage value or None if invalid
+    """
     if not isinstance(raw_value, int) or raw_value < 0 or raw_value > 4:
         return None
-    return {0: 0, 1: 25, 2: 50, 3: 75, 4: 100}[raw_value]
+    return {0: 0, 1: 25, 2: 50, 3: 75, 4: 100}.get(raw_value)
 
-def should_trigger_event(current_state, previous_state, device_type=None):
+
+def should_trigger_event(current_state: str, previous_state: str, device_type: str = None) -> bool:
     """
     Determine if an alert should be triggered based on state transitions or state="alert".
+
+    Args:
+        current_state (str): Current device state
+        previous_state (str): Previous device state
+        device_type (str, optional): Type of device
+
+    Returns:
+        bool: True if an alert should be triggered
     """
     logger.debug(f"Checking trigger: current_state={current_state}, previous_state={previous_state}")
 
-    # Trigger if state is "alert"
     if current_state == "alert":
-        logger.info(f"Triggering alert: state is 'alert'")
+        logger.info("Triggering alert: state is 'alert'")
         return True
 
-    # Trigger if state transitions from "open" to "closed" or "closed" to "open"
     if previous_state and current_state:
-        if (previous_state == "open" and current_state == "closed") or (
-                previous_state == "closed" and current_state == "open"):
+        if (previous_state == "open" and current_state == "closed") or \
+                (previous_state == "closed" and current_state == "open"):
             logger.info(f"Triggering alert: state changed from '{previous_state}' to '{current_state}'")
             return True
-
     return False
 
-def on_connect(client, userdata, flags, rc):
-    global connected
-    if rc == 0:
-        config = load_config()
-        topic = config["mqtt"]["topic"].replace("${Home ID}", config["home_id"])
-        client.subscribe(topic)
-        connected = True
-        logger.info(f"Connected and subscribed to {topic}")
-    else:
-        connected = False
-        logger.error(f"YoLink MQTT connection failed with code {rc}")
-        if rc == 5:  # Authentication error, likely due to expired token
-            logger.warning("Authentication failed, attempting to reconnect with fresh token...")
-            time.sleep(5)
-            run_mqtt_client()
 
-def on_disconnect(client, userdata, rc):
-    global connected
-    if rc != 0:
-        connected = False
-        logger.warning(f"YoLink MQTT disconnected with code {rc}. Reconnecting...")
-        time.sleep(5)
-        run_mqtt_client()
+async def process_message(payload: Dict[str, Any]) -> None:
+    """
+    Process incoming MQTT messages asynchronously.
 
-def on_message(client, userdata, msg):
-    logger.info(f"Received message on topic {msg.topic}")
+    Args:
+        payload (Dict[str, Any]): MQTT message payload
+    """
     try:
-        payload = json.loads(msg.payload.decode("utf-8"))
         device_id = payload.get("deviceId")
         if not device_id:
             logger.warning("No deviceId in MQTT payload")
             return
 
-        device = get_device_data(device_id) or {}
+        device = await get_device_data(device_id) or {}
         if not device.get("deviceId"):
             logger.warning(f"Device {device_id} not found, initializing")
             device = {
@@ -157,98 +214,297 @@ def on_message(client, userdata, msg):
             device["alarms"]["state"] = data["alarm"]
         if "type" in payload:
             device["type"] = payload["type"]
-        device["last_seen"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        device["last_seen"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        save_device_data(device_id, device)
+        # Save updated device data
+        await save_device_data(device_id, device)
 
-        config = load_config()
-        mapping = get_mapping(device_id)
+        # Process alerts
+        config = await load_config()
+        from mappings import get_mapping
+        mapping = await get_mapping(device_id)
         logger.debug(f"Mapping for device {device_id}: {mapping}")
+
         receiver_type = config.get("receiver_type", "CHEKT").upper()
         logger.debug(f"Receiver type: {receiver_type}")
         logger.debug(
             f"Device type: {device.get('type', 'unknown')}, State: {device['state']}, Previous State: {previous_state}")
 
-        # If this is a DoorSensor and door prop alarm is enabled, process it specially
-        if device.get("type", "").lower() == "doorsensor" and mapping.get("door_prop_alarm", False):
+        # Door sensor with prop alarm
+        if device.get("type", "").lower() == "doorsensor" and mapping and mapping.get("door_prop_alarm", False):
             if data.get("alertType") == "openRemind":
-                current_time = data.get("stateChangedAt") or data.get("time") or int(time.time() * 1000)
-                last_trigger = get_last_door_prop_alarm(device_id)
+                current_time = data.get("stateChangedAt") or data.get("time") or int(datetime.now().timestamp() * 1000)
+
+                # Get last trigger time
+                from alerts import get_last_door_prop_alarm, set_last_door_prop_alarm, trigger_chekt_event
+                last_trigger = await get_last_door_prop_alarm(device_id)
+
                 if last_trigger is None or (int(current_time) - int(last_trigger)) >= 30000:
-                    set_last_door_prop_alarm(device_id, current_time)
+                    await set_last_door_prop_alarm(device_id, current_time)
                     logger.info(
                         f"Door prop alarm triggered for device {device_id} on zone {mapping.get('chekt_zone')} at {current_time}")
-                    trigger_chekt_event(device_id, mapping.get("chekt_zone"))
+                    await trigger_chekt_event(device_id, mapping.get("chekt_zone"))
                 else:
                     wait_time = (30000 - (int(current_time) - int(last_trigger))) / 1000
                     logger.info(
-                        f"Door prop alarm for device {device_id} not triggered; waiting for another {wait_time:.1f} seconds.")
+                        f"Door prop alarm for device {device_id} not triggered; waiting {wait_time:.1f} seconds")
             else:
                 logger.debug(
-                    f"Door prop alarm conditions not met for device {device_id} (prev: {previous_state}, current: {device['state']}, alertType: {data.get('alertType')}).")
-        else:
-            # Normal processing for non-door sensors (or door sensors without door prop alarm enabled)
-            if mapping and should_trigger_event(device["state"], previous_state):
-                if receiver_type == "CHEKT":
-                    logger.info(
-                        f"Triggering CHEKT alert for device {device_id} with state {device['state']} (from {previous_state})")
-                    trigger_alert(device_id, device["state"], device.get("type", "unknown"))
-                elif receiver_type == "SIA":
-                    # SIA logic here if needed
-                    pass
+                    f"Door prop alarm conditions not met for {device_id} (prev: {previous_state}, current: {device['state']}, alertType: {data.get('alertType')})")
+        elif mapping and should_trigger_event(device["state"], previous_state):
+            if receiver_type == "CHEKT":
+                logger.info(
+                    f"Triggering CHEKT alert for device {device_id} with state {device['state']} (from {previous_state})")
+                from alerts import trigger_alert
+                await trigger_alert(device_id, device["state"], device.get("type", "unknown"))
+            elif receiver_type == "SIA":
+                # Add SIA async logic if implemented
+                pass
 
-        # Finally, publish an update for this device
-        publish_update(device_id, {
+        # Publish update to Monitor MQTT
+        from monitor_mqtt import publish_update
+        await publish_update(device_id, {
             "state": device["state"],
             "alarms": device.get("alarms", {}),
-            "battery": device.get("battery"),
-            "signal": device.get("signal"),
-            "temperature": device.get("temperature"),
-            "humidity": device.get("humidity"),
+            "battery": device["battery"],
+            "signal": device["signal"],
+            "temperature": device["temperature"],
+            "humidity": device["humidity"],
             "type": device.get("type")
         })
 
     except json.JSONDecodeError as e:
-        logger.error(f"Invalid JSON in MQTT payload: {str(e)}")
+        logger.error(f"Invalid JSON in MQTT payload: {e}")
     except Exception as e:
-        logger.error(f"Error processing message for device {device_id}: {str(e)}")
+        logger.error(f"Error processing message for device {device_id}: {e}")
 
 
-def run_mqtt_client():
-    """Refresh all YoLink devices from the API and update Redis with enhanced data."""
-    global client, connected
+async def run_mqtt_client() -> None:
+    """
+    Run the YoLink MQTT client asynchronously with reconnection logic
+    and graceful shutdown.
+    """
+    global connected, mqtt_client, shutdown_event
 
-    # Check for credentials before attempting connection
-    if not has_valid_credentials():
+    # Check if credentials are available
+    if not await has_valid_credentials():
         logger.info("YoLink MQTT connection deferred - waiting for credentials")
         connected = False
+
+        # Update status in Redis
+        redis_client = await get_redis()
+        await redis_client.set("yolink_mqtt_status", "credentials_missing")
+
         return
 
-    config = load_config()
-    token = get_access_token(config)  # Ensure a valid token on startup
+    # Get access token for authentication
+    token = await get_access_token()
     if not token:
         logger.error("Failed to obtain a valid YoLink token. Retrying in 5 seconds...")
-        time.sleep(5)
-        run_mqtt_client()
+
+        # Update status in Redis
+        redis_client = await get_redis()
+        await redis_client.set("yolink_mqtt_status", "token_error")
+
+        await asyncio.sleep(5)
+        await run_mqtt_client()
         return
 
+    # Prepare to connect
+    config = await load_config()
     mqtt_config = config["mqtt"]
+    topic = mqtt_config["topic"].replace("${Home ID}", config["home_id"])
     logger.info(
         f"Attempting YoLink MQTT connection: url={mqtt_config['url']}, port={mqtt_config['port']}, token={'*' * len(token)}")
-    client = mqtt.Client()
-    client.username_pw_set(username=token, password=None)
-    client.on_connect = on_connect
-    client.on_message = on_message
-    client.on_disconnect = on_disconnect
-    try:
-        client.connect(mqtt_config["url"].replace("mqtt://", ""), mqtt_config["port"], keepalive=60)
-        client.loop_start()
-        connected = True
-    except Exception as e:
-        logger.error(f"YoLink MQTT initial connection failed: {e}")
-        connected = False
-        time.sleep(5)
-        run_mqtt_client()
 
+    # Update status in Redis
+    redis_client = await get_redis()
+    await redis_client.set("yolink_mqtt_status", "connecting")
+
+    # Retry variables
+    retry_count = 0
+    max_retry_delay = 60  # Maximum retry delay in seconds
+
+    while not shutdown_event.is_set():
+        try:
+            # Calculate retry delay with exponential backoff
+            if retry_count > 0:
+                # Exponential backoff with a small random factor
+                base_delay = min(max_retry_delay, 1 * (2 ** (retry_count - 1)))
+                # Add a small random factor to avoid reconnection storms
+                jitter = 0.1 * base_delay * (0.9 + 0.2 * (hash(asyncio.get_event_loop().time()) % 10) / 10)
+                delay = base_delay + jitter
+                logger.info(f"Retrying YoLink MQTT connection in {delay:.1f} seconds (attempt {retry_count})...")
+
+                # Wait for the delay or until shutdown is requested
+                try:
+                    await asyncio.wait_for(shutdown_event.wait(), timeout=delay)
+                    if shutdown_event.is_set():
+                        logger.info("Shutdown requested during reconnection delay")
+                        break
+                except asyncio.TimeoutError:
+                    pass  # Delay completed
+
+            # Extract hostname without protocol
+            hostname = mqtt_config["url"].replace("mqtt://", "").replace("mqtts://", "")
+
+            async with Client(
+                    hostname=hostname,
+                    port=mqtt_config["port"],
+                    username=token,
+                    keepalive=60
+            ) as client:
+                # Store client reference and update status
+                mqtt_client = client
+                connected = True
+                retry_count = 0  # Reset retry counter on successful connection
+
+                # Update status in Redis
+                await redis_client.set("yolink_mqtt_status", "connected")
+                await redis_client.set("yolink_mqtt_last_connected", asyncio.get_event_loop().time())
+
+                logger.info(f"Connected to YoLink MQTT, subscribing to {topic}")
+                await client.subscribe(topic)
+
+                # Process messages until shutdown requested
+                async for message in client.messages:
+                    try:
+                        payload_str = message.payload.decode("utf-8")
+                        payload = json.loads(payload_str)
+
+                        # Create a task to process the message asynchronously
+                        # This allows us to continue receiving messages while processing
+                        asyncio.create_task(process_message(payload))
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Invalid JSON in MQTT message: {e}")
+                    except Exception as e:
+                        logger.error(f"Error processing MQTT message: {e}")
+
+                    # Check if shutdown was requested
+                    if shutdown_event.is_set():
+                        break
+
+        except MqttError as e:
+            connected = False
+            mqtt_client = None
+            retry_count += 1
+
+            # Update status in Redis
+            await redis_client.set("yolink_mqtt_status", "disconnected")
+            await redis_client.set("yolink_mqtt_error", str(e))
+
+            logger.error(f"YoLink MQTT connection failed (attempt {retry_count}): {e}")
+            if str(e).startswith("authentication"):
+                logger.warning("Authentication failed, retrying with fresh token")
+                token = await get_access_token()
+                if not token:
+                    logger.error("Failed to refresh token")
+
+            # Check if shutdown was requested before retrying
+            if shutdown_event.is_set():
+                break
+
+        except Exception as e:
+            connected = False
+            mqtt_client = None
+            retry_count += 1
+
+            # Update status in Redis
+            await redis_client.set("yolink_mqtt_status", "error")
+            await redis_client.set("yolink_mqtt_error", str(e))
+
+            logger.error(f"Unexpected error in MQTT client (attempt {retry_count}): {e}")
+
+            # Check if shutdown was requested before retrying
+            if shutdown_event.is_set():
+                break
+
+    # Final cleanup
+    connected = False
+    mqtt_client = None
+    await redis_client.set("yolink_mqtt_status", "shutdown")
+    logger.info("Exiting YoLink MQTT client gracefully")
+
+
+def is_connected() -> bool:
+    """
+    Check if the MQTT client is currently connected.
+
+    Returns:
+        bool: Connection status
+    """
+    global connected, mqtt_client
+    return connected and mqtt_client is not None
+
+
+def shutdown_yolink_mqtt() -> None:
+    """
+    Signal the YoLink MQTT loop to shutdown gracefully.
+    This function can be called externally to stop the MQTT client.
+    """
+    global shutdown_event
+    logger.info("Shutdown requested for YoLink MQTT client")
+    shutdown_event.set()
+
+
+async def get_status() -> Dict[str, Any]:
+    """
+    Get the current status of the YoLink MQTT client.
+
+    Returns:
+        Dict[str, Any]: Status information
+    """
+    try:
+        redis_client = await get_redis()
+        status = await redis_client.get("yolink_mqtt_status") or "unknown"
+        last_connected = await redis_client.get("yolink_mqtt_last_connected")
+        error = await redis_client.get("yolink_mqtt_error")
+
+        return {
+            "connected": connected,
+            "status": status,
+            "last_connected": float(last_connected) if last_connected else None,
+            "error": error
+        }
+    except Exception as e:
+        logger.error(f"Error getting YoLink MQTT status: {e}")
+        return {
+            "connected": connected,
+            "status": "error",
+            "error": str(e)
+        }
+
+
+# Example main function for testing
 if __name__ == "__main__":
-    run_mqtt_client()
+    async def main():
+        # Set up logging
+        root_logger = logging.getLogger()
+        root_logger.setLevel(logging.DEBUG)
+
+        try:
+            # Start the YoLink MQTT client
+            mqtt_task = asyncio.create_task(run_mqtt_client())
+
+            # Run for a limited time
+            logger.info("YoLink MQTT client started, will run for 60 seconds")
+            await asyncio.sleep(60)
+
+            # Get and print status
+            status = await get_status()
+            logger.info(f"YoLink MQTT status: {json.dumps(status, indent=2)}")
+
+        finally:
+            # Shutdown gracefully
+            logger.info("Shutting down YoLink MQTT client")
+            shutdown_yolink_mqtt()
+            await mqtt_task
+            logger.info("YoLink MQTT client shutdown complete")
+
+
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("Keyboard interrupt received, exiting")
+    except Exception as e:
+        print(f"Unhandled exception: {e}")

@@ -3,15 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard - YoLink to CHEKT</title>
+    <title>Dashboard - YoLink Integration</title>
     <!-- Bootstrap CSS -->
-    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
     <!-- Font Awesome CSS -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css" integrity="sha512-Kc323vGBEqzTmouAECnVceyQqyqdsSiqLQISBL29aUW4U/M7pSPA/gEUZQqv1cwx4OnYxTxve5UMg5GT6L4JJg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
-    <!-- jQuery, Moment.js and Moment Timezone for timezone handling -->
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.4/moment.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment-timezone/0.5.43/moment-timezone-with-data.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- jQuery, Moment.js and Moment Timezone -->
+    <script src="https://code.jquery.com/jquery-3.6.4.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/moment@2.29.4/moment.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/moment-timezone@0.5.43/builds/moment-timezone-with-data.min.js"></script>
     <style>
         :root {
             --bg-primary: #000000;
@@ -344,6 +344,7 @@
 
         #debug-content {
             white-space: pre-wrap;
+            word-wrap: break-word;
             color: var(--accent-secondary);
         }
 
@@ -376,7 +377,7 @@
             border-left: 4px solid var(--error-color);
         }
 
-        /* Divider */
+        /* Section dividers */
         .settings-divider {
             height: 1px;
             background-color: rgba(255, 255, 255, 0.1);
@@ -419,13 +420,118 @@
         .integration-label {
             font-size: 0.9rem;
         }
+
+        /* Last refresh indicator */
+        .last-refresh {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-left: 1rem;
+        }
+
+        /* Error toast notification */
+        .toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 9999;
+        }
+
+        .toast {
+            background-color: var(--bg-elevated);
+            color: var(--text-primary);
+            border-radius: var(--card-border-radius);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+            border-left: 4px solid var(--error-color);
+            max-width: 350px;
+            margin-bottom: 10px;
+            padding: 0;
+            opacity: 0;
+            transform: translateX(20px);
+            transition: opacity 0.3s ease, transform 0.3s ease;
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        .toast-header {
+            background-color: rgba(255, 59, 48, 0.1);
+            color: var(--error-color);
+            border-bottom: 1px solid rgba(255, 59, 48, 0.2);
+            padding: 0.5rem 0.75rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .toast-body {
+            padding: 0.75rem;
+        }
+
+        .toast-header .close {
+            color: var(--text-primary);
+            opacity: 0.7;
+            font-size: 1.5rem;
+            font-weight: 700;
+            padding: 0;
+            margin-left: 0.5rem;
+        }
+
+        .toast-header .close:hover {
+            opacity: 1;
+        }
+
+        /* Device type badges */
+        .device-type-badge {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            background-color: rgba(0, 122, 255, 0.2);
+            color: var(--accent-primary);
+            font-size: 0.8rem;
+            font-weight: 600;
+            padding: 0.3rem 0.6rem;
+            border-radius: 20px;
+        }
+
+        /* Loading skeleton animation */
+        @keyframes skeletonPulse {
+            0% { opacity: 0.6; }
+            50% { opacity: 0.8; }
+            100% { opacity: 0.6; }
+        }
+
+        .skeleton {
+            background-color: var(--bg-card);
+            border-radius: var(--input-border-radius);
+            margin: 0.5rem 0;
+            animation: skeletonPulse 1.5s ease-in-out infinite;
+        }
+
+        .skeleton-title {
+            height: 24px;
+            width: 70%;
+        }
+
+        .skeleton-text {
+            height: 16px;
+            margin-top: 0.5rem;
+        }
+
+        .skeleton-card {
+            padding: 1.5rem;
+            background-color: var(--bg-elevated);
+            border-radius: var(--card-border-radius);
+            margin-bottom: 1.5rem;
+        }
     </style>
 </head>
 <body>
     <!-- Navigation Bar -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
         <div class="container">
-            <a class="navbar-brand" href="#">YoLink to CHEKT</a>
+            <a class="navbar-brand" href="#">YoLink Integration</a>
             <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
                 <span class="navbar-toggler-icon"></span>
             </button>
@@ -445,12 +551,19 @@
         </div>
     </nav>
 
+    <!-- Toast container for error notifications -->
+    <div class="toast-container" id="toast-container"></div>
+
     <div class="container">
-        <h1>YoLink to CHEKT Dashboard</h1>
+        <h1>YoLink Integration Dashboard</h1>
 
         <!-- Status Section -->
         <div class="status">
-            <h2><i class="fas fa-heart-pulse"></i> System Status <span id="loading-spinner" class="spinner"></span></h2>
+            <h2>
+                <i class="fas fa-heart-pulse"></i> System Status
+                <span id="loading-spinner" class="spinner"></span>
+                <span class="last-refresh" id="last-refresh"></span>
+            </h2>
             <div id="yolink-mqtt-status" class="status-item mb-2">
                 <img src="" alt="YoLink MQTT Status" id="yolink-mqtt-icon" class="hidden">
                 <span id="yolink-mqtt-message">Checking YoLink MQTT connection...</span>
@@ -481,13 +594,24 @@
             <h2><i class="fas fa-microchip"></i> Sensor Data</h2>
             <div id="sensor-list-error" class="alert alert-danger hidden">Error loading sensor data. Please check the console for details.</div>
             <div class="sensor-grid" id="sensor-list">
-                <!-- Sensors will be populated dynamically -->
-                <div class="sensor">
-                    <div class="sensor-name">Loading sensors...</div>
-                    <div class="sensor-data-item">
-                        <span><i class="fas fa-spinner fa-spin"></i> Status</span>
-                        <span>Connecting...</span>
-                    </div>
+                <!-- Skeleton loading placeholders -->
+                <div class="skeleton-card">
+                    <div class="skeleton skeleton-title"></div>
+                    <div class="skeleton skeleton-text" style="width: 90%"></div>
+                    <div class="skeleton skeleton-text" style="width: 80%"></div>
+                    <div class="skeleton skeleton-text" style="width: 70%"></div>
+                </div>
+                <div class="skeleton-card">
+                    <div class="skeleton skeleton-title"></div>
+                    <div class="skeleton skeleton-text" style="width: 85%"></div>
+                    <div class="skeleton skeleton-text" style="width: 75%"></div>
+                    <div class="skeleton skeleton-text" style="width: 65%"></div>
+                </div>
+                <div class="skeleton-card">
+                    <div class="skeleton skeleton-title"></div>
+                    <div class="skeleton skeleton-text" style="width: 95%"></div>
+                    <div class="skeleton skeleton-text" style="width: 85%"></div>
+                    <div class="skeleton skeleton-text" style="width: 75%"></div>
                 </div>
             </div>
         </div>
@@ -500,12 +624,44 @@
     </div>
 
     <!-- Bootstrap JS -->
-    <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.0/dist/umd/popper.min.js"></script>
-    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/js/bootstrap.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.1/dist/umd/popper.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.min.js"></script>
 
     <!-- Main Script -->
     <script>
     $(document).ready(function() {
+        // Constants
+        const UPDATE_INTERVAL = 15000; // 15 seconds
+        const STATUS_CHECK_INTERVAL = 10000; // 10 seconds
+        const REFRESH_INFO_INTERVAL = 30000; // 30 seconds
+        const RETRY_DELAY = 5000; // 5 seconds
+        const MAX_RETRIES = 3;
+
+        let updateTimer = null;
+        let statusTimer = null;
+        let refreshInfoTimer = null;
+
+        // Device type lookup
+        const deviceTypes = {
+            "DoorSensor": { icon: "fa-door-open", label: "Door Sensor" },
+            "MotionSensor": { icon: "fa-running", label: "Motion Sensor" },
+            "LeakSensor": { icon: "fa-tint", label: "Leak Sensor" },
+            "THSensor": { icon: "fa-thermometer-half", label: "Temperature & Humidity" },
+            "COSmokeSensor": { icon: "fa-smog", label: "CO/Smoke Detector" },
+            "SmartRemoter": { icon: "fa-remote", label: "Smart Remote" },
+            "PowerFailureAlarm": { icon: "fa-bolt", label: "Power Alarm" },
+            "Siren": { icon: "fa-volume-up", label: "Siren" },
+            "VibrationSensor": { icon: "fa-wave-square", label: "Vibration Sensor" },
+            "Switch": { icon: "fa-toggle-on", label: "Smart Switch" },
+            "Lock": { icon: "fa-lock", label: "Smart Lock" },
+            "LockV2": { icon: "fa-lock", label: "Smart Lock" },
+            "default": { icon: "fa-microchip", label: "Sensor" }
+        };
+
+        // Device capabilities
+        const batteryDeviceTypes = ["DoorSensor", "MotionSensor", "LeakSensor", "THSensor", "COSmokeSensor", "SmartRemoter", "PowerFailureAlarm", "Siren", "Finger", "LockV2", "VibrationSensor", "Manipulator"];
+        const tempHumidityDeviceTypes = ["THSensor"];
+
         // Debug helper function
         window.debugLog = function(msg, obj) {
             const content = $('#debug-content');
@@ -523,10 +679,46 @@
             $('#debug-toggle').text(isVisible ? 'Hide Debug Info' : 'Show Debug Info');
         };
 
+        // Show toast notification
+        function showToast(title, message, type = 'error', duration = 5000) {
+            const toastId = 'toast-' + Date.now();
+            const toastHtml = `
+                <div class="toast" id="${toastId}">
+                    <div class="toast-header">
+                        <i class="fas fa-exclamation-circle mr-2"></i>
+                        <strong class="mr-auto">${title}</strong>
+                        <button type="button" class="close" data-dismiss="toast">&times;</button>
+                    </div>
+                    <div class="toast-body">${message}</div>
+                </div>
+            `;
+
+            $('#toast-container').append(toastHtml);
+            const $toast = $(`#${toastId}`);
+
+            // Show the toast
+            setTimeout(() => {
+                $toast.addClass('show');
+
+                // Auto-hide after duration
+                setTimeout(() => {
+                    $toast.removeClass('show');
+                    setTimeout(() => $toast.remove(), 300);
+                }, duration);
+            }, 100);
+
+            // Setup close button
+            $toast.find('.close').on('click', function() {
+                $toast.removeClass('show');
+                setTimeout(() => $toast.remove(), 300);
+            });
+        }
+
         // Check if dependencies loaded
         if (typeof moment === 'undefined' || typeof moment.tz !== 'function') {
             console.error("Moment.js or Moment Timezone failed to load. Timestamps may display incorrectly.");
             debugLog("ERROR: Moment.js or Moment Timezone failed to load.");
+            showToast("Warning", "Time formatting library failed to load. Some dates may display incorrectly.", "warning");
         } else {
             debugLog("Moment.js loaded successfully");
         }
@@ -544,6 +736,15 @@
             const utcTime = moment.utc(isoDateString);
             const localTime = utcTime.tz(userTimezone);
             return localTime.isValid() ? localTime.format("MMM D, YYYY, h:mm:ss A") : "Invalid date";
+        }
+
+        // Format relative time (e.g., "5 minutes ago")
+        function formatRelativeTime(timestamp) {
+            if (!timestamp) return "";
+            if (typeof moment === 'undefined') {
+                return "";
+            }
+            return moment(timestamp * 1000).fromNow();
         }
 
         // Toggle spinner speed
@@ -572,22 +773,81 @@
             }
         }
 
-        // Check status via AJAX
-        function checkStatus(url, elementId, iconId, successMessage, errorMessage) {
-            $.ajax({
-                type: "GET",
-                url: url,
-                success: function(response) {
-                    const ok = (response.status === "success");
-                    const msg = response.message || (ok ? successMessage : errorMessage);
-                    updateStatus(elementId, iconId, msg, ok);
-                    debugLog(`Status check for ${elementId}`, { url, result: ok ? "success" : "failed", message: msg });
-                },
-                error: function(xhr, status, error) {
-                    updateStatus(elementId, iconId, errorMessage, false);
-                    debugLog(`Status check for ${elementId} failed`, { url, status, error, response: xhr.responseText });
+        // AJAX request helper with retries
+        function fetchWithRetry(url, options = {}, retries = MAX_RETRIES) {
+            return new Promise((resolve, reject) => {
+                function attempt(remainingRetries) {
+                    debugLog(`Fetching ${url}, retries remaining: ${remainingRetries}`);
+
+                    $.ajax({
+                        url: url,
+                        type: options.method || 'GET',
+                        data: options.data || null,
+                        contentType: options.contentType || 'application/x-www-form-urlencoded',
+                        dataType: options.dataType || 'json',
+                        timeout: options.timeout || 15000,
+                        success: function(response) {
+                            debugLog(`Success fetching ${url}`, { responseLength: JSON.stringify(response).length });
+                            resolve(response);
+                        },
+                        error: function(xhr, status, error) {
+                            debugLog(`Error fetching ${url}`, { status, error, retries: remainingRetries });
+
+                            if (remainingRetries > 0 && (status === 'timeout' || status === 'error')) {
+                                // Retry after delay
+                                setTimeout(() => {
+                                    attempt(remainingRetries - 1);
+                                }, RETRY_DELAY);
+                            } else {
+                                reject(new Error(`Failed to fetch ${url}: ${error || status}`));
+                            }
+                        }
+                    });
                 }
+
+                attempt(retries);
             });
+        }
+
+        // Check all status endpoints
+        async function checkAllStatuses() {
+            try {
+                const response = await fetchWithRetry('/check_all_statuses');
+                updateStatus('yolink-mqtt-message', 'yolink-mqtt-icon', response.yolink.message, response.yolink.status === "success");
+                updateStatus('monitor-mqtt-message', 'monitor-mqtt-icon', response.monitor.message, response.monitor.status === "success");
+                updateStatus('receiver-message', 'receiver-icon', response.receiver.message, response.receiver.status === "success");
+                updateStatus('modbus-message', 'modbus-icon', response.modbus.message, response.modbus.status === "success");
+            } catch (error) {
+                debugLog("Failed to check statuses", { error: error.message });
+                updateStatus('yolink-mqtt-message', 'yolink-mqtt-icon', 'Failed to check YoLink MQTT', false);
+                updateStatus('monitor-mqtt-message', 'monitor-mqtt-icon', 'Failed to check Monitor MQTT', false);
+                updateStatus('receiver-message', 'receiver-icon', 'Failed to check Receiver', false);
+                updateStatus('modbus-message', 'modbus-icon', 'Failed to check Modbus relay', false);
+                showToast("Connection Error", "Failed to check system status. Will retry automatically.");
+            }
+        }
+
+        // Fetch and check last refresh time
+        async function checkLastRefreshTime() {
+            try {
+                const response = await fetchWithRetry('/last_refresh');
+                if (response.status === "success") {
+                    const lastRefresh = response.last_refresh;
+                    const minutesAgo = response.minutes_ago;
+
+                    if (lastRefresh && lastRefresh !== "Never") {
+                        const formattedTime = formatLocalTime(new Date(minutesAgo * 60000 * -1 + Date.now()).toISOString());
+                        $('#last-refresh').text(`Last updated: ${formattedTime} (${minutesAgo} min ago)`);
+                    } else {
+                        $('#last-refresh').text("No previous updates");
+                    }
+                } else {
+                    $('#last-refresh').text("");
+                }
+            } catch (error) {
+                debugLog("Failed to check last refresh time", { error: error.message });
+                $('#last-refresh').text("");
+            }
         }
 
         // Map battery level to percentage and icon
@@ -642,14 +902,19 @@
             if (!a.last_seen) return 1;  // b comes first
             if (!b.last_seen) return -1; // a comes first
 
-            const timeA = new Date(a.last_seen).getTime();
-            const timeB = new Date(b.last_seen).getTime();
+            try {
+                const timeA = new Date(a.last_seen).getTime();
+                const timeB = new Date(b.last_seen).getTime();
 
-            if (isNaN(timeA) && isNaN(timeB)) return a.name.localeCompare(b.name);
-            if (isNaN(timeA)) return 1;  // b comes first
-            if (isNaN(timeB)) return -1; // a comes first
+                if (isNaN(timeA) && isNaN(timeB)) return a.name.localeCompare(b.name);
+                if (isNaN(timeA)) return 1;  // b comes first
+                if (isNaN(timeB)) return -1; // a comes first
 
-            if (timeA !== timeB) return timeB - timeA;
+                if (timeA !== timeB) return timeB - timeA;
+            } catch (e) {
+                console.error("Error comparing timestamps:", e);
+            }
+
             return a.name.localeCompare(b.name);
         }
 
@@ -692,77 +957,85 @@
 
         // Get icon by sensor type
         function getSensorTypeIcon(type) {
-            switch(type) {
-                case 'DoorSensor': return 'fa-door-open';
-                case 'MotionSensor': return 'fa-running';
-                case 'LeakSensor': return 'fa-tint';
-                case 'THSensor': return 'fa-thermometer-half';
-                case 'COSmokeSensor': return 'fa-smog';
-                case 'SmartRemoter': return 'fa-remote';
-                case 'PowerFailureAlarm': return 'fa-bolt';
-                case 'Siren': return 'fa-volume-up';
-                case 'VibrationSensor': return 'fa-wave-square';
-                case 'Switch': return 'fa-toggle-on';
-                case 'Lock':
-                case 'LockV2': return 'fa-lock';
-                default: return 'fa-microchip';
-            }
+            const deviceType = deviceTypes[type] || deviceTypes.default;
+            return deviceType.icon;
         }
 
-        // Device type capabilities
-        const batteryDeviceTypes = ["DoorSensor", "MotionSensor", "LeakSensor", "THSensor", "COSmokeSensor", "SmartRemoter", "PowerFailureAlarm", "Siren", "Finger", "LockV2", "VibrationSensor", "Manipulator"];
-        const tempHumidityDeviceTypes = ["THSensor"];
+        // Get badge label for sensor type
+        function getSensorTypeLabel(type) {
+            const deviceType = deviceTypes[type] || deviceTypes.default;
+            return deviceType.label;
+        }
 
         // Fetch and update sensor data
-        function updateSensorData() {
+        async function updateSensorData() {
             toggleSpinnerSpeed(true);
             $('#sensor-list-error').addClass('hidden');
 
-            // Get sensor data and system uptime
-            $.ajax({
-                url: "/get_sensor_data",
-                type: "GET",
-                dataType: "json",
-                success: function(sensorData) {
-                    debugLog("Sensor data received", { devices: sensorData.devices ? sensorData.devices.length : 0 });
+            try {
+                // Get sensor data
+                const sensorData = await fetchWithRetry("/get_sensor_data");
 
-                    // Get uptime data
-                    $.ajax({
-                        url: "/system_uptime",
-                        type: "GET",
-                        dataType: "json",
-                        success: function(uptimeData) {
-                            const uptimeSeconds = uptimeData.uptime_seconds || 0;
-                            debugLog("System uptime received", { uptimeSeconds });
-
-                            // Render sensors
-                            renderSensors(sensorData, uptimeSeconds);
-                            toggleSpinnerSpeed(false);
-                        },
-                        error: function(xhr, status, error) {
-                            debugLog("Failed to get system uptime", { status, error, response: xhr.responseText });
-                            // Continue with rendering sensors without uptime
-                            renderSensors(sensorData, 0);
-                            toggleSpinnerSpeed(false);
-                        }
-                    });
-                },
-                error: function(xhr, status, error) {
-                    debugLog("Failed to get sensor data", { status, error, response: xhr.responseText });
-                    $('#sensor-list').html('<div class="sensor alarm"><p class="sensor-name">Error loading sensor data</p></div>');
-                    $('#sensor-list-error').removeClass('hidden');
-                    toggleSpinnerSpeed(false);
+                // Get uptime data
+                let uptimeData;
+                try {
+                    uptimeData = await fetchWithRetry("/system_uptime");
+                } catch (e) {
+                    debugLog("Failed to get system uptime", { error: e.message });
+                    uptimeData = { uptime_seconds: 0 };
                 }
+
+                // Render the sensors
+                renderSensors(sensorData, uptimeData.uptime_seconds || 0);
+                toggleSpinnerSpeed(false);
+
+            } catch (error) {
+                debugLog("Failed to get sensor data", { error: error.message });
+                $('#sensor-list').html('<div class="sensor alarm"><p class="sensor-name">Error loading sensor data</p><p>Please try again or check logs.</p></div>');
+                $('#sensor-list-error').removeClass('hidden');
+                toggleSpinnerSpeed(false);
+                showToast("Data Error", "Failed to load sensor data. Will retry automatically.");
+            }
+        }
+
+        // Update status check and refresh info
+        function startBackgroundTasks() {
+            // Cancel any existing timers
+            if (updateTimer) clearInterval(updateTimer);
+            if (statusTimer) clearInterval(statusTimer);
+            if (refreshInfoTimer) clearInterval(refreshInfoTimer);
+
+            // Start periodic status checks
+            statusTimer = setInterval(checkAllStatuses, STATUS_CHECK_INTERVAL);
+
+            // Start periodic sensor data updates
+            updateTimer = setInterval(updateSensorData, UPDATE_INTERVAL);
+
+            // Start periodic refresh info updates
+            refreshInfoTimer = setInterval(checkLastRefreshTime, REFRESH_INFO_INTERVAL);
+
+            debugLog("Background tasks started", {
+                updateInterval: UPDATE_INTERVAL,
+                statusInterval: STATUS_CHECK_INTERVAL,
+                refreshInfoInterval: REFRESH_INFO_INTERVAL
             });
         }
 
-        // Check Modbus status
-        function checkModbusStatus() {
-            $.get('/check_modbus_status', function(response) {
-                updateStatus('modbus-message', 'modbus-icon', response.message, response.status === "success");
-            }).fail(function() {
-                updateStatus('modbus-message', 'modbus-icon', 'Failed to check Modbus relay connection', false);
-            });
+        // Stop background tasks
+        function stopBackgroundTasks() {
+            if (updateTimer) {
+                clearInterval(updateTimer);
+                updateTimer = null;
+            }
+            if (statusTimer) {
+                clearInterval(statusTimer);
+                statusTimer = null;
+            }
+            if (refreshInfoTimer) {
+                clearInterval(refreshInfoTimer);
+                refreshInfoTimer = null;
+            }
+            debugLog("Background tasks stopped");
         }
 
         // Render sensor data
@@ -777,7 +1050,7 @@
             }
 
             if (sensorData.devices.length === 0) {
-                sensorList.html('<div class="sensor"><p class="sensor-name">No sensors found</p></div>');
+                sensorList.html('<div class="sensor"><p class="sensor-name">No sensors found</p><p>Try refreshing your devices using the button above.</p></div>');
                 return;
             }
 
@@ -796,6 +1069,7 @@
                         const batteryInfo = getBatteryInfo(sensor.battery, sensor.type);
                         const signalQuality = getSignalQuality(sensor.signal);
                         const typeIcon = getSensorTypeIcon(sensor.type);
+                        const typeLabel = getSensorTypeLabel(sensor.type);
 
                         const signalHighlight = (sensor.signal && parseInt(sensor.signal) <= -115) ? 'warning' : '';
                         const batteryVal = parseInt(sensor.battery);
@@ -842,8 +1116,8 @@
 
                         const sensorHTML = `
                             <div class="sensor ${borderClass}" data-device-id="${sensor.deviceId}">
-                                <div style="position: absolute; top: 1rem; right: 1rem; font-size: 1.25rem; color: var(--accent-primary); opacity: 0.5;">
-                                    <i class="fas ${typeIcon}"></i>
+                                <div class="device-type-badge">
+                                    <i class="fas ${typeIcon}"></i> ${typeLabel}
                                 </div>
                                 <div class="sensor-name">${sensor.name || 'Unknown Device'}</div>
 
@@ -869,12 +1143,12 @@
                                         sensor.type === 'DoorSensor'
                                         ? `<label for="door-prop-${sensor.deviceId}" class="door-prop-toggle" style="margin-top: 0.5rem;">
                                              <i class="fas fa-bell"></i> Door Prop Alarm:
-                                             <input type="checkbox" id="door-prop-${sensor.deviceId}"
+                                             <input type="checkbox" id="door-prop-${sensor.deviceId}" class="door-prop-input"
                                                     ${sensor.door_prop_alarm ? "checked" : ""}
                                                     onchange="toggleDoorPropAlarm('${sensor.deviceId}', this.checked)">
                                            </label>
-                                           <small style="color: var(--text-secondary); margin-top: 0.5rem; display: block;">
-                                            (Alerts if door is propped open)
+                                           <small style="color: var(--text-secondary); display: block; margin-top: 0.2rem; font-size: 0.8rem;">
+                                            (Alerts if door is left open)
                                            </small>`
                                         : ''
                                     }
@@ -909,7 +1183,7 @@
                                     hasTempHumidity && sensor.temperature && sensor.temperature !== "unknown"
                                     ? `<div class="sensor-data-item">
                                          <span><i class="fas fa-thermometer-half"></i> Temperature</span>
-                                         <span>${sensor.temperature}°F</span>
+                                         <span>${sensor.temperature}°${sensor.temperatureUnit || 'F'}</span>
                                        </div>`
                                     : ''
                                 }
@@ -959,7 +1233,8 @@
             } catch (e) {
                 console.error("Error rendering sensors:", e);
                 debugLog("Error rendering sensors", { error: e.toString() });
-                sensorList.html('<div class="sensor alarm"><p class="sensor-name">Error rendering sensors</p></div>');
+                sensorList.html('<div class="sensor alarm"><p class="sensor-name">Error rendering sensors</p><p>' + e.toString() + '</p></div>');
+                showToast("Rendering Error", "Failed to display sensors. Check the debug info for details.");
             }
         }
 
@@ -1018,173 +1293,157 @@
         };
 
         // Save CHEKT zone to server
-        function saveZone(deviceId, newZone) {
-            $.ajax({
-                type: "POST",
-                url: "/save_mapping",
-                contentType: "application/json",
-                data: JSON.stringify({ yolink_device_id: deviceId, chekt_zone: newZone }),
-                success: function(response) {
-                    if (response.status === 'success') {
-                        const confirmation = document.getElementById(`save-confirmation-${deviceId}`);
-                        if (confirmation) {
-                            confirmation.style.display = 'inline';
-                            setTimeout(() => {
-                                confirmation.style.display = 'none';
-                            }, 2000);
-                        }
-                        debugLog("Zone saved successfully", { deviceId, newZone });
-                    } else {
-                        debugLog("Error saving zone (server response)", { deviceId, newZone, response });
-                        alert('Error saving zone: ' + (response.message || 'Unknown error'));
-                    }
-                },
-                error: function(xhr, status, error) {
-                    console.error('Error saving zone:', xhr.responseText);
-                    debugLog("Error saving zone", { deviceId, newZone, status, error, response: xhr.responseText });
-                    alert('Error saving zone: ' + xhr.responseText);
+        async function saveZone(deviceId, newZone) {
+            try {
+                const response = await fetchWithRetry("/save_mapping", {
+                    method: "POST",
+                    contentType: "application/json",
+                    data: JSON.stringify({ yolink_device_id: deviceId, chekt_zone: newZone })
+                });
+
+                if (response.status === 'success') {
+                    showSaveConfirmation(deviceId);
+                    debugLog("Zone saved successfully", { deviceId, newZone });
+                } else {
+                    debugLog("Error saving zone (server response)", { deviceId, newZone, response });
+                    showToast("Save Error", "Failed to save zone mapping: " + (response.message || "Unknown error"));
                 }
-            });
+            } catch (error) {
+                debugLog("Error saving zone", { deviceId, newZone, error: error.message });
+                showToast("Save Error", "Failed to save zone mapping. Please try again.");
+            }
         }
 
         // Save Relay Channel to server
-        function saveRelayChannel(deviceId, newChannel) {
-            // If the channel is set, also set use_relay to true automatically
-            const useRelay = newChannel && newChannel.trim() !== '';
+        async function saveRelayChannel(deviceId, newChannel) {
+            try {
+                // If the channel is set, also set use_relay to true automatically
+                const useRelay = newChannel && newChannel.trim() !== '';
 
-            $.ajax({
-                type: "POST",
-                url: "/save_relay_mapping",
-                contentType: "application/json",
-                data: JSON.stringify({
-                    yolink_device_id: deviceId,
-                    relay_channel: newChannel,
-                    use_relay: useRelay
-                }),
-                success: function(response) {
-                    if (response.status === 'success') {
-                        const confirmation = document.getElementById(`save-confirmation-${deviceId}`);
-                        if (confirmation) {
-                            confirmation.style.display = 'inline';
-                            setTimeout(() => {
-                                confirmation.style.display = 'none';
-                            }, 2000);
-                        }
-                        debugLog("Relay channel saved successfully", { deviceId, newChannel, useRelay });
-                    } else {
-                        debugLog("Error saving relay channel (server response)", { deviceId, newChannel, useRelay, response });
-                        alert('Error saving relay channel: ' + (response.message || 'Unknown error'));
-                    }
-                },
-                error: function(xhr, status, error) {
-                    console.error('Error saving relay channel:', xhr.responseText);
-                    debugLog("Error saving relay channel", { deviceId, newChannel, useRelay, status, error, response: xhr.responseText });
-                    alert('Error saving relay channel: ' + xhr.responseText);
+                const response = await fetchWithRetry("/save_relay_mapping", {
+                    method: "POST",
+                    contentType: "application/json",
+                    data: JSON.stringify({
+                        yolink_device_id: deviceId,
+                        relay_channel: newChannel,
+                        use_relay: useRelay
+                    })
+                });
+
+                if (response.status === 'success') {
+                    showSaveConfirmation(deviceId);
+                    debugLog("Relay channel saved successfully", { deviceId, newChannel, useRelay });
+                } else {
+                    debugLog("Error saving relay channel (server response)", { deviceId, newChannel, useRelay, response });
+                    showToast("Save Error", "Failed to save relay mapping: " + (response.message || "Unknown error"));
                 }
-            });
+            } catch (error) {
+                debugLog("Error saving relay channel", { deviceId, newChannel, error: error.message });
+                showToast("Save Error", "Failed to save relay mapping. Please try again.");
+            }
+        }
+
+        // Show save confirmation animation
+        function showSaveConfirmation(deviceId) {
+            const confirmation = document.getElementById(`save-confirmation-${deviceId}`);
+            if (confirmation) {
+                confirmation.style.display = 'inline';
+                setTimeout(() => {
+                    confirmation.style.display = 'none';
+                }, 2000);
+            }
         }
 
         // Toggle door prop alarm
-        window.toggleDoorPropAlarm = function(deviceId, enabled) {
-            $.ajax({
-                type: "POST",
-                url: "/set_door_prop_alarm",
-                contentType: "application/json",
-                data: JSON.stringify({ device_id: deviceId, enabled: enabled }),
-                success: function(response) {
-                    if (response.status === 'success') {
-                        const confirmation = document.getElementById(`save-confirmation-${deviceId}`);
-                        if (confirmation) {
-                            confirmation.style.display = 'inline';
-                            setTimeout(() => {
-                                confirmation.style.display = 'none';
-                            }, 2000);
-                        }
-                        debugLog("Door prop alarm setting saved", { deviceId, enabled });
-                    } else {
-                        debugLog("Error saving door prop alarm (server response)", { deviceId, enabled, response });
-                        alert('Error saving door prop alarm: ' + (response.message || 'Unknown error'));
-                    }
-                },
-                error: function(xhr, status, error) {
-                    console.error('Error saving door prop alarm:', xhr.responseText);
-                    debugLog("Error saving door prop alarm", { deviceId, enabled, status, error, response: xhr.responseText });
-                    alert('Error saving door prop alarm: ' + xhr.responseText);
+        window.toggleDoorPropAlarm = async function(deviceId, enabled) {
+            try {
+                const response = await fetchWithRetry("/set_door_prop_alarm", {
+                    method: "POST",
+                    contentType: "application/json",
+                    data: JSON.stringify({ device_id: deviceId, enabled: enabled })
+                });
+
+                if (response.status === 'success') {
+                    showSaveConfirmation(deviceId);
+                    debugLog("Door prop alarm setting saved", { deviceId, enabled });
+                } else {
+                    debugLog("Error saving door prop alarm (server response)", { deviceId, enabled, response });
+                    showToast("Save Error", "Failed to save door prop alarm: " + (response.message || "Unknown error"));
                 }
-            });
+            } catch (error) {
+                debugLog("Error saving door prop alarm", { deviceId, enabled, error: error.message });
+                showToast("Save Error", "Failed to save door prop alarm. Please try again.");
+
+                // Revert the checkbox
+                const checkbox = document.getElementById(`door-prop-${deviceId}`);
+                if (checkbox) {
+                    checkbox.checked = !enabled;
+                }
+            }
         };
 
         // Initialize
         debugLog("Initializing dashboard");
+        checkAllStatuses();
+        checkLastRefreshTime();
         updateSensorData();
-
-        // Check connection statuses
-        checkStatus('/check_mqtt_status', 'yolink-mqtt-message', 'yolink-mqtt-icon',
-                    'YoLink MQTT connection is active.', 'YoLink MQTT connection is inactive.');
-        checkStatus('/check_monitor_mqtt_status', 'monitor-mqtt-message', 'monitor-mqtt-icon',
-                    'Monitor MQTT connection is active.', 'Monitor MQTT connection is inactive.');
-        checkStatus('/check_receiver_status', 'receiver-message', 'receiver-icon',
-                    'Receiver is alive.', 'Receiver connection failed.');
-        checkModbusStatus();
-
-        // Setup periodic status checks
-        setInterval(function() {
-            checkStatus('/check_mqtt_status', 'yolink-mqtt-message', 'yolink-mqtt-icon',
-                        'YoLink MQTT connection is active.', 'YoLink MQTT connection is inactive.');
-            checkStatus('/check_monitor_mqtt_status', 'monitor-mqtt-message', 'monitor-mqtt-icon',
-                        'Monitor MQTT connection is active.', 'Monitor MQTT connection is inactive.');
-            checkStatus('/check_receiver_status', 'receiver-message', 'receiver-icon',
-                        'Receiver is alive.', 'Receiver connection failed.');
-            checkModbusStatus();
-        }, 10000); // Check every 10 seconds
-
-        // Setup periodic sensor data updates
-        setInterval(updateSensorData, 15000); // Update every 15 seconds
+        startBackgroundTasks();
 
         // Setup refresh devices button
-        $('#update-devices').click(function() {
+        $('#update-devices').click(async function() {
             $('#refresh-spinner').removeClass('hidden');
             $('#refresh-message').text('Updating YoLink devices...');
             $('#update-devices').prop('disabled', true);
             $('#update-devices').html('<i class="fas fa-spinner fa-spin"></i> Updating...');
 
-            debugLog("Refreshing YoLink devices");
+            debugLog("Manually refreshing YoLink devices");
 
-            $.ajax({
-                url: '/refresh_devices',
-                type: 'GET',
-                success: function(response) {
-                    $('#refresh-spinner').addClass('hidden');
-                    $('#update-devices').prop('disabled', false);
-                    $('#update-devices').html('<i class="fas fa-sync-alt"></i> Update YoLink Devices');
+            try {
+                const response = await fetchWithRetry('/refresh_devices', {
+                    method: 'GET',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                });
 
-                    $('#refresh-message').text(
-                        response.status === "success"
-                            ? 'YoLink devices updated successfully!'
-                            : 'Failed to update YoLink devices: ' + (response.message || '')
-                    );
-                    debugLog("Device refresh response", response);
-                    updateSensorData();
+                $('#refresh-spinner').addClass('hidden');
+                $('#update-devices').prop('disabled', false);
+                $('#update-devices').html('<i class="fas fa-sync-alt"></i> Update YoLink Devices');
 
-                    // Clear the message after 5 seconds
-                    setTimeout(() => {
-                        $('#refresh-message').text('');
-                    }, 5000);
-                },
-                error: function(xhr, status, error) {
-                    $('#refresh-spinner').addClass('hidden');
-                    $('#update-devices').prop('disabled', false);
-                    $('#update-devices').html('<i class="fas fa-sync-alt"></i> Update YoLink Devices');
+                const message = response.status === "success"
+                    ? 'YoLink devices updated successfully!'
+                    : 'Failed to update YoLink devices: ' + (response.message || '');
 
-                    $('#refresh-message').text('Failed to update YoLink devices.');
-                    debugLog("Device refresh failed", { status, error, response: xhr.responseText });
+                $('#refresh-message').text(message);
+                debugLog("Device refresh response", response);
 
-                    // Clear the message after 5 seconds
-                    setTimeout(() => {
-                        $('#refresh-message').text('');
-                    }, 5000);
-                }
-            });
+                // Update sensor data
+                await updateSensorData();
+
+                // Update last refresh time
+                await checkLastRefreshTime();
+
+                // Clear the message after 5 seconds
+                setTimeout(() => {
+                    $('#refresh-message').text('');
+                }, 5000);
+            } catch (error) {
+                $('#refresh-spinner').addClass('hidden');
+                $('#update-devices').prop('disabled', false);
+                $('#update-devices').html('<i class="fas fa-sync-alt"></i> Update YoLink Devices');
+
+                $('#refresh-message').text('Failed to update YoLink devices.');
+                debugLog("Device refresh failed", { error: error.message });
+                showToast("Refresh Error", "Failed to update YoLink devices. Please try again.");
+
+                // Clear the message after 5 seconds
+                setTimeout(() => {
+                    $('#refresh-message').text('');
+                }, 5000);
+            }
+        });
+
+        // Cleanup on page unload
+        $(window).on('beforeunload', function() {
+            stopBackgroundTasks();
         });
 
         // Show initial debug message
