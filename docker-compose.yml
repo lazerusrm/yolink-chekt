@@ -5,6 +5,7 @@ services:
     build: .
     ports:
       - "5000:5000"
+      - "502:502""
     volumes:
       - .:/app
       - ./logs:/app/logs
