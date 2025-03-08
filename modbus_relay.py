@@ -26,8 +26,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Global Modbus client
-client = AsyncModbusTcpClient("modbus-proxy", port=1502, timeout=1)
+# Global Modbus client - IMPORTANT: initialized as None, not at module level
+client = None
 
 # Configuration (will be loaded from config.py)
 config: Dict[str, Any] = {
@@ -52,6 +52,21 @@ async def load_config() -> Dict[str, Any]:
     """
     from config import load_config as load_config_impl
     return await load_config_impl()
+
+
+async def get_client() -> AsyncModbusTcpClient:
+    """
+    Get or create the Modbus client.
+
+    Returns:
+        AsyncModbusTcpClient: The Modbus client instance
+    """
+    global client
+    if client is None:
+        # Create the client within a running event loop
+        logger.debug("Creating new AsyncModbusTcpClient instance")
+        client = AsyncModbusTcpClient("modbus-proxy", port=1502, timeout=1)
+    return client
 
 
 async def configure_proxy(target_ip: str, target_port: int, retry_count: int = 3) -> bool:
@@ -79,17 +94,16 @@ async def configure_proxy(target_ip: str, target_port: int, retry_count: int = 3
                         return True
 
                     response_text = await response.text()
-                    logger.warning(f"Proxy configuration failed (attempt {attempt + 1}/{retry_count}): "
+                    logger.warning(f"Proxy configuration failed (attempt {attempt+1}/{retry_count}): "
                                    f"Status {response.status} - {response_text}")
 
                     if attempt < retry_count - 1:
                         # Exponential backoff with jitter
-                        wait_time = min(10, 0.5 * (2 ** attempt)) * (
-                                    0.9 + 0.2 * (hash(datetime.now().microsecond) % 10) / 10)
+                        wait_time = min(10, 0.5 * (2 ** attempt)) * (0.9 + 0.2 * (hash(datetime.now().microsecond) % 10) / 10)
                         logger.debug(f"Retrying in {wait_time:.2f}s")
                         await asyncio.sleep(wait_time)
         except aiohttp.ClientError as e:
-            logger.error(f"Error configuring Modbus proxy (attempt {attempt + 1}/{retry_count}): {e}")
+            logger.error(f"Error configuring Modbus proxy (attempt {attempt+1}/{retry_count}): {e}")
             if attempt < retry_count - 1:
                 await asyncio.sleep(1.5 * (attempt + 1))
 
@@ -114,27 +128,29 @@ async def ensure_connection(max_retries: int = 3) -> bool:
         logger.info("Modbus relay is disabled in configuration")
         return False
 
+    # Get the modbus client
+    modbus_client = await get_client()
+
     # If not connected, try to connect
-    if not client.connected:
+    if not modbus_client.connected:
         for attempt in range(max_retries):
             try:
-                await client.connect()
-                if client.connected:
+                await modbus_client.connect()
+                if modbus_client.connected:
                     logger.info("Connected to Modbus proxy at modbus-proxy:1502")
                     # Store successful connection time
                     redis_client = await get_redis()
                     await redis_client.set("modbus_last_connected", datetime.now().isoformat())
                     return True
                 else:
-                    logger.error(
-                        f"Failed to establish socket connection to Modbus proxy (attempt {attempt + 1}/{max_retries})")
+                    logger.error(f"Failed to establish socket connection to Modbus proxy (attempt {attempt+1}/{max_retries})")
                     if attempt < max_retries - 1:
                         # Exponential backoff
                         wait_time = min(10, 1 * (2 ** attempt))
                         logger.debug(f"Retrying in {wait_time:.1f}s")
                         await asyncio.sleep(wait_time)
             except Exception as e:
-                logger.error(f"Connection to Modbus proxy failed (attempt {attempt + 1}/{max_retries}): {e}")
+                logger.error(f"Connection to Modbus proxy failed (attempt {attempt+1}/{max_retries}): {e}")
                 if attempt < max_retries - 1:
                     await asyncio.sleep(1.5 * (attempt + 1))
         return False
@@ -185,8 +201,7 @@ async def initialize() -> bool:
         return False
 
 
-async def trigger_relay(channel: int, state: bool = True, pulse_seconds: float = None,
-                        follower_mode: bool = None) -> bool:
+async def trigger_relay(channel: int, state: bool = True, pulse_seconds: float = None, follower_mode: bool = None) -> bool:
     """
     Trigger a relay channel asynchronously with optional pulsing.
 
@@ -223,16 +238,20 @@ async def trigger_relay(channel: int, state: bool = True, pulse_seconds: float =
 
     # Modbus uses 0-based addressing, while our channels are 1-based
     coil_address = channel - 1
+
+    # Get the Modbus client
+    modbus_client = await get_client()
+
     try:
         # Connect if not connected
-        if not client.connected:
-            await client.connect()
-            if not client.connected:
+        if not modbus_client.connected:
+            await modbus_client.connect()
+            if not modbus_client.connected:
                 logger.error("Failed to connect to Modbus proxy")
                 return False
 
         # Write to coil
-        result = await client.write_coil(coil_address, state, slave=unit_id)
+        result = await modbus_client.write_coil(coil_address, state, slave=unit_id)
         if hasattr(result, 'isError') and result.isError():
             logger.error(f"Failed to set relay channel {channel}: {result}")
             return False
@@ -262,7 +281,7 @@ async def trigger_relay(channel: int, state: bool = True, pulse_seconds: float =
 
         # Try to reconnect on error
         try:
-            await client.close()
+            await modbus_client.close()
             logger.info("Closed Modbus connection due to error")
         except:
             pass
@@ -293,12 +312,14 @@ async def shutdown_modbus() -> None:
     """
     Gracefully shutdown the Modbus client.
     """
-    if client.connected:
+    global client
+    if client and client.connected:
         try:
             await client.close()
             logger.info("Modbus client connection closed gracefully")
         except Exception as e:
             logger.error(f"Error during Modbus client shutdown: {e}")
+    client = None
 
 
 async def test_channels(channel_count: int = None) -> Dict[str, Any]:
