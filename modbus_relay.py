@@ -5,6 +5,10 @@ import requests
 from config import load_config
 import traceback
 
+# Import for PyModbus 3.x
+from pymodbus.client import ModbusTcpClient
+from pymodbus.exceptions import ModbusException, ConnectionException
+
 logger = logging.getLogger(__name__)
 
 # Global client to reuse connection
@@ -12,41 +16,6 @@ client = None
 connected = False
 last_connection_attempt = 0
 connection_retry_interval = 10  # seconds
-pymodbus_version = None  # Will store the detected version: '2.x' or '3.x'
-
-# Detect PyModbus version
-try:
-    import pymodbus
-
-    if hasattr(pymodbus, '__version__'):
-        version_str = pymodbus.__version__
-        major_version = int(version_str.split('.')[0])
-        if major_version >= 3:
-            pymodbus_version = '3.x'
-            # Import for PyModbus 3.x
-            from pymodbus.client import ModbusTcpClient
-            from pymodbus.exceptions import ModbusException, ConnectionException
-
-            logger.info(f"Using PyModbus 3.x API (version {version_str})")
-        else:
-            pymodbus_version = '2.x'
-            # Import for PyModbus 2.x
-            from pymodbus.client.sync import ModbusTcpClient
-            from pymodbus.exceptions import ModbusException, ConnectionException
-
-            logger.info(f"Using PyModbus 2.x API (version {version_str})")
-    else:
-        # Default to 2.x for older versions without __version__
-        pymodbus_version = '2.x'
-        from pymodbus.client.sync import ModbusTcpClient
-        from pymodbus.exceptions import ModbusException, ConnectionException
-
-        logger.info("Using PyModbus 2.x API (version unknown)")
-except ImportError:
-    logger.error("PyModbus library not installed. Modbus functionality will be disabled.")
-except Exception as e:
-    logger.error(f"Error detecting PyModbus version: {e}")
-    traceback.print_exc()
 
 
 def configure_proxy(target_ip, target_port):
@@ -66,22 +35,13 @@ def configure_proxy(target_ip, target_port):
         "target_port": target_port
     }
 
-    # API port configuration - typically we need to use port 5000 for the API
-    # while port 1502 is dedicated to the Modbus TCP traffic
-    api_port = 5000  # Default API port
-
-    # Different endpoint options to try
-    endpoints = [
-        "/api/modbus-proxy/configure",  # Primary API endpoint
-        "/configure"  # Fallback endpoint
-    ]
-
-    # Try different URLs with different ports
+    # Different URLs to try
     urls_to_try = [
-                      f"http://modbus-proxy:{api_port}{endpoint}" for endpoint in endpoints
-                  ] + [
-                      f"http://modbus-proxy:1502{endpoint}" for endpoint in endpoints  # Try the modbus port too
-                  ]
+        "http://modbus-proxy:5000/api/modbus-proxy/configure",
+        "http://modbus-proxy:5000/configure",
+        "http://modbus-proxy:1502/api/modbus-proxy/configure",
+        "http://modbus-proxy:1502/configure"
+    ]
 
     for url in urls_to_try:
         try:
@@ -117,7 +77,7 @@ def check_proxy_health():
     Returns:
         bool: True if proxy is healthy, False otherwise
     """
-    # Try both the API port and the modbus port
+    # Try both ports
     urls_to_try = [
         "http://modbus-proxy:5000/healthcheck",
         "http://modbus-proxy:1502/healthcheck"
@@ -196,10 +156,14 @@ def ensure_connection():
                 logger.warning(f"Error closing existing Modbus connection: {e}")
 
         logger.info(f"Connecting to Modbus relay via proxy for device at {modbus_ip}:{modbus_port}")
+
+        # Create client with explicit unit ID for PyModbus 3.x
+        unit_id = modbus_config.get('unit_id', 1)
         client = ModbusTcpClient(
             host="modbus-proxy",  # Connect to the proxy service in the Docker network
             port=1502,  # Proxy listen port
-            timeout=10
+            timeout=10,
+            slave=unit_id  # Unit ID / slave address is set here for PyModbus 3.x
         )
 
         # Attempt connection
@@ -207,13 +171,8 @@ def ensure_connection():
         if connected:
             # Validate connection with a test read
             try:
-                if pymodbus_version == '3.x':
-                    # PyModbus 3.x API
-                    result = client.read_coils(0, 1)
-                else:
-                    # PyModbus 2.x API (requires unit parameter)
-                    unit_id = modbus_config.get('unit_id', 1)
-                    result = client.read_coils(0, 1, unit=unit_id)
+                # PyModbus 3.x API - no unit parameter needed as it's set in the client
+                result = client.read_coils(0, 1)
 
                 if hasattr(result, 'bits'):
                     logger.info(f"Successfully connected to Modbus device via proxy")
@@ -267,13 +226,6 @@ def trigger_relay(channel, state=True, pulse_seconds=None, follower_mode=None):
         config = load_config()
         modbus_config = config.get('modbus', {})
 
-        # Get unit ID with validation
-        try:
-            unit_id = int(modbus_config.get('unit_id', 1))
-        except (ValueError, TypeError):
-            unit_id = 1
-            logger.warning(f"Invalid unit_id in config, using default: 1")
-
         # Check follower mode
         if follower_mode is None:
             follower_mode = modbus_config.get('follower_mode', False)
@@ -304,13 +256,8 @@ def trigger_relay(channel, state=True, pulse_seconds=None, follower_mode=None):
             try:
                 logger.info(f"Setting relay channel {channel} to {'ON' if state else 'OFF'} (attempt {attempt + 1})")
 
-                # Use the appropriate API based on PyModbus version
-                if pymodbus_version == '3.x':
-                    # PyModbus 3.x API
-                    result = client.write_coil(coil_address, state)
-                else:
-                    # PyModbus 2.x API (requires unit parameter)
-                    result = client.write_coil(coil_address, state, unit=unit_id)
+                # PyModbus 3.x API - no unit parameter needed as it's set in the client
+                result = client.write_coil(coil_address, state)
 
                 if not result or hasattr(result, 'isError') and result.isError():
                     logger.error(f"Failed to set relay (attempt {attempt + 1}): {result}")
@@ -387,7 +334,6 @@ def read_relay_state(channel):
 
     config = load_config()
     modbus_config = config.get('modbus', {})
-    unit_id = modbus_config.get('unit_id', 1)
 
     # Validate channel number
     max_channels = modbus_config.get('max_channels', 16)
@@ -399,13 +345,8 @@ def read_relay_state(channel):
     coil_address = channel - 1
 
     try:
-        # Read from coil using the appropriate API
-        if pymodbus_version == '3.x':
-            # PyModbus 3.x API
-            result = client.read_coils(coil_address, 1)
-        else:
-            # PyModbus 2.x API (requires unit parameter)
-            result = client.read_coils(coil_address, 1, unit=unit_id)
+        # PyModbus 3.x API - no unit parameter needed as it's set in the client
+        result = client.read_coils(coil_address, 1)
 
         if hasattr(result, 'bits'):
             state = result.bits[0]
@@ -440,17 +381,11 @@ def read_all_relay_states():
 
     config = load_config()
     modbus_config = config.get('modbus', {})
-    unit_id = modbus_config.get('unit_id', 1)
     max_channels = modbus_config.get('max_channels', 16)
 
     try:
-        # Read from coils using the appropriate API
-        if pymodbus_version == '3.x':
-            # PyModbus 3.x API
-            result = client.read_coils(0, max_channels)
-        else:
-            # PyModbus 2.x API (requires unit parameter)
-            result = client.read_coils(0, max_channels, unit=unit_id)
+        # PyModbus 3.x API - no unit parameter needed as it's set in the client
+        result = client.read_coils(0, max_channels)
 
         if hasattr(result, 'bits'):
             states = list(result.bits)[:max_channels]  # Limit to actual number of channels
@@ -476,9 +411,7 @@ def initialize():
     """Initialize the Modbus relay connection with health monitoring."""
     global connection_retry_interval
 
-    if pymodbus_version is None:
-        logger.error("PyModbus version could not be detected. Modbus functionality will be disabled.")
-        return False
+    logger.info("Initializing Modbus relay with PyModbus 3.x API")
 
     # Start a background thread to periodically check connection health
     def health_monitor():
