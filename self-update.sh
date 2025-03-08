@@ -77,14 +77,14 @@ update_docker_compose_ip() {
         exit 1
     fi
 
-    # Update TARGET_IP if present, or append if missing
     if grep -q "TARGET_IP=" "$DOCKER_COMPOSE_FILE"; then
         sed -i "s|TARGET_IP=.*|TARGET_IP=$host_ip|" "$DOCKER_COMPOSE_FILE" || {
             log "Error: Failed to update TARGET_IP in docker-compose.yml"
             exit 1
         }
     else
-        sed -i "/modbus-proxy:/,/environment:/ s|environment:|environment:\n      - TARGET_IP=$host_ip|" "$DOCKER_COMPOSE_FILE" || {
+        # Use $'' to allow \n to become a newline in the replacement text.
+        sed -i $'/modbus-proxy:/,/environment:/ s|environment:|environment:\n      - TARGET_IP='"$host_ip"'|' "$DOCKER_COMPOSE_FILE" || {
             log "Error: Failed to append TARGET_IP to docker-compose.yml"
             exit 1
         }
