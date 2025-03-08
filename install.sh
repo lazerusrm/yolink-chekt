@@ -225,10 +225,29 @@ if [ -f "$APP_DIR/docker-compose.yml" ]; then
         rm -f "$TEMP_FILE"
     fi
 
-    # Ensure volumes section is complete
-    if grep -q "^volumes:$" "$APP_DIR/docker-compose.yml" && ! grep -q "redis-data:" "$APP_DIR/docker-compose.yml"; then
-        echo "  redis-data:" >> "$APP_DIR/docker-compose.yml"
-        echo "Fixed volumes section in docker-compose.yml"
+    # Ensure volumes section is complete and properly formatted
+    if grep -q "^volumes:$" "$APP_DIR/docker-compose.yml"; then
+        # Check if redis-data is already defined
+        if ! grep -q "redis-data:" "$APP_DIR/docker-compose.yml"; then
+            # Create a temporary file
+            VOL_TEMP_FILE=$(mktemp)
+
+            # Process the file, adding proper volumes mapping
+            awk '{
+                print $0;
+                if ($0 ~ /^volumes:$/) {
+                    print "  redis-data: {}";
+                }
+            }' "$APP_DIR/docker-compose.yml" > "$VOL_TEMP_FILE"
+
+            # Replace the original file
+            mv "$VOL_TEMP_FILE" "$APP_DIR/docker-compose.yml" || {
+                echo "Error: Failed to update volumes in docker-compose.yml"
+                exit 1;
+            }
+
+            echo "Fixed volumes section in docker-compose.yml with proper mapping"
+        fi
     fi
 else
     echo "Error: docker-compose.yml not found. Please check your repository."
@@ -383,10 +402,30 @@ update_docker_compose_ip() {
         exit 1
     }
 
-    # Ensure volumes section is complete
-    if grep -q "^volumes:$" "$DOCKER_COMPOSE_FILE" && ! grep -q "redis-data:" "$DOCKER_COMPOSE_FILE"; then
-        echo "  redis-data:" >> "$DOCKER_COMPOSE_FILE"
-        log "Fixed volumes section in docker-compose.yml"
+    # Ensure volumes section is complete and properly formatted
+    if grep -q "^volumes:$" "$DOCKER_COMPOSE_FILE"; then
+        # Check if redis-data is already defined
+        if ! grep -q "redis-data:" "$DOCKER_COMPOSE_FILE"; then
+            # Create a temporary file
+            local vol_tmpfile
+            vol_tmpfile=$(mktemp)
+
+            # Process the file, adding proper volumes mapping
+            awk '{
+                print $0;
+                if ($0 ~ /^volumes:$/) {
+                    print "  redis-data: {}";
+                }
+            }' "$DOCKER_COMPOSE_FILE" > "$vol_tmpfile"
+
+            # Replace the original file
+            mv "$vol_tmpfile" "$DOCKER_COMPOSE_FILE" || {
+                log "Error: Failed to update volumes in docker-compose.yml"
+                exit 1;
+            }
+
+            log "Fixed volumes section in docker-compose.yml with proper mapping"
+        fi
     fi
 
     log "Successfully updated docker-compose.yml"
