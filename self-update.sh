@@ -77,25 +77,27 @@ update_docker_compose_ip() {
         exit 1
     fi
 
-    tmpfile=$(mktemp) || { log "Error: Could not create temporary file"; exit 1; }
+    # Escape characters that might conflict (e.g. / or &)
+    local escaped_ip
+    escaped_ip=$(printf '%s' "$host_ip" | sed 's/[\/&]/\\&/g')
 
     if grep -q "TARGET_IP=" "$DOCKER_COMPOSE_FILE"; then
-        sed "s|TARGET_IP=.*|TARGET_IP=$host_ip|" "$DOCKER_COMPOSE_FILE" > "$tmpfile" || {
+        # Use @ as the delimiter instead of | to avoid conflicts.
+        sed -i'' "s@TARGET_IP=.*@TARGET_IP=${escaped_ip}@" "$DOCKER_COMPOSE_FILE" || {
             log "Error: Failed to update TARGET_IP in docker-compose.yml"
-            rm -f "$tmpfile"
             exit 1
         }
     else
-        sed "/environment:/a      - TARGET_IP=$host_ip" "$DOCKER_COMPOSE_FILE" > "$tmpfile" || {
+        # Append TARGET_IP after the first occurrence of "environment:"
+        sed -i'' '/environment:/a\
+      - TARGET_IP='"${escaped_ip}" "$DOCKER_COMPOSE_FILE" || {
             log "Error: Failed to append TARGET_IP to docker-compose.yml"
-            rm -f "$tmpfile"
             exit 1
         }
     fi
-
-    mv "$tmpfile" "$DOCKER_COMPOSE_FILE" || { log "Error: Failed to move temporary file to $DOCKER_COMPOSE_FILE"; exit 1; }
-    log "Updated docker-compose.yml with TARGET_IP=$host_ip"
+    log "Updated docker-compose.yml with TARGET_IP=${host_ip}"
 }
+
 
 # Download with retry logic
 download_with_retry() {
