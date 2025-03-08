@@ -45,7 +45,7 @@ async def get_redis() -> Redis:
     """
     global _redis_client, _pool
 
-    if _redis_client is None or _redis_client.closed:
+    if _redis_client is None:
         if _pool is None or _pool.disconnected:
             logger.debug(f"Creating new Redis connection pool: host={_config['host']}, port={_config['port']}")
             _pool = ConnectionPool(
