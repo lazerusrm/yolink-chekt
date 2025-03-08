@@ -23,7 +23,7 @@ from quart_bcrypt import Bcrypt
 import pyotp
 import qrcode
 import psutil
-from apscheduler.schedulers.async_ import AsyncIOScheduler
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from redis.asyncio import Redis
 
 # Import project modules
