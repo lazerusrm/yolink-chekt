@@ -19,14 +19,21 @@ services:
       - yolink-network
 
   modbus-proxy:
-    image: nicolargo/docker-modbus-proxy:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.modbus-proxy  # New Dockerfile for modbus-proxy
     container_name: modbus-proxy
-    network_mode: host  # Only this container uses host networking
     ports:
-      - "1502:1502"  # Configuration API port
+      - "1502:1502"  # Expose proxy port to host and Docker network
+    environment:
+      - TARGET_IP=host.docker.internal  # Default to host IP, override as needed
+      - TARGET_PORT=502
+      - LISTEN_PORT=1502
     restart: unless-stopped
     networks:
       - yolink-network
+    extra_hosts:
+      - "10.250.250.2"  # Maps host IP for Docker network
 
   redis:
     image: redis:6
@@ -96,6 +103,7 @@ services:
 
 networks:
   yolink-network:
+    driver: bridge
 
 volumes:
   redis-data:

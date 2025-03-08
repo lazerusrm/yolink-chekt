@@ -1,3 +1,4 @@
+import os
 import socket
 import threading
 import logging
@@ -8,12 +9,12 @@ from flask import Blueprint, request, jsonify
 # Setup logging
 logger = logging.getLogger(__name__)
 
-# Global configuration
+# Global configuration with environment variable overrides
 modbus_proxy_config = {
-    "target_ip": "127.0.0.1",
-    "target_port": 502,
-    "listen_port": 1502,
-    "enabled": False,
+    "target_ip": os.getenv("TARGET_IP", "127.0.0.1"),
+    "target_port": int(os.getenv("TARGET_PORT", 502)),
+    "listen_port": int(os.getenv("LISTEN_PORT", 1502)),
+    "enabled": os.getenv("ENABLED", "true").lower() == "true",
     "active_connections": 0
 }
 

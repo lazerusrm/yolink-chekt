@@ -58,22 +58,20 @@ def ensure_connection():
     modbus_port = modbus_config.get('port', 502)
 
     # Configure the proxy with the target device information
-    configure_modbus_proxy(modbus_ip, modbus_port)
+    configure_proxy(modbus_ip, modbus_port)  # This uses http://modbus-proxy:1502/configure
 
-    # Now connect to the local proxy instead of the remote device
+    # Connect to the proxy service
     try:
-        # Close any existing connection
         if client:
             try:
                 client.close()
             except Exception as e:
                 logger.warning(f"Error closing existing Modbus connection: {e}")
 
-        # Connect to the local proxy
         logger.info(f"Connecting to Modbus proxy for device at {modbus_ip}:{modbus_port}")
         client = ModbusTcpClient(
-            host="localhost",  # Connect to the local proxy
-            port=1502,  # Use the proxy port
+            host="modbus-proxy",  # Connect to the proxy service in the Docker network
+            port=1502,           # Proxy listen port
             timeout=10
         )
 
