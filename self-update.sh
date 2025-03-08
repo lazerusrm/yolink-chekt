@@ -80,15 +80,12 @@ update_docker_compose_ip() {
         log "Error: docker-compose.yml not found at $DOCKER_COMPOSE_FILE"
         exit 1
     }
-
-    # Use sed to replace or set TARGET_IP in modbus-proxy service
     if grep -q "TARGET_IP=" "$DOCKER_COMPOSE_FILE"; then
         sed -i "/modbus-proxy:/,/^[^ ]/ s/TARGET_IP=.*/TARGET_IP=$host_ip/" "$DOCKER_COMPOSE_FILE" || {
             log "Error: Failed to update TARGET_IP in docker-compose.yml"
             exit 1
         }
     else
-        # If TARGET_IP isn't present, append it under modbus-proxy environment
         sed -i "/modbus-proxy:/,/environment:/ { /environment:/ a\      - TARGET_IP=$host_ip" "$DOCKER_COMPOSE_FILE" || {
             log "Error: Failed to append TARGET_IP to docker-compose.yml"
             exit 1
