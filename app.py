@@ -23,7 +23,7 @@ from quart_bcrypt import Bcrypt
 import pyotp
 import qrcode
 import psutil
-from apscheduler.schedulers.async_ import AsyncScheduler
+from apscheduler.schedulers.async_ import AsyncIOScheduler
 from redis.asyncio import Redis
 
 # Import project modules
@@ -56,7 +56,7 @@ auth_manager = QuartAuth()
 auth_manager.init_app(app)
 
 # Scheduler for periodic tasks
-scheduler = AsyncScheduler()
+scheduler = AsyncIOScheduler()
 
 # Global Redis client (async)
 redis_client = Redis(

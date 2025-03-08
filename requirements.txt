@@ -5,7 +5,7 @@ PyYAML>=6.0
 aiohttp>=3.8.5
 Flask-Bcrypt>=1.0.0
 Flask-Login>=0.6.0
-APScheduler>=3.10.1
+APScheduler>=3.10.4
 pyotp>=2.6.0
 qrcode[pil]>=7.3
 pytz
