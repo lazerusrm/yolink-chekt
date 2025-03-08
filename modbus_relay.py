@@ -17,6 +17,8 @@ connection_retry_interval = 10  # seconds
 health_check_interval = 30  # seconds
 connection_monitor_running = False
 connection_monitor_thread = None
+
+# Multiple endpoints for fallback
 proxy_endpoints = [
     "http://modbus-proxy:5000/api/modbus-proxy/configure",
     "http://modbus-proxy:5000/configure",
@@ -37,18 +39,27 @@ def configure_proxy(target_ip, target_port):
         "enabled": True
     }
 
-    # Try all endpoints in sequence until one works
-    for endpoint in proxy_endpoints:
+    # Try main endpoint first for performance
+    logger.debug(f"Configuring modbus proxy at {proxy_endpoints[0]} for target {target_ip}:{target_port}")
+    try:
+        response = requests.post(proxy_endpoints[0], json=data, timeout=5)
+        if response.status_code == 200:
+            logger.info(f"Successfully configured modbus proxy")
+            return True
+    except Exception as e:
+        logger.warning(f"Error configuring modbus proxy via primary endpoint: {e}")
+
+    # Try fallback endpoints if the main one fails
+    for endpoint in proxy_endpoints[1:]:
         try:
-            logger.debug(f"Configuring modbus proxy at {endpoint} for target {target_ip}:{target_port}")
+            logger.debug(f"Trying fallback: Configuring modbus proxy at {endpoint}")
             response = requests.post(endpoint, json=data, timeout=5)
 
             if response.status_code == 200:
-                logger.info(f"Successfully configured modbus proxy via {endpoint}")
+                logger.info(f"Successfully configured modbus proxy via fallback {endpoint}")
                 return True
             else:
-                logger.warning(
-                    f"Failed to configure modbus proxy via {endpoint}: {response.status_code} - {response.text}")
+                logger.warning(f"Failed to configure modbus proxy via {endpoint}: {response.status_code}")
         except Exception as e:
             logger.warning(f"Error configuring modbus proxy via {endpoint}: {e}")
 
@@ -59,13 +70,22 @@ def configure_proxy(target_ip, target_port):
 
 def check_proxy_health():
     """Check if the Modbus proxy is healthy with fallback options"""
-    for endpoint in health_check_endpoints:
+    # Try main endpoint first
+    try:
+        response = requests.get(health_check_endpoints[0], timeout=2)
+        if response.status_code == 200:
+            logger.debug(f"Modbus proxy health check successful")
+            return True
+    except Exception as e:
+        logger.warning(f"Error checking modbus proxy health via primary endpoint: {e}")
+
+    # Try fallback endpoints if the main one fails
+    for endpoint in health_check_endpoints[1:]:
         try:
             response = requests.get(endpoint, timeout=2)
             if response.status_code == 200:
-                logger.debug(f"Modbus proxy health check via {endpoint} successful")
+                logger.debug(f"Modbus proxy health check via fallback {endpoint} successful")
                 return True
-            logger.warning(f"Modbus proxy health check via {endpoint} failed with status code {response.status_code}")
         except Exception as e:
             logger.warning(f"Modbus proxy health check via {endpoint} error: {e}")
 
@@ -122,8 +142,18 @@ def ensure_connection():
         logger.info(f"Connecting to Modbus relay via proxy for device at {modbus_ip}:{modbus_port}")
 
         # Create ModbusTcpClient - don't try to set slave/unit here
-        # Import client every time to make sure we're using the right one
-        from pymodbus.client import ModbusTcpClient
+        try:
+            # Import client every time to make sure we're using the right one
+            from pymodbus.client import ModbusTcpClient
+        except ImportError:
+            # Try legacy import path for compatibility
+            try:
+                from pymodbus.client.sync import ModbusTcpClient
+                logger.info("Using legacy PyModbus client (sync)")
+            except ImportError:
+                logger.error("Could not import ModbusTcpClient from either location")
+                connected = False
+                return False
 
         client = ModbusTcpClient(
             host="modbus-proxy",  # Connect to the proxy service in the Docker network
@@ -204,8 +234,17 @@ def trigger_relay(channel, state=True, pulse_seconds=None, follower_mode=None):
             try:
                 logger.info(f"Setting relay channel {channel} to {'ON' if state else 'OFF'} (attempt {attempt + 1})")
 
-                # Write directly to the specified address
-                result = client.write_coil(coil_address, state, unit=unit_id)
+                # Try different versions of the write_coil function depending on the pymodbus version
+                try:
+                    # Write directly to the specified address with unit id parameter
+                    result = client.write_coil(coil_address, state, unit=unit_id)
+                except TypeError:
+                    try:
+                        # Try alternative format for older pymodbus
+                        result = client.write_coil(coil_address, state, unit=unit_id)
+                    except TypeError:
+                        # Last resort for very old pymodbus
+                        result = client.write_coil(coil_address, state, unit_id)
 
                 if hasattr(result, 'isError') and result.isError():
                     logger.error(f"Failed to set relay (attempt {attempt + 1}): {result}")
@@ -300,8 +339,14 @@ def read_relay_state(channel):
         unit_id = 1
 
     try:
-        # Read the coil state
-        result = client.read_coils(coil_address, 1, unit=unit_id)
+        # Read the coil state with compatibility for different pymodbus versions
+        try:
+            result = client.read_coils(coil_address, 1, unit=unit_id)
+        except TypeError:
+            try:
+                result = client.read_coils(coil_address, 1, unit=unit_id)
+            except TypeError:
+                result = client.read_coils(coil_address, 1, unit_id)
 
         if hasattr(result, 'bits'):
             state = result.bits[0]
@@ -324,7 +369,7 @@ def read_all_relay_states():
 
     config = load_config()
     modbus_config = config.get('modbus', {})
-    max_channels = modbus_config.get('max_channels', 16)
+    max_channels = int(modbus_config.get('max_channels', 16))
 
     # Get unit ID
     unit_id = 1
@@ -334,8 +379,14 @@ def read_all_relay_states():
         unit_id = 1
 
     try:
-        # Read all coil states
-        result = client.read_coils(0, max_channels, unit=unit_id)
+        # Read all coil states with compatibility for different pymodbus versions
+        try:
+            result = client.read_coils(0, max_channels, unit=unit_id)
+        except TypeError:
+            try:
+                result = client.read_coils(0, max_channels, unit=unit_id)
+            except TypeError:
+                result = client.read_coils(0, max_channels, unit_id)
 
         if hasattr(result, 'bits'):
             states = list(result.bits)[:max_channels]
@@ -368,7 +419,7 @@ def connection_monitor():
             else:
                 # Periodically validate the connection by reading relay states
                 try:
-                    if client and client.is_socket_open():
+                    if client and hasattr(client, 'is_socket_open') and client.is_socket_open():
                         # Do a simple read operation to verify connection is healthy
                         config = load_config()
                         modbus_config = config.get('modbus', {})
@@ -377,7 +428,15 @@ def connection_monitor():
                             logger.debug("Connection monitor performing health check")
                             # Read the first coil as a test
                             unit_id = int(modbus_config.get('unit_id', 1))
-                            result = client.read_coils(0, 1, unit=unit_id)
+
+                            # Try compatibility for different versions
+                            try:
+                                result = client.read_coils(0, 1, unit=unit_id)
+                            except TypeError:
+                                try:
+                                    result = client.read_coils(0, 1, unit=unit_id)
+                                except TypeError:
+                                    result = client.read_coils(0, 1, unit_id)
 
                             if not hasattr(result, 'bits'):
                                 logger.warning("Connection monitor: connection test failed, reconnecting")

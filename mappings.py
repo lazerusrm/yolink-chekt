@@ -16,41 +16,43 @@ def get_mapping(yolink_device_id):
     return next((m for m in mappings if m["yolink_device_id"] == yolink_device_id), None)
 
 
-def save_mapping(yolink_device_id, chekt_zone=None, relay_channel=None, use_relay=False):
+def save_mapping(device_id, chekt_zone=None, relay_channel=None, use_relay=None):
     """
-    Save mapping for a device.
-
-    Args:
-        yolink_device_id: The device ID to save mapping for
-        chekt_zone: Optional CHEKT zone to assign
-        relay_channel: Optional relay channel to assign
-        use_relay: Whether to use relay for this device (can use both CHEKT and relay)
+    Save a mapping for a specific device ID.
+    If relay_channel is set and not 'N/A', automatically set use_relay to True
     """
-    mappings = get_mappings()
-    mappings_list = mappings["mappings"]
-    existing = next((m for m in mappings_list if m["yolink_device_id"] == yolink_device_id), None)
+    try:
+        mappings = get_mappings()
+        found = False
 
-    if existing:
-        # Update existing mapping
-        if chekt_zone is not None:
-            existing["chekt_zone"] = chekt_zone
-        if relay_channel is not None:
-            existing["relay_channel"] = relay_channel
-        if use_relay is not None:
-            existing["use_relay"] = use_relay
-    else:
-        # Create new mapping with default values
-        new_mapping = {
-            "yolink_device_id": yolink_device_id,
-            "chekt_zone": chekt_zone if chekt_zone is not None else "N/A",
-            "door_prop_alarm": False,
-            "receiver_device_id": "",  # Keep for compatibility if needed
-            "relay_channel": relay_channel if relay_channel is not None else "N/A",
-            "use_relay": use_relay if use_relay is not None else False
-        }
-        mappings_list.append(new_mapping)
+        # If relay_channel is provided and valid, automatically set use_relay to True
+        if relay_channel is not None and relay_channel != 'N/A' and relay_channel.strip():
+            use_relay = True
 
-    mappings["mappings"] = mappings_list
-    save_mappings(mappings)
+        for mapping in mappings["mappings"]:
+            if mapping["yolink_device_id"] == device_id:
+                if chekt_zone is not None:
+                    mapping["chekt_zone"] = chekt_zone
+                if relay_channel is not None:
+                    mapping["relay_channel"] = relay_channel
+                if use_relay is not None:
+                    mapping["use_relay"] = use_relay
+                found = True
+                break
 
-    return True
+        if not found:
+            new_mapping = {"yolink_device_id": device_id}
+            if chekt_zone is not None:
+                new_mapping["chekt_zone"] = chekt_zone
+            if relay_channel is not None:
+                new_mapping["relay_channel"] = relay_channel
+            if use_relay is not None:
+                new_mapping["use_relay"] = use_relay
+            mappings["mappings"].append(new_mapping)
+
+        save_mappings(mappings)
+        logger.debug(f"Successfully saved mapping for device {device_id}")
+        return True
+    except Exception as e:
+        logger.error(f"Error saving mapping for device {device_id}: {e}")
+        return False

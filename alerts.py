@@ -83,7 +83,8 @@ def trigger_alert(device_id, state, device_type):
     # Process Modbus relay if enabled and configured for this device
     if config.get("modbus", {}).get("enabled", False):
         relay_channel = mapping.get('relay_channel', 'N/A')
-        if relay_channel and relay_channel.strip() and relay_channel != 'N/A' and mapping.get('use_relay', False):
+        # If relay channel is set, consider it enabled (no need to check use_relay flag)
+        if relay_channel and relay_channel.strip() and relay_channel != 'N/A':
             try:
                 relay_channel = int(relay_channel)
                 logger.info(f"Triggering Modbus relay channel {relay_channel} for device {device_id}")
@@ -92,7 +93,7 @@ def trigger_alert(device_id, state, device_type):
                 logger.error(f"Invalid relay channel: {relay_channel}. Must be a number.")
         elif receiver_type == "MODBUS":
             logger.warning(
-                f"Primary receiver is MODBUS but no valid relay channel for device {device_id} or relay not enabled. Mapping: {mapping}")
+                f"Primary receiver is MODBUS but no valid relay channel for device {device_id}. Mapping: {mapping}")
 
 
 def trigger_chekt_event(device_id, target_channel):
