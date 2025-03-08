@@ -60,46 +60,39 @@ def trigger_alert(device_id, state, device_type):
     event_description = map_state_to_event(state, device_type)
     logger.debug(f"Device {device_id} event description: {event_description}")
 
-    # Process based on receiver type
-    if receiver_type == "CHEKT":
+    # Process CHEKT if enabled and configured for this device
+    if config.get("chekt", {}).get("enabled", True):
         chekt_zone = mapping.get('chekt_zone', 'N/A')
         if chekt_zone and chekt_zone.strip() and chekt_zone != 'N/A':
             logger.info(f"Triggering CHEKT event in zone {chekt_zone} for device {device_id}")
             trigger_chekt_event(device_id, chekt_zone)
-        else:
-            logger.warning(f"No valid CHEKT zone for device {device_id}. Mapping: {mapping}")
-    elif receiver_type == "SIA":
+        elif receiver_type == "CHEKT":
+            logger.warning(
+                f"Primary receiver is CHEKT but no valid CHEKT zone for device {device_id}. Mapping: {mapping}")
+
+    # Process SIA if enabled and configured for this device
+    if config.get("sia", {}).get("enabled", False):
         sia_zone = mapping.get('sia_zone', 'N/A')
         sia_config = config.get('sia', {})
         if sia_zone and sia_zone.strip() and sia_zone != 'N/A':
             logger.info(f"Sending SIA event in zone {sia_zone} for device {device_id}")
             send_sia_message(device_id, event_description, sia_zone, sia_config)
-        else:
-            logger.warning(f"No valid SIA zone for device {device_id}. Mapping: {mapping}")
-    elif receiver_type == "MODBUS":
-        relay_channel = mapping.get('relay_channel', 'N/A')
-        if relay_channel and relay_channel.strip() and relay_channel != 'N/A':
-            logger.info(f"Triggering Modbus relay channel {relay_channel} for device {device_id}")
-            try:
-                relay_channel = int(relay_channel)
-                trigger_modbus_relay(device_id, relay_channel, state)
-            except ValueError:
-                logger.error(f"Invalid relay channel: {relay_channel}. Must be a number.")
-        else:
-            logger.warning(f"No valid relay channel for device {device_id}. Mapping: {mapping}")
+        elif receiver_type == "SIA":
+            logger.warning(f"Primary receiver is SIA but no valid SIA zone for device {device_id}. Mapping: {mapping}")
 
-    # Always check if we should also trigger a relay regardless of primary receiver type
-    if mapping.get('use_relay', False):
+    # Process Modbus relay if enabled and configured for this device
+    if config.get("modbus", {}).get("enabled", False):
         relay_channel = mapping.get('relay_channel', 'N/A')
-        if relay_channel and relay_channel.strip() and relay_channel != 'N/A':
+        if relay_channel and relay_channel.strip() and relay_channel != 'N/A' and mapping.get('use_relay', False):
             try:
                 relay_channel = int(relay_channel)
-                logger.info(f"Also triggering Modbus relay channel {relay_channel} for device {device_id}")
+                logger.info(f"Triggering Modbus relay channel {relay_channel} for device {device_id}")
                 trigger_modbus_relay(device_id, relay_channel, state)
             except ValueError:
                 logger.error(f"Invalid relay channel: {relay_channel}. Must be a number.")
-        elif mapping.get('use_relay', False):
-            logger.warning(f"Relay enabled but no valid channel for device {device_id}. Mapping: {mapping}")
+        elif receiver_type == "MODBUS":
+            logger.warning(
+                f"Primary receiver is MODBUS but no valid relay channel for device {device_id} or relay not enabled. Mapping: {mapping}")
 
 
 def trigger_chekt_event(device_id, target_channel):

@@ -122,7 +122,14 @@ def is_system_configured():
     # Check for monitor configuration
     monitor_configured = config.get("mqtt_monitor", {}).get("url")
 
-    return yolink_configured and monitor_configured
+    # At least one receiver must be enabled
+    receiver_configured = (
+        config.get("chekt", {}).get("enabled", True) or
+        config.get("sia", {}).get("enabled", False) or
+        config.get("modbus", {}).get("enabled", False)
+    )
+
+    return yolink_configured and monitor_configured and receiver_configured
 
 
 def start_services():
@@ -347,8 +354,12 @@ def config():
     config_data = load_config()
     if request.method == "POST":
         try:
-            # Extract Modbus settings
+            # Extract receiver enabled states
+            chekt_enabled = request.form.get("chekt_enabled") == "on" or request.form.get("chekt_enabled") == "true"
+            sia_enabled = request.form.get("sia_enabled") == "on" or request.form.get("sia_enabled") == "true"
             modbus_enabled = request.form.get("modbus_enabled") == "on" or request.form.get("modbus_enabled") == "true"
+
+            # Extract Modbus settings
             modbus_follower_mode = request.form.get("modbus_follower_mode") == "on" or request.form.get(
                 "modbus_follower_mode") == "true"
             modbus_max_channels = int(request.form.get("modbus_max_channels", 16))
@@ -378,14 +389,16 @@ def config():
                 "chekt": {
                     "api_token": request.form["chekt_api_token"],
                     "ip": request.form["chekt_ip"],
-                    "port": int(request.form["chekt_port"])
+                    "port": int(request.form["chekt_port"]),
+                    "enabled": chekt_enabled
                 },
                 "sia": {
                     "ip": request.form["sia_ip"],
                     "port": int(request.form["sia_port"]) if request.form["sia_port"] else "",
                     "account_id": request.form["sia_account_id"],
                     "transmitter_id": request.form["sia_transmitter_id"],
-                    "encryption_key": request.form["sia_encryption_key"]
+                    "encryption_key": request.form["sia_encryption_key"],
+                    "enabled": sia_enabled
                 },
                 "modbus": {
                     "ip": request.form["modbus_ip"],

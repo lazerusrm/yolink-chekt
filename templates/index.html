@@ -407,6 +407,32 @@
                 padding: 1.5rem;
             }
         }
+
+        /* Integration section */
+        .integration-settings {
+            margin-top: 1rem;
+            padding: 0.75rem;
+            background-color: rgba(255, 255, 255, 0.05);
+            border-radius: var(--input-border-radius);
+        }
+
+        .integration-settings-header {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .integration-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 0.5rem;
+        }
+
+        .integration-label {
+            font-size: 0.9rem;
+        }
     </style>
 </head>
 <body>
@@ -837,19 +863,19 @@
                                 <div class="sensor-name">${sensor.name || 'Unknown Device'}</div>
 
                                 <!-- Integration Settings -->
-                                <div style="margin-top: 1rem; padding: 0.5rem; background-color: rgba(255, 255, 255, 0.05); border-radius: var(--input-border-radius);">
-                                    <strong style="font-size: 0.9rem; color: var(--text-secondary);">Integration Settings</strong>
+                                <div class="integration-settings">
+                                    <div class="integration-settings-header">Integration Settings</div>
                                     <div class="settings-divider"></div>
 
                                     <!-- CHEKT Zone -->
-                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.5rem;">
-                                        <span style="font-size: 0.9rem;">CHEKT Zone:</span>
+                                    <div class="integration-row">
+                                        <span class="integration-label">CHEKT Zone:</span>
                                         <span class="chekt-zone" onclick="makeZoneEditable(this, '${sensor.deviceId}')">${chektZone}</span>
                                     </div>
 
                                     <!-- Relay Channel -->
-                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.5rem;">
-                                        <span style="font-size: 0.9rem;">Relay Channel:</span>
+                                    <div class="integration-row">
+                                        <span class="integration-label">Relay Channel:</span>
                                         <span class="relay-channel" onclick="makeRelayChannelEditable(this, '${sensor.deviceId}')">${relayChannel}</span>
                                     </div>
 
@@ -858,7 +884,10 @@
                                         <input type="checkbox" id="use-relay-${sensor.deviceId}"
                                                ${useRelay ? "checked" : ""}
                                                onchange="toggleUseRelay('${sensor.deviceId}', this.checked)">
-                                        Enable Relay for this device
+                                        <span>Enable relay control for this device</span>
+                                        <small style="display: block; margin-left: 1.5rem; font-size: 0.8rem; color: var(--text-secondary);">
+                                            (Required even if a relay channel is assigned)
+                                        </small>
                                     </label>
 
                                     <!-- Door Prop Alarm (for door sensors only) -->
