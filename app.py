@@ -20,7 +20,7 @@ from logging.handlers import RotatingFileHandler
 from typing import Dict, Any, Optional, List
 from quart import Quart, request, render_template, flash, redirect, url_for, session, jsonify
 from quart_auth import (
-    QuartAuth, AuthUser, AuthManager, login_required,
+    QuartAuth, AuthUser, login_required,
     logout_user, login_user, Unauthorized
 )
 from quart_bcrypt import Bcrypt
@@ -59,7 +59,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Setup Quart-Auth with fixed implementation
+# Setup Quart-Auth
 class User(AuthUser):
     """User class for authentication."""
     def __init__(self, auth_id):
@@ -72,13 +72,13 @@ class User(AuthUser):
 # Initialize bcrypt for password hashing
 bcrypt = Bcrypt(app)
 
-# Initialize auth manager
+# Initialize auth
 auth = QuartAuth(app)
 
 # Scheduler for periodic tasks
 scheduler = AsyncIOScheduler()
 
-# To hold background tasks so we can cancel them on shutdown
+# To hold background tasks for cancellation on shutdown
 app.bg_tasks = []
 
 # ----------------------- Authentication Helpers -----------------------
@@ -142,11 +142,8 @@ async def is_system_configured() -> bool:
 @app.before_serving
 async def startup():
     """Startup tasks to run before the Quart server starts serving."""
-    # Initialize Redis connection manager
-    from redis_manager import get_redis, ensure_connection
-
     # Ensure Redis connection
-    if not await ensure_connection(max_retries=5, backoff_base=1.5):
+    if not await ensure_redis_connection(max_retries=5, backoff_base=1.5):
         logger.error("Exiting due to persistent Redis connection failure")
         raise SystemExit(1)
 
@@ -160,37 +157,36 @@ async def startup():
         # Start YoLink MQTT client
         task_yolink = asyncio.create_task(run_mqtt_client())
         app.bg_tasks.append(task_yolink)
-        app.ctx.shutdown_yolink = shutdown_yolink_mqtt  # Store the shutdown function
+        app.ctx.shutdown_yolink = shutdown_yolink_mqtt
 
         # Start Monitor MQTT client
         task_monitor = asyncio.create_task(run_monitor_mqtt())
         app.bg_tasks.append(task_monitor)
-        app.ctx.shutdown_monitor = shutdown_monitor_mqtt  # Store the shutdown function
+        app.ctx.shutdown_monitor = shutdown_monitor_mqtt
 
         # Initialize Modbus relay connection
         task_modbus = asyncio.create_task(modbus_relay.initialize())
         app.bg_tasks.append(task_modbus)
-        app.ctx.shutdown_modbus = modbus_relay.shutdown_modbus  # Store the shutdown function
+        app.ctx.shutdown_modbus = modbus_relay.shutdown_modbus
     else:
         logger.warning("System not fully configured; background services not started")
         app.ctx.shutdown_yolink = None
         app.ctx.shutdown_monitor = None
         app.ctx.shutdown_modbus = None
 
-    # Start scheduler for periodic tasks
+    # Start scheduler
     try:
         scheduler.start()
         logger.info("Scheduler started successfully")
     except Exception as e:
         logger.error(f"Failed to start scheduler: {e}")
 
-
 @app.after_serving
 async def shutdown():
     """Shutdown tasks to run after the Quart server stops serving."""
     logger.info("Initiating graceful shutdown of background services")
 
-    # Call module-specific shutdown functions first
+    # Call module-specific shutdown functions
     shutdown_functions = [
         (app.ctx.shutdown_modbus, "Modbus relay"),
         (app.ctx.shutdown_monitor, "Monitor MQTT"),
@@ -219,7 +215,6 @@ async def shutdown():
         logger.info(f"Waiting for {len(pending_tasks)} tasks to complete...")
         try:
             await asyncio.wait(pending_tasks, timeout=10)
-            # Check if any tasks are still pending
             still_pending = [t for t in pending_tasks if not t.done()]
             if still_pending:
                 logger.warning(f"{len(still_pending)} tasks did not complete within timeout")
@@ -289,7 +284,7 @@ async def logout():
 @app.route("/change_password", methods=["GET", "POST"])
 @login_required
 async def change_password():
-    user_data = await get_user_data(current_user.auth_id)
+    user_data = await get_user_data(auth.current_user.auth_id)
     if request.method == "POST":
         form = await request.form
         current_password = form.get("current_password", "")
@@ -303,9 +298,9 @@ async def change_password():
         elif len(new_password) < 8:
             await flash("Password must be at least 8 characters", "error")
         else:
-            user_data["password"] = await bcrypt.generate_password_hash(new_password)
+            user_data["password"] = (await bcrypt.hashpw(new_password.encode('utf-8'))).decode('utf-8')
             user_data["force_password_change"] = False
-            await save_user_data(current_user.auth_id, user_data)
+            await save_user_data(auth.current_user.auth_id, user_data)
             if "totp_secret" not in user_data:
                 return redirect(url_for("setup_totp"))
             await flash("Password changed successfully", "success")
@@ -316,7 +311,7 @@ async def change_password():
 @app.route("/setup_totp", methods=["GET", "POST"])
 @login_required
 async def setup_totp():
-    user_data = await get_user_data(current_user.auth_id)
+    user_data = await get_user_data(auth.current_user.auth_id)
     if "totp_secret" in user_data:
         await flash("TOTP already set up", "info")
         return redirect(url_for("index"))
@@ -332,7 +327,7 @@ async def setup_totp():
         totp = pyotp.TOTP(totp_secret)
         if totp.verify(totp_code):
             user_data["totp_secret"] = totp_secret
-            await save_user_data(current_user.auth_id, user_data)
+            await save_user_data(auth.current_user.auth_id, user_data)
             session.pop("totp_secret", None)
             await flash("TOTP setup complete", "success")
             return redirect(url_for("index"))
@@ -341,7 +336,7 @@ async def setup_totp():
 
     totp_secret = pyotp.random_base32()
     session["totp_secret"] = totp_secret
-    totp_uri = pyotp.TOTP(totp_secret).provisioning_uri(current_user.auth_id, issuer_name="YoLink-CHEKT")
+    totp_uri = pyotp.TOTP(totp_secret).provisioning_uri(auth.current_user.auth_id, issuer_name="YoLink-CHEKT")
     img = qrcode.make(totp_uri)
     buffered = io.BytesIO()
     img.save(buffered, format="PNG")
@@ -353,7 +348,7 @@ async def setup_totp():
 @app.route("/")
 @login_required
 async def index():
-    user_data = await get_user_data(current_user.auth_id)
+    user_data = await get_user_data(auth.current_user.auth_id)
     if user_data.get("force_password_change", False):
         await flash("Please change your default password.", "warning")
         return redirect(url_for("change_password"))
@@ -447,8 +442,6 @@ async def config():
             }
             await save_config(new_config)
             await flash("Configuration saved", "success")
-            # Restart services based on new configuration
-            # (In production, you might restart background tasks here if necessary)
         except ValueError as e:
             logger.error(f"Invalid input in configuration: {str(e)}")
             await flash(f"Invalid input: {str(e)}", "error")
@@ -486,7 +479,7 @@ async def create_user():
     if existing_user:
         await flash("Username already exists", "error")
     else:
-        hashed_password = await bcrypt.generate_password_hash(password)
+        hashed_password = (await bcrypt.hashpw(password.encode('utf-8'))).decode('utf-8')
         user_data = {"password": hashed_password, "force_password_change": True}
         await save_user_data(username, user_data)
         await flash("User created successfully", "success")
@@ -506,7 +499,6 @@ async def refresh_devices():
         else:
             await flash("Devices refreshed successfully", "success")
             return redirect(url_for("index"))
-
     except Exception as e:
         logger.error(f"Device refresh failed: {e}")
         if is_ajax:
@@ -682,18 +674,14 @@ async def last_refresh():
 @login_required
 async def restart_services():
     try:
-        # Signal MQTT clients to reconnect
         from yolink_mqtt import shutdown_yolink_mqtt
         from monitor_mqtt import shutdown_monitor_mqtt
 
-        # Shutdown existing clients
         shutdown_yolink_mqtt()
         shutdown_monitor_mqtt()
 
-        # Wait for shutdown to complete
         await asyncio.sleep(2)
 
-        # Start new tasks
         app.bg_tasks.append(asyncio.create_task(run_mqtt_client()))
         app.bg_tasks.append(asyncio.create_task(run_monitor_mqtt()))
 
@@ -880,8 +868,5 @@ async def server_error(error):
     logger.error(f"Server error: {error}")
     return await render_template("error.html", error="Internal server error"), 500
 
-# The main() function is not used when running under Gunicorn.
-# When running standalone, you can start the Quart server with:
-#   quart run --host=0.0.0.0 --port=5000
 if __name__ == "__main__":
     asyncio.run(app.run(host='0.0.0.0', port=int(os.getenv("API_PORT", 5000))))
