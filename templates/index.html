@@ -228,20 +228,6 @@
             margin: 0 0.5rem;
         }
 
-        .use-relay-toggle {
-            display: flex;
-            align-items: center;
-            margin-top: 0.5rem;
-            padding: 0.5rem;
-            background-color: rgba(0, 122, 255, 0.05);
-            border-radius: var(--input-border-radius);
-            font-size: 0.9rem;
-        }
-
-        .use-relay-toggle input {
-            margin-right: 0.5rem;
-        }
-
         /* Status indicators */
         .save-confirmation {
             position: absolute;
@@ -807,7 +793,6 @@
                         const borderClass = getBorderClass(sensor, uptimeSeconds);
                         const chektZone = (sensor.chekt_zone && sensor.chekt_zone !== 'N/A') ? sensor.chekt_zone : 'No Zone';
                         const relayChannel = (sensor.relay_channel && sensor.relay_channel !== 'N/A') ? sensor.relay_channel : 'No Relay';
-                        const useRelay = sensor.use_relay || false;
                         const batteryInfo = getBatteryInfo(sensor.battery, sensor.type);
                         const signalQuality = getSignalQuality(sensor.signal);
                         const typeIcon = getSensorTypeIcon(sensor.type);
@@ -878,17 +863,6 @@
                                         <span class="integration-label">Relay Channel:</span>
                                         <span class="relay-channel" onclick="makeRelayChannelEditable(this, '${sensor.deviceId}')">${relayChannel}</span>
                                     </div>
-
-                                    <!-- Use Relay Toggle -->
-                                    <label for="use-relay-${sensor.deviceId}" class="use-relay-toggle">
-                                        <input type="checkbox" id="use-relay-${sensor.deviceId}"
-                                               ${useRelay ? "checked" : ""}
-                                               onchange="toggleUseRelay('${sensor.deviceId}', this.checked)">
-                                        <span>Enable relay control for this device</span>
-                                        <small style="display: block; margin-left: 1.5rem; font-size: 0.8rem; color: var(--text-secondary);">
-                                            (Required even if a relay channel is assigned)
-                                        </small>
-                                    </label>
 
                                     <!-- Door Prop Alarm (for door sensors only) -->
                                     ${
@@ -1075,13 +1049,17 @@
 
         // Save Relay Channel to server
         function saveRelayChannel(deviceId, newChannel) {
+            // If the channel is set, also set use_relay to true automatically
+            const useRelay = newChannel && newChannel.trim() !== '';
+
             $.ajax({
                 type: "POST",
                 url: "/save_relay_mapping",
                 contentType: "application/json",
                 data: JSON.stringify({
                     yolink_device_id: deviceId,
-                    relay_channel: newChannel
+                    relay_channel: newChannel,
+                    use_relay: useRelay
                 }),
                 success: function(response) {
                     if (response.status === 'success') {
@@ -1092,15 +1070,15 @@
                                 confirmation.style.display = 'none';
                             }, 2000);
                         }
-                        debugLog("Relay channel saved successfully", { deviceId, newChannel });
+                        debugLog("Relay channel saved successfully", { deviceId, newChannel, useRelay });
                     } else {
-                        debugLog("Error saving relay channel (server response)", { deviceId, newChannel, response });
+                        debugLog("Error saving relay channel (server response)", { deviceId, newChannel, useRelay, response });
                         alert('Error saving relay channel: ' + (response.message || 'Unknown error'));
                     }
                 },
                 error: function(xhr, status, error) {
                     console.error('Error saving relay channel:', xhr.responseText);
-                    debugLog("Error saving relay channel", { deviceId, newChannel, status, error, response: xhr.responseText });
+                    debugLog("Error saving relay channel", { deviceId, newChannel, useRelay, status, error, response: xhr.responseText });
                     alert('Error saving relay channel: ' + xhr.responseText);
                 }
             });
@@ -1132,39 +1110,6 @@
                     console.error('Error saving door prop alarm:', xhr.responseText);
                     debugLog("Error saving door prop alarm", { deviceId, enabled, status, error, response: xhr.responseText });
                     alert('Error saving door prop alarm: ' + xhr.responseText);
-                }
-            });
-        };
-
-        // Toggle use relay
-        window.toggleUseRelay = function(deviceId, enabled) {
-            $.ajax({
-                type: "POST",
-                url: "/save_relay_mapping",
-                contentType: "application/json",
-                data: JSON.stringify({
-                    yolink_device_id: deviceId,
-                    use_relay: enabled
-                }),
-                success: function(response) {
-                    if (response.status === 'success') {
-                        const confirmation = document.getElementById(`save-confirmation-${deviceId}`);
-                        if (confirmation) {
-                            confirmation.style.display = 'inline';
-                            setTimeout(() => {
-                                confirmation.style.display = 'none';
-                            }, 2000);
-                        }
-                        debugLog("Use relay setting saved", { deviceId, enabled });
-                    } else {
-                        debugLog("Error saving use relay setting (server response)", { deviceId, enabled, response });
-                        alert('Error saving relay setting: ' + (response.message || 'Unknown error'));
-                    }
-                },
-                error: function(xhr, status, error) {
-                    console.error('Error saving use relay setting:', xhr.responseText);
-                    debugLog("Error saving use relay setting", { deviceId, enabled, status, error, response: xhr.responseText });
-                    alert('Error saving relay setting: ' + xhr.responseText);
                 }
             });
         };
