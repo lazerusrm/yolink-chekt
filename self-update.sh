@@ -83,8 +83,8 @@ update_docker_compose_ip() {
             exit 1
         }
     else
-        # Use $'' to allow \n to become a newline in the replacement text.
-        sed -i $'/modbus-proxy:/,/environment:/ s|environment:|environment:\n      - TARGET_IP='"$host_ip"'|' "$DOCKER_COMPOSE_FILE" || {
+        # Append the TARGET_IP line immediately after any "environment:" line.
+        sed -i '/environment:/a\      - TARGET_IP='"$host_ip" "$DOCKER_COMPOSE_FILE" || {
             log "Error: Failed to append TARGET_IP to docker-compose.yml"
             exit 1
         }
