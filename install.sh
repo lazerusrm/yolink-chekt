@@ -25,10 +25,18 @@ exec > >(tee -a "$LOG_FILE") 2>&1
 
 echo "Starting YoLink CHEKT Installer at $(date)"
 
-# Function to get the IP address of the interface with the default route to the internet
+# Function to get the IP address silently (no logging during capture)
+get_host_ip_silent() {
+    ip route get 8.8.8.8 | grep -o 'src [0-9.]*' | awk '{print $2}'
+}
+
+# Function to get the IP address with logging
 get_host_ip() {
+    # First capture the IP silently
     local HOST_IP
-    HOST_IP=$(ip route get 8.8.8.8 | grep -o 'src [0-9.]*' | awk '{print $2}')
+    HOST_IP=$(get_host_ip_silent)
+
+    # Then log after we've captured the IP
     if [ -z "$HOST_IP" ]; then
         echo "Error: Could not determine IP address with internet route."
         exit 1
@@ -176,9 +184,12 @@ SERVER_IP=auto
 EOT
 fi
 
-# Update docker-compose.yml with host IP - line by line approach
-HOST_IP=$(get_host_ip)
-echo "Updating docker-compose.yml with TARGET_IP=$HOST_IP"
+# Update docker-compose.yml with host IP - using proper YAML-aware methods
+echo "Updating docker-compose.yml with TARGET_IP"
+
+# Get the host IP silently (no log output during capture)
+HOST_IP=$(get_host_ip_silent)
+echo "Detected host IP: $HOST_IP"
 
 if [ -f "$APP_DIR/docker-compose.yml" ]; then
     # Make a backup
@@ -192,8 +203,8 @@ if [ -f "$APP_DIR/docker-compose.yml" ]; then
     while IFS= read -r line; do
         if echo "$line" | grep -q "TARGET_IP="; then
             # Extract the indentation
-            indent=$(echo "$line" | sed 's/^\([[:space:]]*\).*/\1/')
-            echo "${indent}- TARGET_IP=$HOST_IP  # Updated by script" >> "$TEMP_FILE"
+            indent=$(echo "$line" | sed -E 's/^([[:space:]]*-).*/\1/')
+            echo "${indent} TARGET_IP=$HOST_IP" >> "$TEMP_FILE"
             found=1
         else
             echo "$line" >> "$TEMP_FILE"
@@ -212,7 +223,12 @@ if [ -f "$APP_DIR/docker-compose.yml" ]; then
     else
         echo "Warning: TARGET_IP not found in docker-compose.yml. Manual update may be required."
         rm -f "$TEMP_FILE"
-        rm -f "$APP_DIR/docker-compose.yml.bak"
+    fi
+
+    # Ensure volumes section is complete
+    if grep -q "^volumes:$" "$APP_DIR/docker-compose.yml" && ! grep -q "redis-data:" "$APP_DIR/docker-compose.yml"; then
+        echo "  redis-data:" >> "$APP_DIR/docker-compose.yml"
+        echo "Fixed volumes section in docker-compose.yml"
     fi
 else
     echo "Error: docker-compose.yml not found. Please check your repository."
@@ -279,15 +295,24 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-# Function to get the IP address of the interface with the default route to the internet
+# Function to get the IP address silently (no logging during capture)
+get_host_ip_silent() {
+    ip route get 8.8.8.8 | grep -o 'src [0-9.]*' | awk '{print $2}'
+}
+
+# Function to get the IP address with logging
 get_host_ip() {
-    HOST_IP=$(ip route get 8.8.8.8 | grep -o 'src [0-9.]*' | awk '{print $2}')
-    if [ -z "$HOST_IP" ]; then
+    # First capture the IP silently
+    local host_ip
+    host_ip=$(get_host_ip_silent)
+
+    # Only log after we've captured the IP
+    if [ -z "$host_ip" ]; then
         log "Error: Could not determine IP address with internet route."
         exit 1
     fi
-    log "Detected host IP with internet route: $HOST_IP"
-    echo "$HOST_IP"
+    log "Detected host IP with internet route: $host_ip"
+    echo "$host_ip"
 }
 
 # Backup a file if it exists
@@ -314,9 +339,14 @@ restore_file() {
     fi
 }
 
-# Simple line-by-line approach to update docker-compose.yml
+# Update docker-compose.yml with host IP - properly handles YAML formatting
 update_docker_compose_ip() {
-    local host_ip="$1"
+    # IMPORTANT: Capture host IP directly in a variable, don't use command substitution with logs
+    local host_ip
+    host_ip=$(get_host_ip_silent)
+
+    # Now log after capturing the IP
+    log "Updating docker-compose.yml with TARGET_IP=$host_ip"
 
     if [ ! -f "$DOCKER_COMPOSE_FILE" ]; then
         log "Error: docker-compose.yml not found at $DOCKER_COMPOSE_FILE"
@@ -333,34 +363,33 @@ update_docker_compose_ip() {
     local tmpfile
     tmpfile=$(mktemp)
 
-    # Process the file line by line
-    local found=0
+    # Process the file line by line, only updating the TARGET_IP line
     while IFS= read -r line; do
         if echo "$line" | grep -q "TARGET_IP="; then
             # Extract the indentation
             local indent
-            indent=$(echo "$line" | sed 's/^\([[:space:]]*\).*/\1/')
-            echo "${indent}- TARGET_IP=$host_ip  # Updated by script" >> "$tmpfile"
-            found=1
+            indent=$(echo "$line" | sed -E 's/^([[:space:]]*-).*/\1/')
+            echo "${indent} TARGET_IP=$host_ip" >> "$tmpfile"
         else
             echo "$line" >> "$tmpfile"
         fi
     done < "$DOCKER_COMPOSE_FILE"
 
-    if [ "$found" -eq 1 ]; then
-        # Replace the original file
-        mv "$tmpfile" "$DOCKER_COMPOSE_FILE" || {
-            log "Error: Failed to update docker-compose.yml"
-            mv "${DOCKER_COMPOSE_FILE}.bak" "$DOCKER_COMPOSE_FILE"
-            rm -f "$tmpfile"
-            exit 1
-        }
-        log "Updated docker-compose.yml with TARGET_IP=$host_ip"
-    else
-        log "Warning: TARGET_IP not found in docker-compose.yml"
+    # Replace original file
+    mv "$tmpfile" "$DOCKER_COMPOSE_FILE" || {
+        log "Error: Failed to update docker-compose.yml"
+        mv "${DOCKER_COMPOSE_FILE}.bak" "$DOCKER_COMPOSE_FILE"
         rm -f "$tmpfile"
-        rm -f "${DOCKER_COMPOSE_FILE}.bak"
+        exit 1
+    }
+
+    # Ensure volumes section is complete
+    if grep -q "^volumes:$" "$DOCKER_COMPOSE_FILE" && ! grep -q "redis-data:" "$DOCKER_COMPOSE_FILE"; then
+        echo "  redis-data:" >> "$DOCKER_COMPOSE_FILE"
+        log "Fixed volumes section in docker-compose.yml"
     fi
+
+    log "Successfully updated docker-compose.yml"
 }
 
 # Download with retry logic
@@ -408,9 +437,9 @@ rm -rf "$TEMP_DIR"
 mkdir -p "$TEMP_DIR" || { log "Error: Failed to create temp directory"; exit 1; }
 unzip -o "$APP_DIR/repo.zip" -d "$TEMP_DIR" || { log "Error: Failed to unzip repository"; exit 1; }
 
-# Update files, excluding .env
+# Update files, excluding .env and docker-compose.yml (to preserve customizations)
 log "Updating application files..."
-rsync -a --exclude='.env' "$TEMP_DIR/yolink-chekt-main/"* "$APP_DIR/" || { log "Error: Failed to sync updated files"; exit 1; }
+rsync -a --exclude='.env' --exclude='docker-compose.yml' "$TEMP_DIR/yolink-chekt-main/"* "$APP_DIR/" || { log "Error: Failed to sync updated files"; exit 1; }
 
 # Ensure rtsp-streamer directory is updated
 if [ -d "$TEMP_DIR/yolink-chekt-main/rtsp-streamer" ]; then
@@ -437,8 +466,7 @@ chmod -R u+rwX,go+rX "$APP_DIR" || { log "Error: Failed to set directory permiss
 chmod +x "$APP_DIR/self-update.sh" || { log "Error: Failed to set script permissions"; exit 1; }
 
 # Update docker-compose.yml with the host IP
-HOST_IP=$(get_host_ip)
-update_docker_compose_ip "$HOST_IP"
+update_docker_compose_ip
 
 # Determine which Docker Compose command to use
 if docker compose version >/dev/null 2>&1; then
