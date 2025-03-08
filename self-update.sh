@@ -19,8 +19,7 @@ DOCKER_COMPOSE_FILE="$APP_DIR/docker-compose.yml"
 mkdir -p "$LOG_DIR" || { echo "Failed to create log directory $LOG_DIR"; exit 1; }
 chmod 755 "$LOG_DIR"
 
-# Redirect output to log file using process substitution.
-# (This redirection requires bash and may not work in shells without process substitution.)
+# Redirect output to log file
 exec > >(tee -a "$LOG_FILE") 2>&1
 
 # Timestamped log function
@@ -69,7 +68,7 @@ restore_file() {
     fi
 }
 
-# Update docker-compose.yml with host IP
+# Update docker-compose.yml with host IP - Using a YAML-aware approach
 update_docker_compose_ip() {
     local host_ip="$1"
     if [ ! -f "$DOCKER_COMPOSE_FILE" ]; then
@@ -77,27 +76,36 @@ update_docker_compose_ip() {
         exit 1
     fi
 
-    # Escape characters that might conflict (e.g. / or &)
-    local escaped_ip
-    escaped_ip=$(printf '%s' "$host_ip" | sed 's/[\/&]/\\&/g')
+    # Create a temporary file
+    local temp_file="${DOCKER_COMPOSE_FILE}.tmp"
 
+    # Make a backup before modifying
+    cp "$DOCKER_COMPOSE_FILE" "${DOCKER_COMPOSE_FILE}.bak"
+
+    # Use a more careful pattern matching approach that preserves YAML structure
+    # This preserves indentation and formatting around the TARGET_IP value
     if grep -q "TARGET_IP=" "$DOCKER_COMPOSE_FILE"; then
-        # Use @ as the delimiter instead of | to avoid conflicts.
-        sed -i'' "s@TARGET_IP=.*@TARGET_IP=${escaped_ip}@" "$DOCKER_COMPOSE_FILE" || {
-            log "Error: Failed to update TARGET_IP in docker-compose.yml"
-            exit 1
-        }
-    else
-        # Append TARGET_IP after the first occurrence of "environment:"
-        sed -i'' '/environment:/a\
-      - TARGET_IP='"${escaped_ip}" "$DOCKER_COMPOSE_FILE" || {
-            log "Error: Failed to append TARGET_IP to docker-compose.yml"
-            exit 1
-        }
-    fi
-    log "Updated docker-compose.yml with TARGET_IP=${host_ip}"
-}
+        # For each format possibility, attempt replacement
+        # Format 1: "- TARGET_IP=value"
+        sed -e "/[[:space:]]*-[[:space:]]*TARGET_IP=/s/=.*/=$host_ip/" "$DOCKER_COMPOSE_FILE" > "$temp_file"
 
+        # Format 2: "TARGET_IP: value"
+        sed -i -e "/[[:space:]]*TARGET_IP:/s/:.*/: $host_ip/" "$temp_file"
+
+        # If changes were successful, update the file
+        if diff "$DOCKER_COMPOSE_FILE" "$temp_file" >/dev/null; then
+            log "Warning: No TARGET_IP found in expected format. Manual update may be required."
+            rm -f "$temp_file"
+            exit 1
+        else
+            mv "$temp_file" "$DOCKER_COMPOSE_FILE"
+            log "Updated docker-compose.yml with TARGET_IP=$host_ip"
+        fi
+    else
+        log "Warning: TARGET_IP not found in docker-compose.yml. Manual update may be required."
+        rm -f "$temp_file"
+    fi
+}
 
 # Download with retry logic
 download_with_retry() {
