@@ -11,6 +11,8 @@ services:
     environment:
       - FLASK_ENV=production
       - LOG_DIR=/app/logs
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       - redis
     restart: unless-stopped
