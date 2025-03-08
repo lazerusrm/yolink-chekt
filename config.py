@@ -14,7 +14,7 @@ from typing import Dict, Any, Optional
 from dotenv import load_dotenv
 
 # Import Redis manager
-from .redis_manager import get_redis
+from redis_manager import get_redis
 
 # Load environment variables
 load_dotenv()

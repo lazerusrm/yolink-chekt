@@ -34,13 +34,13 @@ import aiohttp
 load_dotenv()
 
 # Import local modules
-from .config import load_config, save_config, get_user_data, save_user_data, SUPPORTED_TIMEZONES
-from .device_manager import refresh_yolink_devices, get_all_devices
-from .mappings import get_mappings, save_mapping, save_mappings
-from .yolink_mqtt import run_mqtt_client, shutdown_yolink_mqtt, is_connected as yolink_connected
-from .monitor_mqtt import run_monitor_mqtt, shutdown_monitor_mqtt, is_connected as monitor_connected
-from .modbus_relay import initialize as modbus_initialize, shutdown_modbus, ensure_connection as modbus_ensure_connection, trigger_relay, configure_proxy
-from .redis_manager import get_redis, ensure_connection as ensure_redis_connection, close as close_redis
+from config import load_config, save_config, get_user_data, save_user_data, SUPPORTED_TIMEZONES
+from device_manager import refresh_yolink_devices, get_all_devices
+from mappings import get_mappings, save_mapping, save_mappings
+from yolink_mqtt import run_mqtt_client, shutdown_yolink_mqtt, is_connected as yolink_connected
+from monitor_mqtt import run_monitor_mqtt, shutdown_monitor_mqtt, is_connected as monitor_connected
+from modbus_relay import initialize as modbus_initialize, shutdown_modbus, ensure_connection as modbus_ensure_connection, trigger_relay, configure_proxy
+from redis_manager import get_redis, ensure_connection as ensure_redis_connection, close as close_redis
 
 # Initialize Quart app
 app = Quart(__name__)
