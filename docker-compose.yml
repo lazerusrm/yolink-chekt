@@ -5,7 +5,6 @@ services:
     build: .
     ports:
       - "5000:5000"
-      - "502:502"
     volumes:
       - .:/app
       - ./logs:/app/logs
@@ -15,8 +14,11 @@ services:
     depends_on:
       - redis
     restart: unless-stopped
-    networks:
-      - yolink-network
+    # Enable outbound connectivity without hard-coding IPs
+    network_mode: bridge
+    # Add capabilities for better network handling
+    cap_add:
+      - NET_ADMIN
 
   redis:
     image: redis:6
@@ -86,6 +88,7 @@ services:
 
 networks:
   yolink-network:
+    driver: bridge
 
 volumes:
   redis-data:
