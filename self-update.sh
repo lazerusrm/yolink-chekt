@@ -19,12 +19,9 @@ DOCKER_COMPOSE_FILE="$APP_DIR/docker-compose.yml"
 mkdir -p "$LOG_DIR" || { echo "Failed to create log directory $LOG_DIR"; exit 1; }
 chmod 755 "$LOG_DIR"
 
-# Redirect output to log file
-if ! exec > >(tee -a "$LOG_FILE") 2>&1; then
-    LOG_FILE="/tmp/yolink-update.log"
-    echo "Warning: Could not write to $LOG_FILE, falling back to $LOG_FILE"
-    exec > >(tee -a "$LOG_FILE") 2>&1
-fi
+# Redirect output to log file using process substitution.
+# (This redirection requires bash and may not work in shells without process substitution.)
+exec > >(tee -a "$LOG_FILE") 2>&1
 
 # Timestamped log function
 log() {
@@ -78,16 +75,16 @@ update_docker_compose_ip() {
     if [ ! -f "$DOCKER_COMPOSE_FILE" ]; then
         log "Error: docker-compose.yml not found at $DOCKER_COMPOSE_FILE"
         exit 1
-    }
+    fi
 
-    # Simplify sed commands for clarity
+    # Update TARGET_IP if present, or append if missing
     if grep -q "TARGET_IP=" "$DOCKER_COMPOSE_FILE"; then
-        sed -i "s/TARGET_IP=.*/TARGET_IP=$host_ip/" "$DOCKER_COMPOSE_FILE" || {
+        sed -i "s|TARGET_IP=.*|TARGET_IP=$host_ip|" "$DOCKER_COMPOSE_FILE" || {
             log "Error: Failed to update TARGET_IP in docker-compose.yml"
             exit 1
         }
     else
-        sed -i "/modbus-proxy:/,/environment:/ s/environment:/environment:\n      - TARGET_IP=$host_ip/" "$DOCKER_COMPOSE_FILE" || {
+        sed -i "/modbus-proxy:/,/environment:/ s|environment:|environment:\n      - TARGET_IP=$host_ip|" "$DOCKER_COMPOSE_FILE" || {
             log "Error: Failed to append TARGET_IP to docker-compose.yml"
             exit 1
         }
@@ -106,7 +103,8 @@ download_with_retry() {
             log "Download successful"
             return 0
         else
-            local curl_err=$(cat /tmp/curl_error)
+            local curl_err
+            curl_err=$(cat /tmp/curl_error)
             log "Download failed: $curl_err"
             if [ "$attempt" -eq "$MAX_RETRIES" ]; then
                 log "Error: Failed to download repository after $MAX_RETRIES attempts"
