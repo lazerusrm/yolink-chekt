@@ -16,6 +16,7 @@ client = None
 connected = False
 last_connection_attempt = 0
 connection_retry_interval = 10  # seconds
+unit_id = 1  # Default unit ID, will be updated from config
 
 
 def configure_proxy(target_ip, target_port):
@@ -106,7 +107,7 @@ def ensure_connection():
     Returns:
         bool: True if connection is valid, False otherwise
     """
-    global client, connected, last_connection_attempt
+    global client, connected, last_connection_attempt, unit_id
 
     # Rate limit connection attempts
     current_time = time.time()
@@ -135,6 +136,13 @@ def ensure_connection():
 
     modbus_port = modbus_config.get('port', 502)
 
+    # Update the global unit_id
+    try:
+        unit_id = int(modbus_config.get('unit_id', 1))
+    except (ValueError, TypeError):
+        unit_id = 1
+        logger.warning(f"Invalid unit_id in config, using default: 1")
+
     # First check if proxy is healthy
     if not check_proxy_health():
         logger.warning("Modbus proxy is not available or running")
@@ -157,13 +165,11 @@ def ensure_connection():
 
         logger.info(f"Connecting to Modbus relay via proxy for device at {modbus_ip}:{modbus_port}")
 
-        # Create client with explicit unit ID for PyModbus 3.x
-        unit_id = modbus_config.get('unit_id', 1)
+        # Create client - no slave parameter for this version of PyModbus
         client = ModbusTcpClient(
             host="modbus-proxy",  # Connect to the proxy service in the Docker network
             port=1502,  # Proxy listen port
-            timeout=10,
-            slave=unit_id  # Unit ID / slave address is set here for PyModbus 3.x
+            timeout=10
         )
 
         # Attempt connection
@@ -171,7 +177,28 @@ def ensure_connection():
         if connected:
             # Validate connection with a test read
             try:
-                # PyModbus 3.x API - no unit parameter needed as it's set in the client
+                # For PyModbus 3.x we need to use a transaction or set a default slave
+                from pymodbus.payload import BinaryPayloadBuilder
+                from pymodbus.constants import Endian
+                from pymodbus.transaction import ModbusRtuFramer
+
+                # Try unit parameter in the actual read call
+                try:
+                    result = client.read_coils(0, 1, unit=unit_id)
+                    if hasattr(result, 'bits'):
+                        logger.info(f"Successfully connected to Modbus device via proxy using unit parameter")
+                        return True
+                except TypeError:
+                    # If unit parameter doesn't work, try different methods
+                    logger.warning("unit parameter not supported in read_coils, trying alternatives")
+
+                # Try using client properties if available
+                if hasattr(client, 'unit_id'):
+                    client.unit_id = unit_id
+                elif hasattr(client, 'slave'):
+                    client.slave = unit_id
+
+                # Try reading without unit parameter after setting properties
                 result = client.read_coils(0, 1)
 
                 if hasattr(result, 'bits'):
@@ -209,6 +236,8 @@ def trigger_relay(channel, state=True, pulse_seconds=None, follower_mode=None):
     Returns:
         bool: True if successful, False otherwise
     """
+    global unit_id
+
     try:
         # Ensure connection with retries
         connection_attempts = 3
@@ -256,8 +285,12 @@ def trigger_relay(channel, state=True, pulse_seconds=None, follower_mode=None):
             try:
                 logger.info(f"Setting relay channel {channel} to {'ON' if state else 'OFF'} (attempt {attempt + 1})")
 
-                # PyModbus 3.x API - no unit parameter needed as it's set in the client
-                result = client.write_coil(coil_address, state)
+                # Try with unit parameter first
+                try:
+                    result = client.write_coil(coil_address, state, unit=unit_id)
+                except TypeError:
+                    # If unit parameter doesn't work
+                    result = client.write_coil(coil_address, state)
 
                 if not result or hasattr(result, 'isError') and result.isError():
                     logger.error(f"Failed to set relay (attempt {attempt + 1}): {result}")
@@ -328,6 +361,8 @@ def read_relay_state(channel):
     Returns:
         bool or None: True if relay is on, False if off, None if error
     """
+    global unit_id
+
     if not ensure_connection():
         logger.error("Cannot read relay state: No connection to Modbus relay")
         return None
@@ -345,8 +380,12 @@ def read_relay_state(channel):
     coil_address = channel - 1
 
     try:
-        # PyModbus 3.x API - no unit parameter needed as it's set in the client
-        result = client.read_coils(coil_address, 1)
+        # Try with unit parameter first
+        try:
+            result = client.read_coils(coil_address, 1, unit=unit_id)
+        except TypeError:
+            # If unit parameter doesn't work
+            result = client.read_coils(coil_address, 1)
 
         if hasattr(result, 'bits'):
             state = result.bits[0]
@@ -375,6 +414,8 @@ def read_all_relay_states():
     Returns:
         list or None: List of booleans representing relay states, None if error
     """
+    global unit_id
+
     if not ensure_connection():
         logger.error("Cannot read relay states: No connection to Modbus relay")
         return None
@@ -384,8 +425,12 @@ def read_all_relay_states():
     max_channels = modbus_config.get('max_channels', 16)
 
     try:
-        # PyModbus 3.x API - no unit parameter needed as it's set in the client
-        result = client.read_coils(0, max_channels)
+        # Try with unit parameter first
+        try:
+            result = client.read_coils(0, max_channels, unit=unit_id)
+        except TypeError:
+            # If unit parameter doesn't work
+            result = client.read_coils(0, max_channels)
 
         if hasattr(result, 'bits'):
             states = list(result.bits)[:max_channels]  # Limit to actual number of channels
@@ -411,7 +456,7 @@ def initialize():
     """Initialize the Modbus relay connection with health monitoring."""
     global connection_retry_interval
 
-    logger.info("Initializing Modbus relay with PyModbus 3.x API")
+    logger.info("Initializing Modbus relay with PyModbus 3.x API (alternative method)")
 
     # Start a background thread to periodically check connection health
     def health_monitor():
