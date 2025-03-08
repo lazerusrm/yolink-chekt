@@ -55,7 +55,7 @@ def ensure_connection():
         return False
 
 
-def trigger_relay(channel, state=True, pulse_seconds=None):
+def trigger_relay(channel, state=True, pulse_seconds=None, follower_mode=None):
     """
     Trigger a relay channel.
 
@@ -64,6 +64,7 @@ def trigger_relay(channel, state=True, pulse_seconds=None):
         state (bool): True to turn relay on, False to turn it off
         pulse_seconds (int, optional): If provided, the relay will turn on for this many seconds and then turn off
                                        For this to work, you must call this function with state=True
+        follower_mode (bool, optional): If provided, overrides the global follower_mode setting
 
     Returns:
         bool: True if successful, False otherwise
@@ -75,6 +76,10 @@ def trigger_relay(channel, state=True, pulse_seconds=None):
     config = load_config()
     modbus_config = config.get('modbus', {})
     unit_id = modbus_config.get('unit_id', 1)  # Default to 1 if not specified
+
+    # Determine if we're using follower mode
+    if follower_mode is None:
+        follower_mode = modbus_config.get('follower_mode', False)
 
     # Validate channel number
     max_channels = modbus_config.get('max_channels', 16)
@@ -93,19 +98,28 @@ def trigger_relay(channel, state=True, pulse_seconds=None):
         if hasattr(result, 'function_code') and not result.isError():
             logger.info(f"Successfully set relay channel {channel} to {'ON' if state else 'OFF'}")
 
-            # If pulse_seconds is specified and we're turning the relay on,
-            # schedule it to turn off after the specified time
-            if pulse_seconds and state:
-                import threading
-                import time
+            # If in follower mode, we don't pulse - the relay follows sensor state
+            if not follower_mode:
+                # If pulse_seconds is specified and we're turning the relay on,
+                # schedule it to turn off after the specified time
+                if pulse_seconds and state:
+                    import threading
+                    import time
 
-                def turn_off_later():
-                    time.sleep(pulse_seconds)
-                    logger.info(f"Turning off relay channel {channel} after {pulse_seconds} seconds pulse")
-                    trigger_relay(channel, False)
+                    def turn_off_later():
+                        time.sleep(pulse_seconds)
+                        logger.info(f"Turning off relay channel {channel} after {pulse_seconds} seconds pulse")
+                        trigger_relay(channel, False)
 
-                # Start a thread to turn off the relay after the specified time
-                threading.Thread(target=turn_off_later, daemon=True).start()
+                    # Start a thread to turn off the relay after the specified time
+                    threading.Thread(target=turn_off_later, daemon=True).start()
+
+            # Store the current relay state in Redis for reference
+            try:
+                from db import redis_client
+                redis_client.set(f"relay_state:{channel}", "1" if state else "0")
+            except Exception as e:
+                logger.error(f"Failed to store relay state in Redis: {e}")
 
             return True
         else:

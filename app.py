@@ -1,17 +1,17 @@
 """
-Yolink to CHEKT Integration - Version 1.1
+Yolink to CHEKT Integration - Version 1.2
 ========================================
 
 Overview:
-This application integrates Yolink smart sensors (e.g., door contacts, motion sensors) with the CHEKT alarm system.
-It listens to sensor events via MQTT and triggers corresponding CHEKT zones using the local API.
+This application integrates Yolink smart sensors (e.g., door contacts, motion sensors) with the CHEKT alarm system
+and Modbus relays. It listens to sensor events via MQTT and triggers corresponding CHEKT zones or relay channels.
 A web interface is provided for device mapping, configuration, and secure user authentication (TOTP).
 
 Key Features:
 - Containerized Deployment: Easily managed with Docker and Docker Compose.
 - Real-Time Device Management: Monitors sensor states, battery levels, and last-seen times with data stored in Redis.
-- Alert Integration: Supports both CHEKT and SIA alert receivers.
-- Prop Alarm Functionality: When enabled, door sensors trigger an alert only upon receiving an "openRemind" message rather than immediately on a closed-to-open transition.
+- Alert Integration: Supports CHEKT, SIA alert receivers, and Modbus relays.
+- Prop Alarm Functionality: When enabled, door sensors trigger an alert only upon receiving an "openRemind" message.
 - Web Interface: Dashboard for device status, configuration pages, and user authentication.
 - Automatic Updates: Self-update mechanism to pull changes from GitHub and restart services.
 
@@ -30,8 +30,9 @@ Project Structure:
 - yolink_mqtt.py: YoLink MQTT client.
 - monitor_mqtt.py: Monitor server MQTT communications.
 - device_manager.py: Device state management in Redis.
-- mappings.py: Mapping of Yolink devices to CHEKT zones.
+- mappings.py: Mapping of Yolink devices to CHEKT zones and relay channels.
 - alerts.py: Alert triggering logic.
+- modbus_relay.py: Communication with Modbus TCP relays.
 - templates/: Web interface HTML templates.
 - docker-compose.yml: Docker configuration.
 - install.sh: Installation script.
@@ -41,6 +42,13 @@ For further details, please refer to the README.md.
 """
 
 import os
+import threading
+from time import sleep
+import logging
+from config import config_data
+from yolink_mqtt import run_mqtt_client
+import requests
+import json
 from flask import Flask, request, render_template, flash, redirect, url_for, session, jsonify
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from flask_bcrypt import Bcrypt
@@ -51,7 +59,10 @@ import base64
 import logging
 import time
 import psutil
-import json
+from datetime import datetime, timedelta
+from logging.handlers import RotatingFileHandler
+from flask_apscheduler import APScheduler
+
 from config import load_config, save_config, get_user_data, save_user_data, SUPPORTED_TIMEZONES
 from db import redis_client, ensure_redis_connection
 from device_manager import refresh_yolink_devices, get_all_devices
@@ -61,15 +72,14 @@ from monitor_mqtt import connected as monitor_connected
 from yolink_mqtt import run_mqtt_client
 from monitor_mqtt import run_monitor_mqtt
 
+# Import modbus_relay at app startup to ensure it's available
+try:
+    import modbus_relay
+except ImportError:
+    logging.warning("Modbus relay module not available. Modbus functionality will be disabled.")
 
 # Logging Setup
-from logging.handlers import RotatingFileHandler
-from flask_apscheduler import APScheduler
-from datetime import datetime
-import threading
-
 handler = RotatingFileHandler("/app/logs/app.log", maxBytes=10*1024*1024, backupCount=5)
-
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -331,12 +341,21 @@ def index():
         device["door_prop_alarm"] = device_mappings.get(device["deviceId"], {}).get("door_prop_alarm", False)
     return render_template("index.html", devices=devices)
 
+
 @app.route("/config", methods=["GET", "POST"])
 @login_required
 def config():
     config_data = load_config()
     if request.method == "POST":
         try:
+            # Extract Modbus settings
+            modbus_enabled = request.form.get("modbus_enabled") == "on" or request.form.get("modbus_enabled") == "true"
+            modbus_follower_mode = request.form.get("modbus_follower_mode") == "on" or request.form.get(
+                "modbus_follower_mode") == "true"
+            modbus_max_channels = int(request.form.get("modbus_max_channels", 16))
+            modbus_pulse_seconds = float(request.form.get("modbus_pulse_seconds", 1))
+
+            # Build the new configuration
             new_config = {
                 "yolink": {
                     "uaid": request.form["yolink_uaid"],
@@ -368,6 +387,15 @@ def config():
                     "account_id": request.form["sia_account_id"],
                     "transmitter_id": request.form["sia_transmitter_id"],
                     "encryption_key": request.form["sia_encryption_key"]
+                },
+                "modbus": {
+                    "ip": request.form["modbus_ip"],
+                    "port": int(request.form["modbus_port"]),
+                    "unit_id": int(request.form["modbus_unit_id"]),
+                    "max_channels": modbus_max_channels,
+                    "pulse_seconds": modbus_pulse_seconds,
+                    "enabled": modbus_enabled,
+                    "follower_mode": modbus_follower_mode
                 },
                 "monitor": {"api_key": request.form["monitor_api_key"]},
                 "timezone": request.form["timezone"],
@@ -485,15 +513,21 @@ def set_door_prop_alarm():
     logger.debug(f"Updated mappings: {json.dumps(mappings)}")
     return jsonify({"status": "success"})
 
+
 @app.route("/get_sensor_data")
 def get_sensor_data():
     devices = get_all_devices()
     mappings = get_mappings().get("mappings", [])
     device_mappings = {m["yolink_device_id"]: m for m in mappings}
+
     for device in devices:
         mapping = device_mappings.get(device["deviceId"], {})
         device["chekt_zone"] = mapping.get("chekt_zone", "N/A")
         device["door_prop_alarm"] = mapping.get("door_prop_alarm", False)
+        device["relay_channel"] = mapping.get("relay_channel", "N/A")
+        device["use_relay"] = mapping.get("use_relay", False)
+
+        # Set defaults for missing fields
         device.setdefault("state", "unknown")
         device.setdefault("signal", "unknown")
         device.setdefault("battery", "unknown")
@@ -501,6 +535,7 @@ def get_sensor_data():
         device.setdefault("alarms", {})
         device.setdefault("temperature", "unknown")
         device.setdefault("humidity", "unknown")
+
     return jsonify({"devices": devices})
 
 # Logging and Status
@@ -541,17 +576,58 @@ def check_receiver_status():
         return jsonify({"status": "success", "message": "Receiver is alive."})
     return jsonify({"status": "success", "message": "SIA receiver assumed alive."})
 
+
 @app.route('/check_all_statuses')
 @login_required
 def check_all_statuses():
+    # Check YoLink MQTT connection
     yolink_active = check_mqtt_connection_active()
+
+    # Check Monitor MQTT connection
     monitor_active = check_monitor_connection_active()
+
+    # Check Modbus connection if enabled
+    config = load_config()
+    modbus_active = False
+    modbus_message = "Modbus relay is disabled"
+
+    if config.get("modbus", {}).get("enabled", False):
+        try:
+            import modbus_relay
+            modbus_active = modbus_relay.ensure_connection()
+            modbus_message = "Modbus Relay Connected" if modbus_active else "Modbus Relay Disconnected"
+        except Exception as e:
+            logger.error(f"Error checking Modbus status: {e}")
+            modbus_message = f"Error checking Modbus relay: {str(e)}"
+
+    # Determine receiver status based on receiver type
+    receiver_type = config.get("receiver_type", "CHEKT")
+    receiver_active = True  # Default to assume it's working
+    receiver_message = "Receiver Connected"
+
+    # For CHEKT, we could implement an actual status check in the future
+    if receiver_type == "CHEKT":
+        receiver_message = "CHEKT Receiver Connected"
+    elif receiver_type == "SIA":
+        receiver_message = "SIA Receiver Assumed Connected"
+
     return jsonify({
-        "yolink": {"status": "success" if yolink_active else "error",
-                  "message": "YoLink MQTT Connected" if yolink_active else "YoLink MQTT Disconnected"},
-        "monitor": {"status": "success" if monitor_active else "error",
-                   "message": "Monitor MQTT Connected" if monitor_active else "Monitor MQTT Disconnected"},
-        "receiver": {"status": "success", "message": "Receiver Connected"}
+        "yolink": {
+            "status": "success" if yolink_active else "error",
+            "message": "YoLink MQTT Connected" if yolink_active else "YoLink MQTT Disconnected"
+        },
+        "monitor": {
+            "status": "success" if monitor_active else "error",
+            "message": "Monitor MQTT Connected" if monitor_active else "Monitor MQTT Disconnected"
+        },
+        "receiver": {
+            "status": "success" if receiver_active else "error",
+            "message": receiver_message
+        },
+        "modbus": {
+            "status": "success" if modbus_active else "error",
+            "message": modbus_message
+        }
     })
 
 

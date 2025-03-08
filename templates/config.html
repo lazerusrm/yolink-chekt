@@ -488,9 +488,18 @@
                     <option value="16" {% if config.modbus.max_channels == 16 %}selected{% endif %}>16 Channels</option>
                 </select>
 
-                <label for="modbus_pulse_seconds" class="mt-3">Pulse Duration (seconds)</label>
-                <input type="number" id="modbus_pulse_seconds" name="modbus_pulse_seconds" class="form-control" value="{{ config.modbus.pulse_seconds|default(1) }}" min="0.1" max="10" step="0.1">
-                <small><i class="fas fa-info-circle"></i> Time in seconds that the relay will be activated when triggered (0.1 to 10 seconds)</small>
+                <div class="custom-control custom-switch mt-4 mb-3">
+                    <input type="checkbox" class="custom-control-input" id="modbus_follower_mode" name="modbus_follower_mode" {% if config.modbus.follower_mode %}checked{% endif %}>
+                    <label class="custom-control-label" for="modbus_follower_mode">Enable Follower Mode</label>
+                    <small class="d-block mt-1"><i class="fas fa-info-circle"></i> In follower mode, relay state directly follows sensor state (ON when open/alert, OFF when closed/normal)</small>
+                </div>
+
+                <div id="pulse-duration-section" {% if config.modbus.follower_mode %}style="opacity: 0.5;"{% endif %}>
+                    <label for="modbus_pulse_seconds" class="mt-3">Pulse Duration (seconds)</label>
+                    <input type="number" id="modbus_pulse_seconds" name="modbus_pulse_seconds" class="form-control" value="{{ config.modbus.pulse_seconds|default(1) }}" min="0.1" max="10" step="0.1" {% if config.modbus.follower_mode %}disabled{% endif %}>
+                    <small><i class="fas fa-info-circle"></i> Time in seconds that the relay will be activated when triggered (0.1 to 10 seconds)</small>
+                    <small class="text-warning mt-2" {% if not config.modbus.follower_mode %}style="display: none;"{% endif %}><i class="fas fa-exclamation-triangle"></i> Pulse duration is disabled when follower mode is active</small>
+                </div>
 
                 <div class="card mt-4">
                     <h5>Test Relay Channels</h5>

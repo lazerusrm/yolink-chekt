@@ -68,7 +68,8 @@ DEFAULT_CONFIG = {
         "unit_id": 1,  # Default Modbus device ID/slave address
         "max_channels": 16,  # Default to 16 channels (supports 8 or 16)
         "pulse_seconds": 1,  # Default pulse duration in seconds
-        "enabled": False  # Whether Modbus relay is enabled
+        "enabled": False,  # Whether Modbus relay is enabled
+        "follower_mode": False  # Whether to use follower mode instead of pulse mode
     },
     "monitor": {"api_key": os.getenv("MONITOR_API_KEY", "")},
     "timezone": "UTC",

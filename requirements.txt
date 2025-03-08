@@ -13,3 +13,4 @@ cryptography
 redis>=4.0.0
 python-dotenv
 psutil
+pymodbus>=3.0.0

@@ -151,7 +151,7 @@ def trigger_chekt_event(device_id, target_channel):
 def trigger_modbus_relay(device_id, relay_channel, state):
     """
     Trigger a Modbus relay channel based on device state.
-    For most states like "open", "closed", "alert", this will trigger the relay.
+    Handles both pulse mode and follower mode based on configuration.
 
     Args:
         device_id (str): The device ID
@@ -169,6 +169,9 @@ def trigger_modbus_relay(device_id, relay_channel, state):
         logger.info(f"Modbus relay is disabled in configuration. Not triggering relay for device {device_id}")
         return
 
+    # Check if we're using follower mode
+    follower_mode = modbus_config.get('follower_mode', False)
+
     # Validate input
     if not isinstance(relay_channel, int):
         try:
@@ -177,32 +180,50 @@ def trigger_modbus_relay(device_id, relay_channel, state):
             logger.error(f"Invalid relay channel: {relay_channel}. Must be a number.")
             return
 
-    # Default to pulsing the relay
+    # Get pulse seconds for pulse mode
     pulse_seconds = modbus_config.get('pulse_seconds', 1)
 
-    # Determine if we should activate the relay based on state
-    activate = False
-    if state in ['open', 'alert']:
-        # For door sensors "open" or motion sensors "alert", activate the relay
-        activate = True
-    elif state == 'closed':
-        # For door sensors "closed", don't activate the relay
-        activate = False
-    else:
-        # For other states, default to activating
-        logger.info(f"Unknown state: {state}. Defaulting to activating relay.")
-        activate = True
-
-    # Only trigger the relay if we're activating it
-    if activate:
-        logger.info(f"Triggering relay channel {relay_channel} for device {device_id} with state {state}")
-        success = modbus_relay.trigger_relay(relay_channel, True, pulse_seconds)
-        if success:
-            logger.info(f"Successfully triggered relay channel {relay_channel} for device {device_id}")
+    # Determine relay state based on device state and mode
+    if follower_mode:
+        # In follower mode, relay state directly follows the sensor state
+        if state in ['open', 'alert']:
+            # For door sensors "open" or motion sensors "alert", turn relay ON
+            activate = True
         else:
-            logger.error(f"Failed to trigger relay channel {relay_channel} for device {device_id}")
+            # For other states (closed, normal), turn relay OFF
+            activate = False
+
+        # Set relay to match sensor state (no pulsing)
+        logger.info(
+            f"Follower mode: Setting relay channel {relay_channel} to {'ON' if activate else 'OFF'} for device {device_id} with state {state}")
+        success = modbus_relay.trigger_relay(relay_channel, activate, follower_mode=True)
     else:
-        logger.info(f"Not triggering relay for state: {state}")
+        # In pulse mode (default), we only activate the relay, not deactivate it
+        if state in ['open', 'alert']:
+            # For door sensors "open" or motion sensors "alert", activate the relay
+            activate = True
+        elif state == 'closed':
+            # For door sensors "closed", don't activate the relay
+            activate = False
+        else:
+            # For other states, default to activating
+            logger.info(f"Unknown state: {state}. Defaulting to activating relay.")
+            activate = True
+
+        # Only trigger the relay if we're activating it (for pulse mode)
+        if activate:
+            logger.info(
+                f"Pulse mode: Triggering relay channel {relay_channel} for device {device_id} with state {state}")
+            success = modbus_relay.trigger_relay(relay_channel, True, pulse_seconds, follower_mode=False)
+            if success:
+                logger.info(f"Successfully triggered relay channel {relay_channel} for device {device_id}")
+            else:
+                logger.error(f"Failed to trigger relay channel {relay_channel} for device {device_id}")
+        else:
+            logger.info(f"Pulse mode: Not triggering relay for state: {state}")
+            success = True
+
+    return success
 
 
 def send_sia_message(device_id, event_description, zone, sia_config):
