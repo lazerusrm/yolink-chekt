@@ -1,22 +1,26 @@
 """
-Configuration Module - Async Version
-===================================
+Configuration Module - Async Version (Enhanced)
+===============================================
 
-This module handles loading and saving configuration from Redis,
-with proper async patterns and error handling.
+Handles loading and saving configuration and user data from Redis with async patterns,
+caching, and robust error handling for the Yolink to CHEKT integration.
 """
 
 import os
 import json
 import logging
+import time
 from typing import Dict, Any, Optional
 from dotenv import load_dotenv
 
 # Import Redis manager
-from redis_manager import get_redis
+from .redis_manager import get_redis
 
+# Load environment variables
 load_dotenv()
 
+# Logging setup
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # List of supported North American timezones
@@ -44,6 +48,7 @@ SUPPORTED_TIMEZONES = [
     "America/Puerto_Rico",
 ]
 
+# Default configuration with environment variable fallbacks
 DEFAULT_CONFIG = {
     "yolink": {
         "uaid": os.getenv("YOLINK_UAID", ""),
@@ -103,13 +108,12 @@ DEFAULT_CONFIG = {
 _config_cache: Optional[Dict[str, Any]] = None
 _cache_timestamp: float = 0
 
-
-def get_redis_config() -> dict:
+def get_redis_config() -> Dict[str, Any]:
     """
     Retrieve Redis configuration directly from environment variables.
 
     Returns:
-        dict: Redis configuration
+        Dict[str, Any]: Redis configuration dictionary
     """
     return {
         "host": os.getenv("REDIS_HOST", "redis"),
@@ -117,109 +121,87 @@ def get_redis_config() -> dict:
         "db": 0
     }
 
-
 async def load_config(use_cache: bool = True, cache_ttl: int = 5) -> Dict[str, Any]:
     """
     Load configuration from Redis asynchronously with caching.
     If no config is stored, save and return the default configuration.
 
     Args:
-        use_cache (bool): Whether to use cached config if available
-        cache_ttl (int): Cache TTL in seconds
+        use_cache (bool): Whether to use cached config if available (default: True)
+        cache_ttl (int): Cache TTL in seconds (default: 5)
 
     Returns:
         Dict[str, Any]: Configuration dictionary
     """
     global _config_cache, _cache_timestamp
 
-    # Check cache first if enabled
     if use_cache and _config_cache is not None:
-        current_time = os.time() if hasattr(os, 'time') else __import__('time').time()
+        current_time = time.time()
         if current_time - _cache_timestamp < cache_ttl:
-            logger.debug("Using cached configuration")
+            logger.debug("Returning cached configuration")
             return _config_cache.copy()
 
     try:
         redis_client = await get_redis()
         config_json = await redis_client.get("config")
-
         if config_json:
             config = json.loads(config_json)
             # Ensure all required keys exist
-            config.setdefault("supported_timezones", SUPPORTED_TIMEZONES)
-            config.setdefault("modbus", DEFAULT_CONFIG["modbus"])
-            config.setdefault("redis", DEFAULT_CONFIG["redis"])
-
-            # Update cache
+            for key in DEFAULT_CONFIG:
+                config.setdefault(key, DEFAULT_CONFIG[key])
+            # Update nested defaults if necessary
+            config["supported_timezones"] = SUPPORTED_TIMEZONES
             _config_cache = config.copy()
-            _cache_timestamp = os.time() if hasattr(os, 'time') else __import__('time').time()
-
+            _cache_timestamp = time.time()
+            logger.debug("Loaded configuration from Redis")
             return config
         else:
-            logger.info("No configuration found in Redis, using defaults")
+            logger.info("No configuration found in Redis, initializing with defaults")
             await redis_client.set("config", json.dumps(DEFAULT_CONFIG))
-
-            # Update cache
             _config_cache = DEFAULT_CONFIG.copy()
-            _cache_timestamp = os.time() if hasattr(os, 'time') else __import__('time').time()
-
+            _cache_timestamp = time.time()
             return DEFAULT_CONFIG.copy()
     except Exception as e:
-        logger.error(f"Error loading config: {e}")
+        logger.error(f"Error loading config from Redis: {e}")
         return DEFAULT_CONFIG.copy()
-
 
 async def save_config(data: Dict[str, Any]) -> bool:
     """
-    Save configuration to Redis asynchronously with error handling.
-    Normalizes certain modbus fields if empty.
+    Save configuration to Redis asynchronously with normalization.
 
     Args:
         data (Dict[str, Any]): Configuration data to save
 
     Returns:
-        bool: Success status
-
-    Raises:
-        ValueError: If configuration saving fails
+        bool: True if successful, False otherwise
     """
     global _config_cache, _cache_timestamp
 
     try:
         # Normalize data
-        data["timezone"] = data.get("timezone", "UTC")
-        if "modbus" in data:
-            if data["modbus"].get("port") == "":
-                data["modbus"]["port"] = 502
-            if data["modbus"].get("unit_id") == "":
-                data["modbus"]["unit_id"] = 1
-            if data["modbus"].get("max_channels") == "":
-                data["modbus"]["max_channels"] = 16
-            if data["modbus"].get("pulse_seconds") == "":
-                data["modbus"]["pulse_seconds"] = 1.0
+        normalized_data = data.copy()
+        normalized_data["timezone"] = normalized_data.get("timezone", "UTC")
+        if "modbus" in normalized_data:
+            modbus = normalized_data["modbus"]
+            modbus["port"] = int(modbus.get("port") or 502)
+            modbus["unit_id"] = int(modbus.get("unit_id") or 1)
+            modbus["max_channels"] = int(modbus.get("max_channels") or 16)
+            modbus["pulse_seconds"] = float(modbus.get("pulse_seconds") or 1.0)
 
         # Ensure all required sections exist
         for key in DEFAULT_CONFIG:
-            if key not in data:
-                data[key] = DEFAULT_CONFIG[key]
+            normalized_data.setdefault(key, DEFAULT_CONFIG[key])
+        normalized_data["supported_timezones"] = SUPPORTED_TIMEZONES
 
-        # Add supported timezones if missing
-        data.setdefault("supported_timezones", SUPPORTED_TIMEZONES)
-
-        # Save to Redis
         redis_client = await get_redis()
-        await redis_client.set("config", json.dumps(data))
-
-        # Update cache
-        _config_cache = data.copy()
-        _cache_timestamp = os.time() if hasattr(os, 'time') else __import__('time').time()
-
+        await redis_client.set("config", json.dumps(normalized_data))
+        _config_cache = normalized_data.copy()
+        _cache_timestamp = time.time()
         logger.info("Configuration saved to Redis")
         return True
     except Exception as e:
-        logger.error(f"Error in save_config: {e}")
-        raise ValueError(f"Failed to save configuration: {e}")
-
+        logger.error(f"Error saving config to Redis: {e}")
+        return False
 
 async def get_user_data(username: str) -> Dict[str, Any]:
     """
@@ -229,77 +211,62 @@ async def get_user_data(username: str) -> Dict[str, Any]:
         username (str): Username to retrieve data for
 
     Returns:
-        Dict[str, Any]: User data
+        Dict[str, Any]: User data, empty dict if not found or on error
     """
     try:
         redis_client = await get_redis()
         user_json = await redis_client.get(f"user:{username}")
         return json.loads(user_json) if user_json else {}
     except Exception as e:
-        logger.error(f"Error getting user data for {username}: {e}")
+        logger.error(f"Error retrieving user data for {username}: {e}")
         return {}
 
-
-async def save_user_data(username: str, data: Dict[str, Any]) -> None:
+async def save_user_data(username: str, data: Dict[str, Any]) -> bool:
     """
     Save user data to Redis asynchronously.
 
     Args:
         username (str): Username to save data for
         data (Dict[str, Any]): User data to save
+
+    Returns:
+        bool: True if successful, False otherwise
     """
     try:
         redis_client = await get_redis()
         await redis_client.set(f"user:{username}", json.dumps(data))
         logger.debug(f"Saved user data for {username}")
+        return True
     except Exception as e:
         logger.error(f"Error saving user data for {username}: {e}")
-
+        return False
 
 async def clear_config_cache() -> None:
     """
     Clear the configuration cache.
-    Call this after making direct changes to Redis.
+    Use after direct Redis modifications outside this module.
     """
     global _config_cache, _cache_timestamp
     _config_cache = None
     _cache_timestamp = 0
     logger.debug("Configuration cache cleared")
 
-
-async def main():
-    """Test the async config functions."""
-    try:
-        # Setup logging
-        logging.basicConfig(level=logging.DEBUG)
-
-        # Load configuration
-        config = await load_config()
-        print("Loaded config:", json.dumps(config, indent=2))
-
-        # Modify and save configuration
-        config["test_key"] = "test_value"
-        await save_config(config)
-        print("Saved config with test_key")
-
-        # Reload and verify
-        new_config = await load_config(use_cache=False)
-        print("Reload successful:", "test_key" in new_config)
-
-        # Test user data
-        await save_user_data("test_user", {"test": "data"})
-        user_data = await get_user_data("test_user")
-        print("User data:", user_data)
-
-        # Clear cache
-        await clear_config_cache()
-        print("Cache cleared successfully")
-
-    except Exception as e:
-        print(f"Error in main: {e}")
-
-
 if __name__ == "__main__":
-    import asyncio
+    async def test_config():
+        """Test the configuration module standalone."""
+        logging.basicConfig(level=logging.DEBUG)
+        config = await load_config()
+        print("Initial Config:", json.dumps(config, indent=2))
+        config["test_key"] = "test_value"
+        success = await save_config(config)
+        print(f"Save Config: {'Success' if success else 'Failed'}")
+        updated_config = await load_config(use_cache=False)
+        print("Updated Config:", json.dumps(updated_config, indent=2))
+        await save_user_data("test_user", {"password": "test", "force_password_change": True})
+        user_data = await get_user_data("test_user")
+        print("User Data:", user_data)
+        await clear_config_cache()
+        print("Cache cleared")
 
-    asyncio.run(main())
+    import asyncio
+    asyncio.run(test_config())

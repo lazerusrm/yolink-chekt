@@ -1,11 +1,9 @@
 """
-Yolink to CHEKT Integration - Version 1.3 (Refactored)
+Yolink to CHEKT Integration - Version 1.4 (Enhanced)
 ======================================================
 
 Main application file for integrating Yolink smart sensors with the CHEKT alarm system
-and Modbus relays via MQTT, with a web interface for management.
-This version uses Quart's before_serving and after_serving hooks to manage background
-services and graceful shutdown.
+and Modbus relays via MQTT, with a robust web interface for management.
 """
 
 import os
@@ -30,38 +28,38 @@ import psutil
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from redis.asyncio import Redis
 from dotenv import load_dotenv
+import aiohttp
 
-# Load environment variables BEFORE importing other modules
+# Load environment variables
 load_dotenv()
+
+# Import local modules
+from .config import load_config, save_config, get_user_data, save_user_data, SUPPORTED_TIMEZONES
+from .device_manager import refresh_yolink_devices, get_all_devices
+from .mappings import get_mappings, save_mapping, save_mappings
+from .yolink_mqtt import run_mqtt_client, shutdown_yolink_mqtt, is_connected as yolink_connected
+from .monitor_mqtt import run_monitor_mqtt, shutdown_monitor_mqtt, is_connected as monitor_connected
+from .modbus_relay import initialize as modbus_initialize, shutdown_modbus, ensure_connection as modbus_ensure_connection, trigger_relay, configure_proxy
+from .redis_manager import get_redis, ensure_connection as ensure_redis_connection, close as close_redis
 
 # Initialize Quart app
 app = Quart(__name__)
-app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY")
-if not app.config["SECRET_KEY"]:
-    raise ValueError("FLASK_SECRET_KEY environment variable must be set")
-
-# Import project modules AFTER app initialization and env loading
-from config import load_config, save_config, get_user_data, save_user_data, SUPPORTED_TIMEZONES
-from device_manager import refresh_yolink_devices, get_all_devices
-from mappings import get_mappings, save_mapping, save_mappings
-from yolink_mqtt import run_mqtt_client, shutdown_yolink_mqtt
-from monitor_mqtt import run_monitor_mqtt, shutdown_monitor_mqtt
-import modbus_relay
-from redis_manager import get_redis, ensure_connection as ensure_redis_connection
+app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY", "default-secret-key")
+if app.config["SECRET_KEY"] == "default-secret-key":
+    logging.warning("Using default SECRET_KEY; set FLASK_SECRET_KEY in .env for security")
 
 # Logging Setup
-os.makedirs("/app/logs", exist_ok=True)  # Ensure logs directory exists
+os.makedirs("/app/logs", exist_ok=True)
 handler = RotatingFileHandler("/app/logs/app.log", maxBytes=10*1024*1024, backupCount=5)
 logging.basicConfig(
-    level=logging.DEBUG,  # Use DEBUG for development, INFO for production
+    level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[handler, logging.StreamHandler()]
 )
 logger = logging.getLogger(__name__)
 
-# Setup Quart-Auth
+# Extensions
 class User(AuthUser):
-    """User class for authentication."""
     def __init__(self, auth_id):
         super().__init__(auth_id)
 
@@ -69,16 +67,9 @@ class User(AuthUser):
     def is_authenticated(self):
         return self.auth_id is not None
 
-# Initialize bcrypt for password hashing
 bcrypt = Bcrypt(app)
-
-# Initialize auth
 auth = QuartAuth(app)
-
-# Scheduler for periodic tasks
 scheduler = AsyncIOScheduler()
-
-# To hold background tasks for cancellation on shutdown
 app.bg_tasks = []
 
 # ----------------------- Authentication Helpers -----------------------
@@ -91,8 +82,8 @@ async def init_default_user() -> None:
         if not keys:
             default_username = "admin"
             default_password = "admin123"
-            hashed_password = await bcrypt.hashpw(default_password.encode('utf-8'))
-            user_data = {"password": hashed_password.decode('utf-8'), "force_password_change": True}
+            hashed_password = (await bcrypt.hashpw(default_password.encode('utf-8'))).decode('utf-8')
+            user_data = {"password": hashed_password, "force_password_change": True}
             await save_user_data(default_username, user_data)
             logger.info("Created default admin user")
     except Exception as e:
@@ -101,8 +92,7 @@ async def init_default_user() -> None:
 # ----------------------- Utility Functions -----------------------
 
 async def check_mqtt_connection_active() -> Dict[str, Any]:
-    """Actively check if YoLink MQTT connection is functional."""
-    from yolink_mqtt import is_connected as yolink_connected
+    """Check if YoLink MQTT connection is functional."""
     try:
         if yolink_connected():
             return {"status": "success", "message": "YoLink MQTT connection is active."}
@@ -112,8 +102,7 @@ async def check_mqtt_connection_active() -> Dict[str, Any]:
         return {"status": "error", "message": f"Error checking YoLink MQTT: {str(e)}"}
 
 async def check_monitor_connection_active() -> Dict[str, Any]:
-    """Actively check if Monitor MQTT connection is functional."""
-    from monitor_mqtt import is_connected as monitor_connected
+    """Check if Monitor MQTT connection is functional."""
     try:
         if monitor_connected():
             return {"status": "success", "message": "Monitor MQTT connection is active."}
@@ -125,119 +114,87 @@ async def check_monitor_connection_active() -> Dict[str, Any]:
 async def is_system_configured() -> bool:
     """Check if the system has necessary credentials configured."""
     config = await load_config()
-    yolink_configured = (
-        config.get("yolink", {}).get("uaid") and
-        config.get("yolink", {}).get("secret_key")
-    )
-    monitor_configured = config.get("mqtt_monitor", {}).get("url")
-    receiver_configured = (
-        config.get("chekt", {}).get("enabled", True) or
-        config.get("sia", {}).get("enabled", False) or
+    yolink_configured = bool(config.get("yolink", {}).get("uaid") and config.get("yolink", {}).get("secret_key"))
+    monitor_configured = bool(config.get("mqtt_monitor", {}).get("url"))
+    receiver_configured = any([
+        config.get("chekt", {}).get("enabled", True),
+        config.get("sia", {}).get("enabled", False),
         config.get("modbus", {}).get("enabled", False)
-    )
+    ])
     return yolink_configured and monitor_configured and receiver_configured
 
 # ----------------------- Background Startup & Shutdown -----------------------
 
 @app.before_serving
 async def startup():
-    """Startup tasks to run before the Quart server starts serving."""
+    """Initialize background services and resources."""
+    logger.info("Starting application services")
+
     # Ensure Redis connection
     if not await ensure_redis_connection(max_retries=5, backoff_base=1.5):
-        logger.error("Exiting due to persistent Redis connection failure")
+        logger.error("Failed to connect to Redis after retries")
         raise SystemExit(1)
 
-    # Initialize the default admin user
+    # Initialize default user
     await init_default_user()
 
-    # Start background services if system is configured
+    # Start services if configured
     if await is_system_configured():
-        logger.info("System configured, starting background services")
+        logger.info("System configured, launching background tasks")
+        app.bg_tasks.append(asyncio.create_task(run_mqtt_client()))
+        app.config['shutdown_yolink'] = shutdown_yolink_mqtt
 
-        # Start YoLink MQTT client
-        task_yolink = asyncio.create_task(run_mqtt_client())
-        app.bg_tasks.append(task_yolink)
-        app.ctx.shutdown_yolink = shutdown_yolink_mqtt
+        app.bg_tasks.append(asyncio.create_task(run_monitor_mqtt()))
+        app.config['shutdown_monitor'] = shutdown_monitor_mqtt
 
-        # Start Monitor MQTT client
-        task_monitor = asyncio.create_task(run_monitor_mqtt())
-        app.bg_tasks.append(task_monitor)
-        app.ctx.shutdown_monitor = shutdown_monitor_mqtt
-
-        # Initialize Modbus relay connection
-        task_modbus = asyncio.create_task(modbus_relay.initialize())
-        app.bg_tasks.append(task_modbus)
-        app.ctx.shutdown_modbus = modbus_relay.shutdown_modbus
+        app.bg_tasks.append(asyncio.create_task(modbus_initialize()))
+        app.config['shutdown_modbus'] = shutdown_modbus
     else:
-        logger.warning("System not fully configured; background services not started")
-        app.ctx.shutdown_yolink = None
-        app.ctx.shutdown_monitor = None
-        app.ctx.shutdown_modbus = None
+        logger.warning("System not fully configured; skipping background tasks")
+        app.config['shutdown_yolink'] = None
+        app.config['shutdown_monitor'] = None
+        app.config['shutdown_modbus'] = None
 
     # Start scheduler
-    try:
-        scheduler.start()
-        logger.info("Scheduler started successfully")
-    except Exception as e:
-        logger.error(f"Failed to start scheduler: {e}")
+    scheduler.start()
+    logger.info("Scheduler started")
 
 @app.after_serving
 async def shutdown():
-    """Shutdown tasks to run after the Quart server stops serving."""
-    logger.info("Initiating graceful shutdown of background services")
+    """Gracefully shut down services and resources."""
+    logger.info("Shutting down application services")
 
-    # Call module-specific shutdown functions
     shutdown_functions = [
-        (app.ctx.shutdown_modbus, "Modbus relay"),
-        (app.ctx.shutdown_monitor, "Monitor MQTT"),
-        (app.ctx.shutdown_yolink, "YoLink MQTT")
+        (app.config.get('shutdown_modbus'), "Modbus relay"),
+        (app.config.get('shutdown_monitor'), "Monitor MQTT"),
+        (app.config.get('shutdown_yolink'), "YoLink MQTT")
     ]
 
-    for shutdown_fn, name in shutdown_functions:
-        if shutdown_fn:
+    for fn, name in shutdown_functions:
+        if fn:
             try:
-                if asyncio.iscoroutinefunction(shutdown_fn):
-                    await shutdown_fn()
+                if asyncio.iscoroutinefunction(fn):
+                    await fn()
                 else:
-                    shutdown_fn()
-                logger.info(f"{name} shutdown signal sent successfully")
+                    await asyncio.to_thread(fn)
+                logger.info(f"Shutdown {name} completed")
             except Exception as e:
-                logger.error(f"Error sending shutdown signal to {name}: {e}")
+                logger.error(f"Failed to shutdown {name}: {e}")
 
     # Cancel background tasks
-    pending_tasks = []
     for task in app.bg_tasks:
         if not task.done():
             task.cancel()
-            pending_tasks.append(task)
-
-    if pending_tasks:
-        logger.info(f"Waiting for {len(pending_tasks)} tasks to complete...")
-        try:
-            await asyncio.wait(pending_tasks, timeout=10)
-            still_pending = [t for t in pending_tasks if not t.done()]
-            if still_pending:
-                logger.warning(f"{len(still_pending)} tasks did not complete within timeout")
-        except asyncio.CancelledError:
-            logger.info("Background tasks cancelled successfully")
-        except Exception as e:
-            logger.error(f"Error during task cancellation: {e}")
+    if app.bg_tasks:
+        await asyncio.wait(app.bg_tasks, timeout=10)
 
     # Shutdown scheduler
-    try:
-        scheduler.shutdown(wait=False)
-        logger.info("Scheduler shutdown successfully")
-    except Exception as e:
-        logger.error(f"Error shutting down scheduler: {e}")
+    scheduler.shutdown(wait=False)
+    logger.info("Scheduler stopped")
 
-    # Close Redis connection
-    try:
-        from redis_manager import close as close_redis
-        await close_redis()
-    except Exception as e:
-        logger.error(f"Error closing Redis client: {e}")
-
-    logger.info("Application shutdown complete")
+    # Close Redis
+    await close_redis()
+    logger.info("Shutdown complete")
 
 # ----------------------- Authentication Routes -----------------------
 
@@ -250,7 +207,6 @@ async def login():
         totp_code = form.get("totp_code")
 
         user_data = await get_user_data(username)
-
         if not user_data or not await bcrypt.check_password_hash(user_data["password"], password):
             await flash("Invalid credentials", "error")
             return await render_template("login.html", totp_required=False)
@@ -380,16 +336,6 @@ async def config():
             modbus_enabled = form.get("modbus_enabled") == "on"
             modbus_follower_mode = form.get("modbus_follower_mode") == "on"
 
-            modbus_max_channels = int(form.get("modbus_max_channels", 16)) if form.get("modbus_max_channels") else 16
-            modbus_pulse_seconds = float(form.get("modbus_pulse_seconds", 1)) if form.get("modbus_pulse_seconds") else 1.0
-            yolink_port = int(form.get("yolink_port", 8003)) if form.get("yolink_port") else 8003
-            chekt_port = int(form.get("chekt_port", 30003)) if form.get("chekt_port") else 30003
-            modbus_port = int(form.get("modbus_port", 502)) if form.get("modbus_port") else 502
-            modbus_unit_id = int(form.get("modbus_unit_id", 1)) if form.get("modbus_unit_id") else 1
-            sia_port = int(form.get("sia_port", "")) if form.get("sia_port") else ""
-            monitor_mqtt_port = int(form.get("monitor_mqtt_port", 1883)) if form.get("monitor_mqtt_port") else 1883
-            door_open_timeout = int(form.get("door_open_timeout", 30)) if form.get("door_open_timeout") else 30
-
             new_config = {
                 "yolink": {
                     "uaid": form.get("yolink_uaid", ""),
@@ -400,12 +346,12 @@ async def config():
                 },
                 "mqtt": {
                     "url": form.get("yolink_url", "mqtt://api.yosmart.com"),
-                    "port": yolink_port,
+                    "port": int(form.get("yolink_port", 8003)),
                     "topic": form.get("yolink_topic", "yl-home/${Home ID}/+/report")
                 },
                 "mqtt_monitor": {
                     "url": form.get("monitor_mqtt_url", "mqtt://monitor.industrialcamera.com"),
-                    "port": monitor_mqtt_port,
+                    "port": int(form.get("monitor_mqtt_port", 1883)),
                     "username": form.get("monitor_mqtt_username", ""),
                     "password": form.get("monitor_mqtt_password", ""),
                     "client_id": "monitor_client_id"
@@ -414,12 +360,12 @@ async def config():
                 "chekt": {
                     "api_token": form.get("chekt_api_token", ""),
                     "ip": form.get("chekt_ip", ""),
-                    "port": chekt_port,
+                    "port": int(form.get("chekt_port", 30003)),
                     "enabled": chekt_enabled
                 },
                 "sia": {
                     "ip": form.get("sia_ip", ""),
-                    "port": sia_port,
+                    "port": int(form.get("sia_port", "")) or "",
                     "account_id": form.get("sia_account_id", ""),
                     "transmitter_id": form.get("sia_transmitter_id", ""),
                     "encryption_key": form.get("sia_encryption_key", ""),
@@ -427,16 +373,16 @@ async def config():
                 },
                 "modbus": {
                     "ip": form.get("modbus_ip", ""),
-                    "port": modbus_port,
-                    "unit_id": modbus_unit_id,
-                    "max_channels": modbus_max_channels,
-                    "pulse_seconds": modbus_pulse_seconds,
+                    "port": int(form.get("modbus_port", 502)),
+                    "unit_id": int(form.get("modbus_unit_id", 1)),
+                    "max_channels": int(form.get("modbus_max_channels", 16)),
+                    "pulse_seconds": float(form.get("modbus_pulse_seconds", 1.0)),
                     "enabled": modbus_enabled,
                     "follower_mode": modbus_follower_mode
                 },
                 "monitor": {"api_key": form.get("monitor_api_key", "")},
                 "timezone": "UTC",
-                "door_open_timeout": door_open_timeout,
+                "door_open_timeout": int(form.get("door_open_timeout", 30)),
                 "home_id": config_data.get("home_id", ""),
                 "supported_timezones": SUPPORTED_TIMEZONES
             }
@@ -493,19 +439,16 @@ async def refresh_devices():
     try:
         is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.args.get('ajax') == '1'
         await refresh_yolink_devices()
-
         if is_ajax:
             return jsonify({"status": "success", "message": "Devices refreshed successfully"})
-        else:
-            await flash("Devices refreshed successfully", "success")
-            return redirect(url_for("index"))
+        await flash("Devices refreshed successfully", "success")
+        return redirect(url_for("index"))
     except Exception as e:
         logger.error(f"Device refresh failed: {e}")
         if is_ajax:
             return jsonify({"status": "error", "message": f"Failed to refresh devices: {str(e)}"}), 500
-        else:
-            await flash("Failed to refresh devices", "error")
-            return redirect(url_for("index"))
+        await flash("Failed to refresh devices", "error")
+        return redirect(url_for("index"))
 
 @app.route("/system_uptime")
 @login_required
@@ -610,39 +553,21 @@ async def check_monitor_mqtt_status():
 async def check_receiver_status():
     config = await load_config()
     receiver_type = config.get("receiver_type", "CHEKT")
-    if receiver_type == "CHEKT":
-        return jsonify({"status": "success", "message": "Receiver is alive."})
-    return jsonify({"status": "success", "message": "SIA receiver assumed alive."})
+    return jsonify({"status": "success", "message": f"{receiver_type} receiver assumed alive."})
 
 @app.route('/check_all_statuses')
 @login_required
 async def check_all_statuses():
     yolink_status = await check_mqtt_connection_active()
     monitor_status = await check_monitor_connection_active()
-
     config = await load_config()
-    modbus_active = False
-    modbus_message = "Modbus relay is disabled"
-    if config.get("modbus", {}).get("enabled", False):
-        try:
-            modbus_relay.config["modbus"] = config["modbus"]
-            modbus_active = await modbus_relay.ensure_connection()
-            modbus_message = "Modbus Relay Connected" if modbus_active else "Modbus Relay Disconnected"
-        except Exception as e:
-            logger.error(f"Error checking Modbus status: {e}")
-            modbus_message = f"Error checking Modbus relay: {str(e)}"
-
+    modbus_active = config.get("modbus", {}).get("enabled", False) and await modbus_ensure_connection()
+    modbus_message = "Modbus Relay Connected" if modbus_active else "Modbus Relay Disconnected or Disabled"
     receiver_type = config.get("receiver_type", "CHEKT")
-    receiver_message = "Receiver Connected"
-    if receiver_type == "CHEKT":
-        receiver_message = "CHEKT Receiver Connected"
-    elif receiver_type == "SIA":
-        receiver_message = "SIA Receiver Assumed Connected"
-
     return jsonify({
         "yolink": yolink_status,
         "monitor": monitor_status,
-        "receiver": {"status": "success", "message": receiver_message},
+        "receiver": {"status": "success", "message": f"{receiver_type} Receiver Connected"},
         "modbus": {"status": "success" if modbus_active else "error", "message": modbus_message}
     })
 
@@ -656,16 +581,8 @@ async def last_refresh():
             last_time = datetime.fromtimestamp(float(last_refresh_time))
             formatted_time = last_time.strftime("%Y-%m-%d %H:%M:%S")
             time_ago = (datetime.now() - last_time).total_seconds() / 60.0
-            return jsonify({
-                "status": "success",
-                "last_refresh": formatted_time,
-                "minutes_ago": round(time_ago, 1)
-            })
-        return jsonify({
-            "status": "success",
-            "last_refresh": "Never",
-            "minutes_ago": None
-        })
+            return jsonify({"status": "success", "last_refresh": formatted_time, "minutes_ago": round(time_ago, 1)})
+        return jsonify({"status": "success", "last_refresh": "Never", "minutes_ago": None})
     except Exception as e:
         logger.error(f"Error getting last refresh time: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -674,17 +591,10 @@ async def last_refresh():
 @login_required
 async def restart_services():
     try:
-        from yolink_mqtt import shutdown_yolink_mqtt
-        from monitor_mqtt import shutdown_monitor_mqtt
-
         shutdown_yolink_mqtt()
         shutdown_monitor_mqtt()
-
         await asyncio.sleep(2)
-
-        app.bg_tasks.append(asyncio.create_task(run_mqtt_client()))
-        app.bg_tasks.append(asyncio.create_task(run_monitor_mqtt()))
-
+        app.bg_tasks = [asyncio.create_task(run_mqtt_client()), asyncio.create_task(run_monitor_mqtt())]
         return jsonify({"status": "success", "message": "Services restarted"})
     except Exception as e:
         logger.error(f"Error restarting services: {e}")
@@ -711,10 +621,8 @@ async def check_modbus_status():
     config = await load_config()
     if not config.get("modbus", {}).get("enabled", False):
         return jsonify({"status": "warning", "message": "Modbus relay is disabled in configuration."})
-
     try:
-        modbus_relay.config["modbus"] = config["modbus"]
-        is_connected = await modbus_relay.ensure_connection()
+        is_connected = await modbus_ensure_connection()
         return jsonify({
             "status": "success" if is_connected else "error",
             "message": "Modbus relay connection is active." if is_connected else "Modbus relay connection is inactive."
@@ -728,29 +636,18 @@ async def check_modbus_status():
 async def test_relay_channel():
     data = await request.get_json()
     channel = data.get('channel')
-
     if not channel:
         return jsonify({"status": "error", "message": "Missing channel number"}), 400
 
     try:
         channel = int(channel)
-    except ValueError:
-        return jsonify({"status": "error", "message": "Channel must be a number"}), 400
-
-    config = await load_config()
-    if not config.get("modbus", {}).get("enabled", False):
-        return jsonify({"status": "error", "message": "Modbus relay is disabled in configuration"}), 400
-
-    try:
-        modbus_relay.config["modbus"] = config["modbus"]
-        if not await modbus_relay.ensure_connection():
+        config = await load_config()
+        if not config.get("modbus", {}).get("enabled", False):
+            return jsonify({"status": "error", "message": "Modbus relay is disabled"}), 400
+        if not await modbus_ensure_connection():
             return jsonify({"status": "error", "message": "Cannot connect to Modbus relay"}), 500
-
-        on_success = await modbus_relay.trigger_relay(channel, True, 1.0)
-        if not on_success:
-            return jsonify({"status": "error", "message": f"Failed to turn on relay channel {channel}"}), 500
-
-        return jsonify({"status": "success", "message": f"Relay channel {channel} pulsed successfully"})
+        success = await trigger_relay(channel, True, 1.0)
+        return jsonify({"status": "success" if success else "error", "message": f"Relay channel {channel} pulsed {'successfully' if success else 'failed'}"})
     except Exception as e:
         logger.error(f"Error testing relay channel {channel}: {e}")
         return jsonify({"status": "error", "message": f"Error testing relay: {str(e)}"}), 500
@@ -760,101 +657,54 @@ async def test_relay_channel():
 async def test_modbus():
     config = await load_config()
     modbus_config = config.get('modbus', {})
-
     if not modbus_config.get('enabled', False):
-        return jsonify({"status": "warning", "message": "Modbus is not enabled in configuration"})
+        return jsonify({"status": "warning", "message": "Modbus is not enabled"})
 
     modbus_ip = modbus_config.get('ip')
     modbus_port = modbus_config.get('port', 502)
-
     if not modbus_ip:
         return jsonify({"status": "error", "message": "Modbus IP not configured"})
 
     results = {"status": "checking", "tests": []}
 
-    # Test 1: Check proxy health
-    try:
-        import aiohttp
-        async with aiohttp.ClientSession() as session:
-            async with session.get("http://modbus-proxy:5000/healthcheck", timeout=2) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    proxy_healthy = data.get("status") == "healthy" and data.get("proxy_running", False)
-                else:
-                    proxy_healthy = False
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.get("http://modbus-proxy:5000/healthcheck", timeout=aiohttp.ClientTimeout(total=2)) as response:
+                proxy_healthy = response.status == 200 and (await response.json()).get("status") == "healthy"
                 results["tests"].append({
                     "name": "Modbus Proxy Health",
                     "success": proxy_healthy,
                     "message": f"Proxy service is {'healthy' if proxy_healthy else 'unhealthy'}"
                 })
-    except Exception as e:
-        results["tests"].append({
-            "name": "Modbus Proxy Health",
-            "success": False,
-            "message": f"Failed to reach proxy health check: {str(e)}"
-        })
-
-    # Test 2: Test proxy configuration
-    try:
-        modbus_relay.config["modbus"] = modbus_config
-        config_result = await modbus_relay.configure_proxy(modbus_ip, modbus_port)
-        results["tests"].append({
-            "name": "Proxy Configuration",
-            "success": config_result,
-            "message": f"Proxy configuration {'successful' if config_result else 'failed'}"
-        })
-    except Exception as e:
-        results["tests"].append({
-            "name": "Proxy Configuration",
-            "success": False,
-            "message": f"Error configuring proxy: {str(e)}"
-        })
-
-    # Test 3: Full Modbus connectivity
-    try:
-        connection_result = await modbus_relay.ensure_connection()
-        results["tests"].append({
-            "name": "Modbus Connection",
-            "success": connection_result,
-            "message": f"Modbus connection {'successful' if connection_result else 'failed'}"
-        })
-    except Exception as e:
-        results["tests"].append({
-            "name": "Modbus Connection",
-            "success": False,
-            "message": f"Modbus connection test error: {str(e)}"
-        })
-
-    # Test 4: Try a single relay operation
-    if any(test["name"] == "Modbus Connection" and test["success"] for test in results["tests"]):
-        try:
-            relay_result = await modbus_relay.trigger_relay(1, True, 0.5)
-            results["tests"].append({
-                "name": "Relay Operation",
-                "success": relay_result,
-                "message": f"Relay trigger {'successful' if relay_result else 'failed'}"
-            })
         except Exception as e:
-            results["tests"].append({
-                "name": "Relay Operation",
-                "success": False,
-                "message": f"Relay test error: {str(e)}"
-            })
+            results["tests"].append({"name": "Modbus Proxy Health", "success": False, "message": f"Failed to reach proxy: {str(e)}"})
+
+    try:
+        config_result = await configure_proxy(modbus_ip, modbus_port)
+        results["tests"].append({"name": "Proxy Configuration", "success": config_result, "message": f"Proxy configuration {'successful' if config_result else 'failed'}"})
+    except Exception as e:
+        results["tests"].append({"name": "Proxy Configuration", "success": False, "message": f"Error configuring proxy: {str(e)}"})
+
+    try:
+        connection_result = await modbus_ensure_connection()
+        results["tests"].append({"name": "Modbus Connection", "success": connection_result, "message": f"Modbus connection {'successful' if connection_result else 'failed'}"})
+    except Exception as e:
+        results["tests"].append({"name": "Modbus Connection", "success": False, "message": f"Modbus connection error: {str(e)}"})
+
+    if any(test["success"] for test in results["tests"] if test["name"] == "Modbus Connection"):
+        try:
+            relay_result = await trigger_relay(1, True, 0.5)
+            results["tests"].append({"name": "Relay Operation", "success": relay_result, "message": f"Relay trigger {'successful' if relay_result else 'failed'}"})
+        except Exception as e:
+            results["tests"].append({"name": "Relay Operation", "success": False, "message": f"Relay test error: {str(e)}"})
 
     success_count = sum(1 for test in results["tests"] if test["success"])
-    if success_count == len(results["tests"]):
-        results["status"] = "success"
-        results["message"] = "All Modbus tests passed successfully"
-    elif success_count > 0:
-        results["status"] = "warning"
-        results["message"] = f"{success_count}/{len(results['tests'])} tests passed"
-    else:
-        results["status"] = "error"
-        results["message"] = "All Modbus tests failed"
-
+    results["status"] = "success" if success_count == len(results["tests"]) else "warning" if success_count > 0 else "error"
+    results["message"] = f"{success_count}/{len(results['tests'])} tests passed"
     return jsonify(results)
 
-# Error handling
+# ----------------------- Error Handling -----------------------
+
 @app.errorhandler(Unauthorized)
 async def handle_unauthorized(error):
     return redirect(url_for("login"))
