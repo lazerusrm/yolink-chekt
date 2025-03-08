@@ -298,6 +298,45 @@
         #save-status.visible {
             opacity: 1;
         }
+
+        /* Checkbox styling */
+        .custom-control-input:checked ~ .custom-control-label::before {
+            background-color: var(--accent-primary);
+            border-color: var(--accent-primary);
+        }
+
+        .custom-control-label::before {
+            background-color: var(--bg-elevated);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .custom-control-label::after {
+            background-color: transparent;
+        }
+
+        .card {
+            background-color: var(--bg-elevated);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: var(--card-border-radius);
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        /* Test button styling */
+        .btn-test {
+            padding: 0.25rem 0.5rem;
+            font-size: 0.85rem;
+            border-radius: var(--input-border-radius);
+            background-color: rgba(0, 122, 255, 0.2);
+            color: var(--accent-primary);
+            border: 1px solid rgba(0, 122, 255, 0.3);
+            transition: all 0.2s ease;
+        }
+
+        .btn-test:hover {
+            background-color: rgba(0, 122, 255, 0.3);
+            color: white;
+        }
     </style>
 </head>
 <body>
@@ -340,6 +379,10 @@
             <div id="receiver-status" class="status mb-2">
                 <img src="" alt="Receiver Status" id="receiver-icon" class="hidden">
                 <span id="receiver-message">Checking Receiver...</span><span class="spinner hidden" id="receiver-spinner"></span>
+            </div>
+            <div id="modbus-status" class="status mb-2">
+                <img src="" alt="Modbus Relay Status" id="modbus-icon" class="hidden">
+                <span id="modbus-message">Checking Modbus Relay...</span><span class="spinner hidden" id="modbus-spinner"></span>
             </div>
         </div>
 
@@ -391,12 +434,15 @@
 
             <h2><i class="fas fa-radio"></i> Receiver Configuration</h2>
             <div class="form-group">
-                <label for="receiver_type">Receiver Type</label>
+                <label for="receiver_type">Primary Receiver Type</label>
                 <select id="receiver_type" name="receiver_type" class="form-control" required>
                     <option value="CHEKT" {% if config.receiver_type == 'CHEKT' %}selected{% endif %}>CHEKT</option>
                     <option value="SIA" {% if config.receiver_type == 'SIA' %}selected{% endif %}>SIA</option>
+                    <option value="MODBUS" {% if config.receiver_type == 'MODBUS' %}selected{% endif %}>Modbus Relay</option>
                 </select>
+                <small><i class="fas fa-info-circle"></i> Select your primary receiver type. You can still use other receivers as secondary options.</small>
             </div>
+
             <div id="chekt-config" class="form-group" {% if config.receiver_type != 'CHEKT' %}style="display: none;"{% endif %}>
                 <label for="chekt_api_token">CHEKT API Token</label>
                 <input type="text" id="chekt_api_token" name="chekt_api_token" class="form-control" value="{{ config.chekt.api_token|default('') }}">
@@ -405,6 +451,7 @@
                 <label for="chekt_port" class="mt-3">CHEKT Receiver Port</label>
                 <input type="number" id="chekt_port" name="chekt_port" class="form-control" value="{{ config.chekt.port|default(30003) }}" min="1" max="65535" required>
             </div>
+
             <div id="sia-config" class="form-group" {% if config.receiver_type != 'SIA' %}style="display: none;"{% endif %}>
                 <label for="sia_ip">SIA IP</label>
                 <input type="text" id="sia_ip" name="sia_ip" class="form-control" value="{{ config.sia.ip|default('') }}">
@@ -416,6 +463,43 @@
                 <input type="text" id="sia_transmitter_id" name="sia_transmitter_id" class="form-control" value="{{ config.sia.transmitter_id|default('') }}">
                 <label for="sia_encryption_key" class="mt-3">SIA Encryption Key</label>
                 <input type="text" id="sia_encryption_key" name="sia_encryption_key" class="form-control" value="{{ config.sia.encryption_key|default('') }}">
+            </div>
+
+            <div id="modbus-config" class="form-group" {% if config.receiver_type != 'MODBUS' %}style="display: none;"{% endif %}>
+                <div class="custom-control custom-switch mb-3">
+                    <input type="checkbox" class="custom-control-input" id="modbus_enabled" name="modbus_enabled" {% if config.modbus.enabled %}checked{% endif %}>
+                    <label class="custom-control-label" for="modbus_enabled">Enable Modbus Relay</label>
+                </div>
+
+                <label for="modbus_ip">Modbus Relay IP Address</label>
+                <input type="text" id="modbus_ip" name="modbus_ip" class="form-control" value="{{ config.modbus.ip|default('') }}" placeholder="192.168.1.100">
+
+                <label for="modbus_port" class="mt-3">Modbus Relay Port</label>
+                <input type="number" id="modbus_port" name="modbus_port" class="form-control" value="{{ config.modbus.port|default(502) }}" min="1" max="65535">
+                <small><i class="fas fa-info-circle"></i> Default Modbus TCP port is 502</small>
+
+                <label for="modbus_unit_id" class="mt-3">Unit ID/Slave Address</label>
+                <input type="number" id="modbus_unit_id" name="modbus_unit_id" class="form-control" value="{{ config.modbus.unit_id|default(1) }}" min="1" max="255">
+                <small><i class="fas fa-info-circle"></i> Default is 1 for most Modbus devices</small>
+
+                <label for="modbus_max_channels" class="mt-3">Number of Relay Channels</label>
+                <select id="modbus_max_channels" name="modbus_max_channels" class="form-control">
+                    <option value="8" {% if config.modbus.max_channels == 8 %}selected{% endif %}>8 Channels</option>
+                    <option value="16" {% if config.modbus.max_channels == 16 %}selected{% endif %}>16 Channels</option>
+                </select>
+
+                <label for="modbus_pulse_seconds" class="mt-3">Pulse Duration (seconds)</label>
+                <input type="number" id="modbus_pulse_seconds" name="modbus_pulse_seconds" class="form-control" value="{{ config.modbus.pulse_seconds|default(1) }}" min="0.1" max="10" step="0.1">
+                <small><i class="fas fa-info-circle"></i> Time in seconds that the relay will be activated when triggered (0.1 to 10 seconds)</small>
+
+                <div class="card mt-4">
+                    <h5>Test Relay Channels</h5>
+                    <p class="text-muted small">Click a button to test a specific relay channel.</p>
+                    <div id="relay-test-buttons" class="mb-3 text-center">
+                        <!-- Relay test buttons will be generated here -->
+                    </div>
+                    <div id="relay-test-status" class="mt-2 text-center"></div>
+                </div>
             </div>
 
             <div class="section-divider"></div>
@@ -494,7 +578,8 @@
         }
 
         function checkAllStatuses() {
-            $('#yolink-spinner, #monitor-spinner, #receiver-spinner').removeClass('hidden');
+            $('#yolink-spinner, #monitor-spinner, #receiver-spinner, #modbus-spinner').removeClass('hidden');
+
             $.get('/check_all_statuses', function(response) {
                 updateStatus('yolink-mqtt-message', 'yolink-mqtt-icon', response.yolink.message, response.yolink.status === "success", 'yolink-spinner');
                 updateStatus('monitor-mqtt-message', 'monitor-mqtt-icon', response.monitor.message, response.monitor.status === "success", 'monitor-spinner');
@@ -504,6 +589,17 @@
                 updateStatus('monitor-mqtt-message', 'monitor-mqtt-icon', 'Failed to check Monitor MQTT', false, 'monitor-spinner');
                 updateStatus('receiver-message', 'receiver-icon', 'Failed to check Receiver', false, 'receiver-spinner');
             });
+
+            // Check Modbus connection if Modbus is enabled
+            if ($('#modbus_enabled').is(':checked')) {
+                $.get('/check_modbus_status', function(response) {
+                    updateStatus('modbus-message', 'modbus-icon', response.message, response.status === "success", 'modbus-spinner');
+                }).fail(function() {
+                    updateStatus('modbus-message', 'modbus-icon', 'Failed to check Modbus relay connection', false, 'modbus-spinner');
+                });
+            } else {
+                updateStatus('modbus-message', 'modbus-icon', 'Modbus relay is disabled', false, 'modbus-spinner');
+            }
         }
 
         function fetchLogs() {
@@ -522,6 +618,42 @@
             });
         }
 
+        function generateRelayTestButtons(channelCount) {
+            const container = $('#relay-test-buttons');
+            container.empty();
+
+            for (let i = 1; i <= channelCount; i++) {
+                container.append(`
+                    <button type="button" class="btn btn-test m-1"
+                            onclick="testRelayChannel(${i})">
+                        Test Channel ${i}
+                    </button>
+                `);
+            }
+        }
+
+        function testRelayChannel(channel) {
+            const statusElement = $('#relay-test-status');
+            statusElement.html(`<span class="spinner"></span> Testing channel ${channel}...`);
+
+            $.ajax({
+                url: '/test_relay_channel',
+                type: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({ channel: channel }),
+                success: function(response) {
+                    if (response.status === 'success') {
+                        statusElement.html(`<span class="text-success"><i class="fas fa-check-circle"></i> ${response.message}</span>`);
+                    } else {
+                        statusElement.html(`<span class="text-danger"><i class="fas fa-times-circle"></i> ${response.message}</span>`);
+                    }
+                },
+                error: function(xhr, status, error) {
+                    statusElement.html(`<span class="text-danger"><i class="fas fa-times-circle"></i> Error: ${xhr.responseJSON?.message || error}</span>`);
+                }
+            });
+        }
+
         $(document).ready(function() {
             checkAllStatuses();
 
@@ -529,10 +661,26 @@
                 if ($(this).val() === 'CHEKT') {
                     $('#chekt-config').show();
                     $('#sia-config').hide();
-                } else {
+                    $('#modbus-config').hide();
+                } else if ($(this).val() === 'SIA') {
                     $('#chekt-config').hide();
                     $('#sia-config').show();
+                    $('#modbus-config').hide();
+                } else if ($(this).val() === 'MODBUS') {
+                    $('#chekt-config').hide();
+                    $('#sia-config').hide();
+                    $('#modbus-config').show();
                 }
+            });
+
+            // Generate relay test buttons based on selected channel count
+            const initialChannelCount = parseInt($('#modbus_max_channels').val()) || 16;
+            generateRelayTestButtons(initialChannelCount);
+
+            // Update test buttons when channel count changes
+            $('#modbus_max_channels').change(function() {
+                const channelCount = parseInt($(this).val()) || 16;
+                generateRelayTestButtons(channelCount);
             });
 
             $('#refresh-devices-btn').click(function() {
@@ -584,11 +732,18 @@
                 // Show saving indicator
                 $('#save-status').html('<span class="spinner"></span> Saving...').addClass('visible');
 
+                // Prepare form data
+                const formData = $(this).serialize();
+
+                // Add modbus_enabled checkbox state
+                const modbusEnabled = $('#modbus_enabled').is(':checked');
+                const formDataWithModbus = formData + '&modbus_enabled=' + modbusEnabled;
+
                 // Submit the form data
                 $.ajax({
                     type: 'POST',
                     url: '{{ url_for("config") }}',
-                    data: $(this).serialize(),
+                    data: formDataWithModbus,
                     success: function(response) {
                         $('#save-status').html('<span style="color: var(--success-color);"><i class="fas fa-check-circle"></i> Saved!</span>');
 

@@ -115,12 +115,23 @@ def is_system_configured():
 
     return yolink_configured and monitor_configured
 
+
 def start_services():
     """Check configuration and start MQTT clients if configured"""
     if is_system_configured():
         logger.info("System configured, starting MQTT clients")
         threading.Thread(target=run_mqtt_client, daemon=True).start()
         threading.Thread(target=run_monitor_mqtt, daemon=True).start()
+
+        # Initialize Modbus relay if enabled
+        config = load_config()
+        if config.get("modbus", {}).get("enabled", False):
+            logger.info("Modbus relay enabled, initializing connection")
+            try:
+                import modbus_relay
+                threading.Thread(target=modbus_relay.initialize, daemon=True).start()
+            except Exception as e:
+                logger.error(f"Failed to initialize Modbus relay: {e}")
     else:
         logger.info("System not yet fully configured. MQTT clients not started.")
 
@@ -584,6 +595,69 @@ def restart_services():
     except Exception as e:
         logger.error(f"Error restarting services: {e}")
         return jsonify({"status": "error", "message": str(e)})
+
+
+@app.route("/save_relay_mapping", methods=["POST"])
+@login_required
+def save_relay_mapping_route():
+    data = request.get_json()
+    device_id = data.get("yolink_device_id")
+    relay_channel = data.get("relay_channel", "N/A")
+    use_relay = data.get("use_relay", False)
+
+    if not device_id:
+        return jsonify({"status": "error", "message": "Missing device ID"}), 400
+
+    logger.debug(
+        f"Attempting to save relay mapping for device {device_id}: Channel {relay_channel}, Use Relay: {use_relay}")
+
+    # Don't update CHEKT zone, only the relay settings
+    save_mapping(device_id, relay_channel=relay_channel, use_relay=use_relay)
+
+    logger.debug(f"Saved relay mapping, current mappings: {json.dumps(get_mappings())}")
+    return jsonify({"status": "success"})
+
+
+@app.route('/check_modbus_status')
+@login_required
+def check_modbus_status():
+    """Check if the Modbus relay is reachable"""
+    import modbus_relay
+
+    is_connected = modbus_relay.ensure_connection()
+
+    return jsonify({
+        "status": "success" if is_connected else "error",
+        "message": "Modbus relay connection is active." if is_connected else "Modbus relay connection is inactive."
+    })
+
+
+@app.route('/test_relay_channel', methods=['POST'])
+@login_required
+def test_relay_channel():
+    """Test a specific relay channel"""
+    data = request.get_json()
+    channel = data.get('channel')
+
+    if not channel:
+        return jsonify({"status": "error", "message": "Missing channel number"}), 400
+
+    try:
+        channel = int(channel)
+    except ValueError:
+        return jsonify({"status": "error", "message": "Channel must be a number"}), 400
+
+    import modbus_relay
+    if not modbus_relay.ensure_connection():
+        return jsonify({"status": "error", "message": "Cannot connect to Modbus relay"}), 500
+
+    # Pulse the relay
+    success = modbus_relay.trigger_relay(channel, True, 1)
+
+    if success:
+        return jsonify({"status": "success", "message": f"Relay channel {channel} pulsed successfully"})
+    else:
+        return jsonify({"status": "error", "message": f"Failed to pulse relay channel {channel}"}), 500
 
 # Main Entry
 if __name__ == "__main__":

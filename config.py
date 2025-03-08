@@ -62,12 +62,21 @@ DEFAULT_CONFIG = {
         "transmitter_id": "",
         "encryption_key": ""
     },
+    "modbus": {
+        "ip": "",
+        "port": 502,  # Default Modbus TCP port
+        "unit_id": 1,  # Default Modbus device ID/slave address
+        "max_channels": 16,  # Default to 16 channels (supports 8 or 16)
+        "pulse_seconds": 1,  # Default pulse duration in seconds
+        "enabled": False  # Whether Modbus relay is enabled
+    },
     "monitor": {"api_key": os.getenv("MONITOR_API_KEY", "")},
     "timezone": "UTC",
     "door_open_timeout": 30,
     "home_id": "",
     "supported_timezones": SUPPORTED_TIMEZONES  # Added for frontend use
 }
+
 
 def load_config():
     """Load configuration from Redis, or set and return default if none exists."""
@@ -76,10 +85,16 @@ def load_config():
         config = json.loads(config_json)
         # Ensure supported_timezones is always present
         config["supported_timezones"] = SUPPORTED_TIMEZONES
+
+        # Ensure modbus configuration is present (for backward compatibility)
+        if "modbus" not in config:
+            config["modbus"] = DEFAULT_CONFIG["modbus"]
+
         return config
     else:
         redis_client.set("config", json.dumps(DEFAULT_CONFIG))
         return DEFAULT_CONFIG
+
 
 def save_config(data):
     """Save configuration to Redis after validating timezone."""
@@ -87,10 +102,12 @@ def save_config(data):
         raise ValueError(f"Invalid timezone: {data['timezone']}")
     redis_client.set("config", json.dumps(data))
 
+
 def get_user_data(username):
     """Retrieve user data from Redis."""
     user_json = redis_client.get(f"user:{username}")
     return json.loads(user_json) if user_json else {}
+
 
 def save_user_data(username, data):
     """Save user data to Redis."""
