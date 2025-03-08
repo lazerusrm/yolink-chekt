@@ -24,11 +24,13 @@ services:
       dockerfile: Dockerfile.modbus-proxy
     container_name: modbus-proxy
     ports:
-      - "1502:1502"
+      - "1502:1502"  # Modbus TCP port
+      - "5001:5000"  # Proxy API port (mapped to host port 5001)
     environment:
-      - TARGET_IP=auto-detect  # Will be updated by scripts
+      - TARGET_IP=10.250.250.2
       - TARGET_PORT=502
       - LISTEN_PORT=1502
+      - API_PORT=5000
     restart: unless-stopped
     networks:
       - yolink-network

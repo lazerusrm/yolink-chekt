@@ -4,7 +4,7 @@ import threading
 import logging
 import time
 import json
-from flask import Flask, Blueprint, request, jsonify
+from flask import Flask, request, jsonify
 
 # Setup logging
 logging.basicConfig(level=logging.DEBUG,
@@ -16,16 +16,15 @@ modbus_proxy_config = {
     "target_ip": os.getenv("TARGET_IP", "127.0.0.1"),
     "target_port": int(os.getenv("TARGET_PORT", 502)),
     "listen_port": int(os.getenv("LISTEN_PORT", 1502)),
+    "api_port": int(os.getenv("API_PORT", 5000)),  # Separate port for Flask API
     "enabled": os.getenv("ENABLED", "true").lower() == "true",
     "active_connections": 0
 }
 
-# Create a Blueprint for Flask integration
-modbus_proxy_bp = Blueprint('modbus_proxy', __name__)
-
 # Socket for listening
 server_socket = None
 proxy_thread = None
+api_thread = None
 running = False
 
 # Create the Flask app
@@ -204,8 +203,8 @@ def restart_proxy():
 
 
 # Flask routes for the proxy API
-@modbus_proxy_bp.route('/api/modbus-proxy/configure', methods=['POST'])
-def configure_proxy():
+@app.route('/api/modbus-proxy/configure', methods=['POST'])
+def api_configure_proxy():
     """Configure the Modbus proxy via API"""
     try:
         data = request.get_json()
@@ -259,8 +258,8 @@ def configure_proxy():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
-@modbus_proxy_bp.route('/api/modbus-proxy/status', methods=['GET'])
-def get_proxy_status():
+@app.route('/api/modbus-proxy/status', methods=['GET'])
+def api_get_proxy_status():
     """Get the current status of the Modbus proxy"""
     proxy_running = proxy_thread is not None and proxy_thread.is_alive()
 
@@ -278,21 +277,21 @@ def get_proxy_status():
 
 
 # Simple direct endpoints for backward compatibility
-@modbus_proxy_bp.route('/configure', methods=['POST'])
+@app.route('/configure', methods=['POST'])
 def simple_configure_proxy():
     """Simple configure endpoint for backward compatibility"""
     logger.info("Received configuration through /configure endpoint")
-    return configure_proxy()
+    return api_configure_proxy()
 
 
-@modbus_proxy_bp.route('/status', methods=['GET'])
+@app.route('/status', methods=['GET'])
 def simple_get_status():
     """Simple status endpoint for backward compatibility"""
     logger.info("Status requested through /status endpoint")
-    return get_proxy_status()
+    return api_get_proxy_status()
 
 
-@modbus_proxy_bp.route('/healthcheck', methods=['GET'])
+@app.route('/healthcheck', methods=['GET'])
 def healthcheck():
     """Simple health check endpoint"""
     return jsonify({
@@ -302,26 +301,53 @@ def healthcheck():
     })
 
 
-# Register the blueprint
-app.register_blueprint(modbus_proxy_bp)
+def start_api_server():
+    """Run the Flask app in a separate thread"""
+    api_port = modbus_proxy_config["api_port"]
+    logger.info(f"Starting API server on port {api_port}")
+    try:
+        app.run(host='0.0.0.0', port=api_port, threaded=True)
+    except Exception as e:
+        logger.error(f"Error running API server: {e}")
+
+
+def start_api():
+    """Start the API server in a background thread"""
+    global api_thread
+
+    if api_thread and api_thread.is_alive():
+        logger.info("API server already running")
+        return
+
+    api_thread = threading.Thread(target=start_api_server)
+    api_thread.daemon = True
+    api_thread.start()
+    logger.info("Started API server thread")
 
 
 # Initialize the proxy when the module is imported
-def init_proxy():
-    """Initialize the proxy service"""
+def init():
+    """Initialize both the proxy and API services"""
+    # Start the Modbus TCP proxy
     if modbus_proxy_config["enabled"]:
         start_proxy()
 
+    # Start the API server
+    start_api()
 
-# Ensures we only initialize once
+
+# Main entry point
 if __name__ == "__main__":
     try:
-        # Start proxy
-        start_proxy()
+        # Initialize both services
+        init()
 
-        # Run the Flask app for the API
-        app.run(host='0.0.0.0', port=1502, threaded=True)
+        # Keep the main thread alive
+        while True:
+            time.sleep(1)
+
     except KeyboardInterrupt:
+        logger.info("Shutting down on keyboard interrupt")
         stop_proxy()
     except Exception as e:
-        logger.error(f"Error starting proxy: {e}")
+        logger.error(f"Error in main thread: {e}")

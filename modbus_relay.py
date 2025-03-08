@@ -33,17 +33,24 @@ def configure_proxy(target_ip, target_port):
         "target_port": target_port
     }
 
-    # Try multiple endpoints for resilience
+    # API port configuration - typically we need to use port 5000 for the API
+    # while port 1502 is dedicated to the Modbus TCP traffic
+    api_port = 5000  # Default API port
+
+    # Different endpoint options to try
     endpoints = [
         "/api/modbus-proxy/configure",  # Primary API endpoint
         "/configure"  # Fallback endpoint
     ]
 
-    # Base URL for the proxy
-    base_url = "http://modbus-proxy:1502"
+    # Try different URLs with different ports
+    urls_to_try = [
+                      f"http://modbus-proxy:{api_port}{endpoint}" for endpoint in endpoints
+                  ] + [
+                      f"http://modbus-proxy:1502{endpoint}" for endpoint in endpoints  # Try the modbus port too
+                  ]
 
-    for endpoint in endpoints:
-        url = f"{base_url}{endpoint}"
+    for url in urls_to_try:
         try:
             logger.debug(f"Attempting to configure modbus proxy at {url}")
             response = requests.post(
@@ -77,18 +84,26 @@ def check_proxy_health():
     Returns:
         bool: True if proxy is healthy, False otherwise
     """
-    try:
-        response = requests.get("http://modbus-proxy:1502/healthcheck", timeout=2)
-        if response.status_code == 200:
-            data = response.json()
-            if data.get("status") == "healthy" and data.get("proxy_running", False):
-                logger.debug("Modbus proxy is healthy")
-                return True
-        logger.warning(f"Modbus proxy health check failed: {response.status_code}")
-        return False
-    except Exception as e:
-        logger.warning(f"Modbus proxy health check error: {e}")
-        return False
+    # Try both the API port and the modbus port
+    urls_to_try = [
+        "http://modbus-proxy:5000/healthcheck",
+        "http://modbus-proxy:1502/healthcheck"
+    ]
+
+    for url in urls_to_try:
+        try:
+            logger.debug(f"Checking modbus proxy health at {url}")
+            response = requests.get(url, timeout=2)
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("status") == "healthy" and data.get("proxy_running", False):
+                    logger.debug("Modbus proxy is healthy")
+                    return True
+            logger.warning(f"Modbus proxy health check failed at {url}: {response.status_code}")
+        except Exception as e:
+            logger.warning(f"Modbus proxy health check error at {url}: {e}")
+
+    return False
 
 
 def ensure_connection():
@@ -129,9 +144,8 @@ def ensure_connection():
 
     # First check if proxy is healthy
     if not check_proxy_health():
-        logger.warning("Modbus proxy is not healthy")
-        connected = False
-        return False
+        logger.warning("Modbus proxy is not available or running")
+        # Let's try again with configuration anyway
 
     # Configure the proxy with the target device information
     if not configure_proxy(modbus_ip, modbus_port):
