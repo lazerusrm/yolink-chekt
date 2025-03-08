@@ -176,36 +176,43 @@ SERVER_IP=auto
 EOT
 fi
 
-# Update docker-compose.yml with host IP
+# Update docker-compose.yml with host IP - line by line approach
 HOST_IP=$(get_host_ip)
 echo "Updating docker-compose.yml with TARGET_IP=$HOST_IP"
 
-# Use a YAML-aware approach to update TARGET_IP
 if [ -f "$APP_DIR/docker-compose.yml" ]; then
-    # Create a temporary file and backup
-    TEMP_FILE=$(mktemp)
+    # Make a backup
     cp "$APP_DIR/docker-compose.yml" "$APP_DIR/docker-compose.yml.bak"
 
-    # Check if TARGET_IP exists in the file
-    if grep -q "TARGET_IP=" "$APP_DIR/docker-compose.yml"; then
-        # For each format possibility, attempt replacement
-        # Format 1: "- TARGET_IP=value"
-        sed -e "/[[:space:]]*-[[:space:]]*TARGET_IP=/s/=.*/=$HOST_IP/" "$APP_DIR/docker-compose.yml" > "$TEMP_FILE"
+    # Create a temporary file
+    TEMP_FILE=$(mktemp)
 
-        # Format 2: "TARGET_IP: value"
-        sed -i -e "/[[:space:]]*TARGET_IP:/s/:.*/: $HOST_IP/" "$TEMP_FILE"
-
-        # Check if changes were made
-        if diff "$APP_DIR/docker-compose.yml" "$TEMP_FILE" >/dev/null; then
-            echo "Warning: No TARGET_IP found in expected format. Keeping original file."
-            rm -f "$TEMP_FILE"
+    # Process the file line by line
+    found=0
+    while IFS= read -r line; do
+        if echo "$line" | grep -q "TARGET_IP="; then
+            # Extract the indentation
+            indent=$(echo "$line" | sed 's/^\([[:space:]]*\).*/\1/')
+            echo "${indent}- TARGET_IP=$HOST_IP  # Updated by script" >> "$TEMP_FILE"
+            found=1
         else
-            mv "$TEMP_FILE" "$APP_DIR/docker-compose.yml"
-            echo "docker-compose.yml updated successfully"
+            echo "$line" >> "$TEMP_FILE"
         fi
+    done < "$APP_DIR/docker-compose.yml"
+
+    if [ "$found" -eq 1 ]; then
+        # Replace the original file
+        mv "$TEMP_FILE" "$APP_DIR/docker-compose.yml" || {
+            echo "Error: Failed to update docker-compose.yml"
+            mv "$APP_DIR/docker-compose.yml.bak" "$APP_DIR/docker-compose.yml"
+            rm -f "$TEMP_FILE"
+            exit 1
+        }
+        echo "docker-compose.yml updated successfully"
     else
         echo "Warning: TARGET_IP not found in docker-compose.yml. Manual update may be required."
         rm -f "$TEMP_FILE"
+        rm -f "$APP_DIR/docker-compose.yml.bak"
     fi
 else
     echo "Error: docker-compose.yml not found. Please check your repository."
@@ -224,10 +231,10 @@ fi
 
 # Build and run the app using Docker Compose
 echo "Building and running the Docker containers..."
-$DOCKER_COMPOSE_CMD up --build -d || { echo "Docker Compose up failed."; exit 1; }
+$DOCKER_COMPOSE_CMD -f "$APP_DIR/docker-compose.yml" up --build -d || { echo "Docker Compose up failed."; exit 1; }
 
 # Verify Docker containers are running
-if ! $DOCKER_COMPOSE_CMD ps | grep -q "Up"; then
+if ! $DOCKER_COMPOSE_CMD -f "$APP_DIR/docker-compose.yml" ps | grep -q "Up"; then
     echo "Docker containers are not running as expected."
     exit 1
 else
@@ -307,42 +314,52 @@ restore_file() {
     fi
 }
 
-# Update docker-compose.yml with host IP - Using a YAML-aware approach
+# Simple line-by-line approach to update docker-compose.yml
 update_docker_compose_ip() {
     local host_ip="$1"
+
     if [ ! -f "$DOCKER_COMPOSE_FILE" ]; then
         log "Error: docker-compose.yml not found at $DOCKER_COMPOSE_FILE"
         exit 1
     fi
 
+    # Make a backup
+    cp "$DOCKER_COMPOSE_FILE" "${DOCKER_COMPOSE_FILE}.bak" || {
+        log "Error: Failed to create backup of docker-compose.yml"
+        exit 1
+    }
+
     # Create a temporary file
-    local temp_file="${DOCKER_COMPOSE_FILE}.tmp"
+    local tmpfile
+    tmpfile=$(mktemp)
 
-    # Make a backup before modifying
-    cp "$DOCKER_COMPOSE_FILE" "${DOCKER_COMPOSE_FILE}.bak"
-
-    # Use a more careful pattern matching approach that preserves YAML structure
-    # This preserves indentation and formatting around the TARGET_IP value
-    if grep -q "TARGET_IP=" "$DOCKER_COMPOSE_FILE"; then
-        # For each format possibility, attempt replacement
-        # Format 1: "- TARGET_IP=value"
-        sed -e "/[[:space:]]*-[[:space:]]*TARGET_IP=/s/=.*/=$host_ip/" "$DOCKER_COMPOSE_FILE" > "$temp_file"
-
-        # Format 2: "TARGET_IP: value"
-        sed -i -e "/[[:space:]]*TARGET_IP:/s/:.*/: $host_ip/" "$temp_file"
-
-        # If changes were successful, update the file
-        if diff "$DOCKER_COMPOSE_FILE" "$temp_file" >/dev/null; then
-            log "Warning: No TARGET_IP found in expected format. Manual update may be required."
-            rm -f "$temp_file"
-            exit 1
+    # Process the file line by line
+    local found=0
+    while IFS= read -r line; do
+        if echo "$line" | grep -q "TARGET_IP="; then
+            # Extract the indentation
+            local indent
+            indent=$(echo "$line" | sed 's/^\([[:space:]]*\).*/\1/')
+            echo "${indent}- TARGET_IP=$host_ip  # Updated by script" >> "$tmpfile"
+            found=1
         else
-            mv "$temp_file" "$DOCKER_COMPOSE_FILE"
-            log "Updated docker-compose.yml with TARGET_IP=$host_ip"
+            echo "$line" >> "$tmpfile"
         fi
+    done < "$DOCKER_COMPOSE_FILE"
+
+    if [ "$found" -eq 1 ]; then
+        # Replace the original file
+        mv "$tmpfile" "$DOCKER_COMPOSE_FILE" || {
+            log "Error: Failed to update docker-compose.yml"
+            mv "${DOCKER_COMPOSE_FILE}.bak" "$DOCKER_COMPOSE_FILE"
+            rm -f "$tmpfile"
+            exit 1
+        }
+        log "Updated docker-compose.yml with TARGET_IP=$host_ip"
     else
-        log "Warning: TARGET_IP not found in docker-compose.yml. Manual update may be required."
-        rm -f "$temp_file"
+        log "Warning: TARGET_IP not found in docker-compose.yml"
+        rm -f "$tmpfile"
+        rm -f "${DOCKER_COMPOSE_FILE}.bak"
     fi
 }
 

@@ -68,42 +68,52 @@ restore_file() {
     fi
 }
 
-# Update docker-compose.yml with host IP - Using a YAML-aware approach
+# Simple line-by-line approach to update docker-compose.yml
 update_docker_compose_ip() {
     local host_ip="$1"
+
     if [ ! -f "$DOCKER_COMPOSE_FILE" ]; then
         log "Error: docker-compose.yml not found at $DOCKER_COMPOSE_FILE"
         exit 1
     fi
 
+    # Make a backup
+    cp "$DOCKER_COMPOSE_FILE" "${DOCKER_COMPOSE_FILE}.bak" || {
+        log "Error: Failed to create backup of docker-compose.yml"
+        exit 1
+    }
+
     # Create a temporary file
-    local temp_file="${DOCKER_COMPOSE_FILE}.tmp"
+    local tmpfile
+    tmpfile=$(mktemp)
 
-    # Make a backup before modifying
-    cp "$DOCKER_COMPOSE_FILE" "${DOCKER_COMPOSE_FILE}.bak"
-
-    # Use a more careful pattern matching approach that preserves YAML structure
-    # This preserves indentation and formatting around the TARGET_IP value
-    if grep -q "TARGET_IP=" "$DOCKER_COMPOSE_FILE"; then
-        # For each format possibility, attempt replacement
-        # Format 1: "- TARGET_IP=value"
-        sed -e "/[[:space:]]*-[[:space:]]*TARGET_IP=/s/=.*/=$host_ip/" "$DOCKER_COMPOSE_FILE" > "$temp_file"
-
-        # Format 2: "TARGET_IP: value"
-        sed -i -e "/[[:space:]]*TARGET_IP:/s/:.*/: $host_ip/" "$temp_file"
-
-        # If changes were successful, update the file
-        if diff "$DOCKER_COMPOSE_FILE" "$temp_file" >/dev/null; then
-            log "Warning: No TARGET_IP found in expected format. Manual update may be required."
-            rm -f "$temp_file"
-            exit 1
+    # Process the file line by line
+    local found=0
+    while IFS= read -r line; do
+        if echo "$line" | grep -q "TARGET_IP="; then
+            # Extract the indentation
+            local indent
+            indent=$(echo "$line" | sed 's/^\([[:space:]]*\).*/\1/')
+            echo "${indent}- TARGET_IP=$host_ip  # Updated by script" >> "$tmpfile"
+            found=1
         else
-            mv "$temp_file" "$DOCKER_COMPOSE_FILE"
-            log "Updated docker-compose.yml with TARGET_IP=$host_ip"
+            echo "$line" >> "$tmpfile"
         fi
+    done < "$DOCKER_COMPOSE_FILE"
+
+    if [ "$found" -eq 1 ]; then
+        # Replace the original file
+        mv "$tmpfile" "$DOCKER_COMPOSE_FILE" || {
+            log "Error: Failed to update docker-compose.yml"
+            mv "${DOCKER_COMPOSE_FILE}.bak" "$DOCKER_COMPOSE_FILE"
+            rm -f "$tmpfile"
+            exit 1
+        }
+        log "Updated docker-compose.yml with TARGET_IP=$host_ip"
     else
-        log "Warning: TARGET_IP not found in docker-compose.yml. Manual update may be required."
-        rm -f "$temp_file"
+        log "Warning: TARGET_IP not found in docker-compose.yml"
+        rm -f "$tmpfile"
+        rm -f "${DOCKER_COMPOSE_FILE}.bak"
     fi
 }
 
@@ -184,10 +194,20 @@ chmod +x "$APP_DIR/self-update.sh" || { log "Error: Failed to set script permiss
 HOST_IP=$(get_host_ip)
 update_docker_compose_ip "$HOST_IP"
 
+# Determine which Docker Compose command to use
+if docker compose version >/dev/null 2>&1; then
+    DOCKER_COMPOSE_CMD="docker compose"
+elif docker-compose --version >/dev/null 2>&1; then
+    DOCKER_COMPOSE_CMD="docker-compose"
+else
+    log "Error: No Docker Compose command available. Please install Docker Compose."
+    exit 1
+fi
+
 # Rebuild and restart Docker containers
 log "Rebuilding and restarting Docker containers..."
-docker compose down || { log "Error: Failed to stop Docker containers"; exit 1; }
-docker compose up --build -d || { log "Error: Failed to start Docker containers"; exit 1; }
+$DOCKER_COMPOSE_CMD down || { log "Error: Failed to stop Docker containers"; exit 1; }
+$DOCKER_COMPOSE_CMD up --build -d || { log "Error: Failed to start Docker containers"; exit 1; }
 
 # Verify main container
 container_name=$(docker ps --filter "name=yolink_chekt" --format '{{.Names}}' | head -n 1)
