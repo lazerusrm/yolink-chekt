@@ -1,9 +1,9 @@
 """
-Yolink to CHEKT Integration - Version 1.4 (Enhanced)
+Yolink to CHEKT Integration - Version 1.4 (Enhanced with HTTPS)
 ======================================================
 
 Main application file for integrating Yolink smart sensors with the CHEKT alarm system
-and Modbus relays via MQTT, with a robust web interface for management.
+and Modbus relays via MQTT, with a robust web interface for management, served over HTTPS.
 """
 
 import os
@@ -13,6 +13,7 @@ import base64
 import io
 import asyncio
 import time
+import ssl
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from typing import Dict, Any, Optional, List
@@ -47,7 +48,7 @@ from websocket_handler import init_websocket  # Import WebSocket handler
 # Initialize Quart app
 app = Quart(__name__, template_folder='templates')  # Explicitly set template folder
 app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY", "default-secret-key")
-app.config["SESSION_COOKIE_SECURE"] = os.getenv("ENV", "development") == "development"  # False in dev, True in prod
+app.config["SESSION_COOKIE_SECURE"] = os.getenv("ENV", "development") != "development"  # True in prod, False in dev
 if app.config["SECRET_KEY"] == "default-secret-key":
     logging.warning("Using default SECRET_KEY; set FLASK_SECRET_KEY in .env for security")
 
@@ -148,7 +149,6 @@ async def startup() -> None:
 
     stats = await get_pool_stats()
     logger.debug(f"Redis pool stats before get_all_devices: {stats}")
-    from device_manager import get_all_devices
     try:
         initial_devices = await get_all_devices()
         logger.info(f"Initial device fetch retrieved {len(initial_devices)} devices")
@@ -796,4 +796,19 @@ async def server_error(error):
     return await render_template("error.html", error="Internal server error"), 500
 
 if __name__ == "__main__":
-    asyncio.run(app.run(host='0.0.0.0', port=int(os.getenv("API_PORT", 5000)), debug=True))
+    # Configure SSL context for HTTPS
+    ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    try:
+        ssl_context.load_cert_chain(certfile="/app/cert.pem", keyfile="/app/key.pem")
+        logger.info("SSL certificates loaded successfully for HTTPS")
+    except Exception as e:
+        logger.error(f"Failed to load SSL certificates: {e}")
+        raise SystemExit(1)
+
+    # Run the app with HTTPS
+    asyncio.run(app.run(
+        host='0.0.0.0',
+        port=int(os.getenv("API_PORT", 5000)),
+        ssl=ssl_context,
+        debug=os.getenv("QUART_DEBUG", "false").lower() == "true"
+    ))

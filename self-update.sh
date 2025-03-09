@@ -108,7 +108,65 @@ update_docker_compose_ip() {
         rm -f "$tmpfile"
         exit 1
     }
-    log "Successfully updated docker-compose.yml"
+    log "Successfully updated docker-compose.yml with TARGET_IP"
+}
+
+# Verify or generate SSL certificates
+verify_or_generate_ssl() {
+    log "Verifying SSL certificates..."
+    mkdir -p "$APP_DIR/certs" || { log "Error: Failed to create certs directory"; exit 1; }
+    if [ ! -f "$APP_DIR/certs/key.pem" ] || [ ! -f "$APP_DIR/certs/cert.pem" ]; then
+        log "SSL certificates not found, generating new ones..."
+        openssl req -x509 -newkey rsa:2048 -keyout "$APP_DIR/certs/key.pem" \
+            -out "$APP_DIR/certs/cert.pem" -days 365 -nodes \
+            -subj "/C=US/ST=State/L=City/O=YoLink/CN=localhost" || {
+            log "Error: Failed to generate SSL certificates"; exit 1;
+        }
+        chmod 600 "$APP_DIR/certs/key.pem" "$APP_DIR/certs/cert.pem"
+        log "New SSL certificates generated successfully"
+    else
+        log "SSL certificates found and verified"
+    fi
+}
+
+# Ensure SSL volume mounts in docker-compose.yml
+ensure_ssl_mounts() {
+    log "Ensuring SSL volume mounts in docker-compose.yml"
+    if [ -f "$DOCKER_COMPOSE_FILE" ]; then
+        if ! grep -q "cert.pem:/app/cert.pem" "$DOCKER_COMPOSE_FILE"; then
+            log "Adding SSL volume mounts to docker-compose.yml"
+            cp "$DOCKER_COMPOSE_FILE" "${DOCKER_COMPOSE_FILE}.bak.ssl"
+
+            local tmp_ssl_file
+            tmp_ssl_file=$(mktemp)
+            awk '
+            /yolink_chekt:/ {print; found=1; next}
+            found && /volumes:/ {
+                print;
+                print "      - ./certs/cert.pem:/app/cert.pem";
+                print "      - ./certs/key.pem:/app/key.pem";
+                next
+            }
+            {print}
+            ' "$DOCKER_COMPOSE_FILE" > "$tmp_ssl_file"
+
+            if ! grep -q "volumes:" "$tmp_ssl_file"; then
+                awk '
+                /yolink_chekt:/ {print; print "    volumes:"; print "      - ./certs/cert.pem:/app/cert.pem"; print "      - ./certs/key.pem:/app/key.pem"; next}
+                {print}
+                ' "$DOCKER_COMPOSE_FILE" > "$tmp_ssl_file"
+            fi
+
+            mv "$tmp_ssl_file" "$DOCKER_COMPOSE_FILE" || {
+                log "Error: Failed to update docker-compose.yml with SSL mounts"
+                mv "${DOCKER_COMPOSE_FILE}.bak.ssl" "$DOCKER_COMPOSE_FILE"
+                exit 1
+            }
+            log "SSL volume mounts added to docker-compose.yml"
+        else
+            log "SSL volume mounts already present in docker-compose.yml"
+        fi
+    fi
 }
 
 # Download with retry logic
@@ -160,17 +218,6 @@ unzip -o "$APP_DIR/repo.zip" -d "$TEMP_DIR" || { log "Error: Failed to unzip rep
 log "Updating application files..."
 rsync -a --exclude='.env' --exclude='docker-compose.yml' "$TEMP_DIR/yolink-chekt-main/"* "$APP_DIR/" || { log "Error: Failed to sync updated files"; exit 1; }
 
-# Explicitly ensure templates directory is updated on host
-if [ -d "$TEMP_DIR/yolink-chekt-main/templates" ]; then
-    log "Updating templates directory on host..."
-    mkdir -p "$APP_DIR/templates" || { log "Error: Failed to create templates directory"; exit 1; }
-    cp -r "$TEMP_DIR/yolink-chekt-main/templates/"* "$APP_DIR/templates/" || { log "Error: Failed to update templates directory"; exit 1; }
-    log "Templates directory updated successfully"
-else
-    log "Error: templates directory not found in repository"
-    exit 1
-fi
-
 # Update rtsp-streamer directory
 if [ -d "$TEMP_DIR/yolink-chekt-main/rtsp-streamer" ]; then
     log "Updating rtsp-streamer directory..."
@@ -195,8 +242,12 @@ log "Setting permissions..."
 chmod -R u+rwX,go+rX "$APP_DIR" || { log "Error: Failed to set directory permissions"; exit 1; }
 chmod +x "$APP_DIR/self-update.sh" || { log "Error: Failed to set script permissions"; exit 1; }
 
-# Update docker-compose.yml with the host IP
+# Verify or generate SSL certificates
+verify_or_generate_ssl
+
+# Update docker-compose.yml with the host IP and ensure SSL mounts
 update_docker_compose_ip
+ensure_ssl_mounts
 
 # Determine which Docker Compose command to use
 if docker compose version >/dev/null 2>&1; then

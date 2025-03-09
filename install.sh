@@ -32,11 +32,8 @@ get_host_ip_silent() {
 
 # Function to get the IP address with logging
 get_host_ip() {
-    # First capture the IP silently
     local HOST_IP
     HOST_IP=$(get_host_ip_silent)
-
-    # Then log after we've captured the IP
     if [ -z "$HOST_IP" ]; then
         echo "Error: Could not determine IP address with internet route."
         exit 1
@@ -51,7 +48,7 @@ apt-get update || { echo "apt-get update failed."; exit 1; }
 
 # Install required dependencies
 echo "Installing required dependencies..."
-apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release unzip software-properties-common rsync jq iproute2 || { echo "Dependency installation failed."; exit 1; }
+apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release unzip software-properties-common rsync jq iproute2 openssl || { echo "Dependency installation failed."; exit 1; }
 
 # Detect the distribution
 DISTRO=$(lsb_release -is | tr '[:upper:]' '[:lower:]')
@@ -61,24 +58,18 @@ echo "Detected distribution: $DISTRO $DISTRO_VERSION"
 # Install Docker if not already installed
 if ! command -v docker >/dev/null 2>&1; then
     echo "Docker not found, installing Docker..."
-
-    # Add Docker's official GPG key
     echo "Adding Docker GPG key..."
     mkdir -p /etc/apt/keyrings
     curl -fsSL https://download.docker.com/linux/$DISTRO/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg || {
         echo "Adding Docker GPG key failed. Trying alternative method..."
         curl -fsSL https://download.docker.com/linux/$DISTRO/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
     }
-
-    # Set up Docker repository
     echo "Setting up Docker repository..."
     if [ -f /etc/apt/keyrings/docker.gpg ]; then
         echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/$DISTRO $DISTRO_VERSION stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
     else
         echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/$DISTRO $DISTRO_VERSION stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
     fi
-
-    # Update package list and install Docker
     apt-get update || { echo "apt-get update failed after adding Docker repository."; exit 1; }
     apt-get install -y docker-ce docker-ce-cli containerd.io || {
         echo "Docker installation failed. Trying alternative method..."
@@ -102,9 +93,7 @@ if ! docker compose version >/dev/null 2>&1; then
     echo "Docker Compose not found, installing Docker Compose plugin..."
     apt-get install -y docker-compose-plugin || {
         echo "Docker Compose plugin installation failed. Trying alternative method..."
-        if [ ! -d /usr/local/lib/docker/cli-plugins ]; then
-            mkdir -p /usr/local/lib/docker/cli-plugins
-        fi
+        mkdir -p /usr/local/lib/docker/cli-plugins
         curl -SL https://github.com/docker/compose/releases/download/v2.24.6/docker-compose-linux-x86_64 -o /usr/local/lib/docker/cli-plugins/docker-compose
         chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
     }
@@ -133,7 +122,21 @@ fi
 # Create application directory
 echo "Creating application directory at $APP_DIR..."
 mkdir -p "$APP_DIR" || { echo "Failed to create $APP_DIR."; exit 1; }
-mkdir -p "$APP_DIR/logs" "$APP_DIR/templates"
+mkdir -p "$APP_DIR/logs" "$APP_DIR/templates" "$APP_DIR/certs"
+
+# Generate self-signed SSL certificates
+echo "Generating self-signed SSL certificates..."
+if [ ! -f "$APP_DIR/certs/key.pem" ] || [ ! -f "$APP_DIR/certs/cert.pem" ]; then
+    openssl req -x509 -newkey rsa:2048 -keyout "$APP_DIR/certs/key.pem" \
+        -out "$APP_DIR/certs/cert.pem" -days 365 -nodes \
+        -subj "/C=US/ST=State/L=City/O=YoLink/CN=localhost" || {
+        echo "Failed to generate SSL certificates."; exit 1;
+    }
+    chmod 600 "$APP_DIR/certs/key.pem" "$APP_DIR/certs/cert.pem"
+    echo "SSL certificates generated successfully in $APP_DIR/certs"
+else
+    echo "SSL certificates already exist in $APP_DIR/certs"
+fi
 
 # Download and extract the repository
 echo "Downloading repository from $REPO_URL..."
@@ -184,25 +187,17 @@ SERVER_IP=auto
 EOT
 fi
 
-# Update docker-compose.yml with host IP - using proper YAML-aware methods
-echo "Updating docker-compose.yml with TARGET_IP"
-
-# Get the host IP silently (no log output during capture)
+# Update docker-compose.yml with host IP and SSL mounts
+echo "Updating docker-compose.yml with TARGET_IP and SSL mounts"
 HOST_IP=$(get_host_ip_silent)
 echo "Detected host IP: $HOST_IP"
 
 if [ -f "$APP_DIR/docker-compose.yml" ]; then
-    # Make a backup
     cp "$APP_DIR/docker-compose.yml" "$APP_DIR/docker-compose.yml.bak"
-
-    # Create a temporary file
     TEMP_FILE=$(mktemp)
-
-    # Process the file line by line
     found=0
     while IFS= read -r line; do
         if echo "$line" | grep -q "TARGET_IP="; then
-            # Extract the indentation
             indent=$(echo "$line" | sed -E 's/^([[:space:]]*-).*/\1/')
             echo "${indent} TARGET_IP=$HOST_IP" >> "$TEMP_FILE"
             found=1
@@ -212,45 +207,46 @@ if [ -f "$APP_DIR/docker-compose.yml" ]; then
     done < "$APP_DIR/docker-compose.yml"
 
     if [ "$found" -eq 1 ]; then
-        # Replace the original file
         mv "$TEMP_FILE" "$APP_DIR/docker-compose.yml" || {
-            echo "Error: Failed to update docker-compose.yml"
+            echo "Error: Failed to update docker-compose.yml with TARGET_IP"
             mv "$APP_DIR/docker-compose.yml.bak" "$APP_DIR/docker-compose.yml"
             rm -f "$TEMP_FILE"
             exit 1
         }
-        echo "docker-compose.yml updated successfully"
     else
-        echo "Warning: TARGET_IP not found in docker-compose.yml. Manual update may be required."
+        echo "Warning: TARGET_IP not found in docker-compose.yml"
         rm -f "$TEMP_FILE"
     fi
 
-    # Ensure volumes section is complete and properly formatted
-    if grep -q "^volumes:$" "$APP_DIR/docker-compose.yml"; then
-        # Check if redis-data is already defined
-        if ! grep -q "redis-data:" "$APP_DIR/docker-compose.yml"; then
-            # Create a temporary file
-            VOL_TEMP_FILE=$(mktemp)
+    # Add SSL volume mounts
+    cp "$APP_DIR/docker-compose.yml" "$APP_DIR/docker-compose.yml.bak.ssl"
+    TEMP_SSL_FILE=$(mktemp)
+    awk '
+    /yolink_chekt:/ {print; found=1; next}
+    found && /volumes:/ {
+        print;
+        print "      - ./certs/cert.pem:/app/cert.pem";
+        print "      - ./certs/key.pem:/app/key.pem";
+        next
+    }
+    {print}
+    ' "$APP_DIR/docker-compose.yml" > "$TEMP_SSL_FILE"
 
-            # Process the file, adding proper volumes mapping
-            awk '{
-                print $0;
-                if ($0 ~ /^volumes:$/) {
-                    print "  redis-data: {}";
-                }
-            }' "$APP_DIR/docker-compose.yml" > "$VOL_TEMP_FILE"
-
-            # Replace the original file
-            mv "$VOL_TEMP_FILE" "$APP_DIR/docker-compose.yml" || {
-                echo "Error: Failed to update volumes in docker-compose.yml"
-                exit 1;
-            }
-
-            echo "Fixed volumes section in docker-compose.yml with proper mapping"
-        fi
+    if ! grep -q "volumes:" "$TEMP_SSL_FILE"; then
+        awk '
+        /yolink_chekt:/ {print; print "    volumes:"; print "      - ./certs/cert.pem:/app/cert.pem"; print "      - ./certs/key.pem:/app/key.pem"; next}
+        {print}
+        ' "$APP_DIR/docker-compose.yml" > "$TEMP_SSL_FILE"
     fi
+
+    mv "$TEMP_SSL_FILE" "$APP_DIR/docker-compose.yml" || {
+        echo "Failed to update docker-compose.yml with SSL mounts"
+        mv "$APP_DIR/docker-compose.yml.bak.ssl" "$APP_DIR/docker-compose.yml"
+        exit 1
+    }
+    echo "docker-compose.yml updated with TARGET_IP and SSL mounts"
 else
-    echo "Error: docker-compose.yml not found. Please check your repository."
+    echo "Error: docker-compose.yml not found."
     exit 1
 fi
 
@@ -260,7 +256,7 @@ if docker compose version >/dev/null 2>&1; then
 elif docker-compose --version >/dev/null 2>&1; then
     DOCKER_COMPOSE_CMD="docker-compose"
 else
-    echo "Error: No Docker Compose command available. Please install Docker Compose."
+    echo "Error: No Docker Compose command available."
     exit 1
 fi
 
@@ -314,18 +310,15 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-# Function to get the IP address silently (no logging during capture)
+# Function to get the IP address silently
 get_host_ip_silent() {
     ip route get 8.8.8.8 | grep -o 'src [0-9.]*' | awk '{print $2}'
 }
 
 # Function to get the IP address with logging
 get_host_ip() {
-    # First capture the IP silently
     local host_ip
     host_ip=$(get_host_ip_silent)
-
-    # Only log after we've captured the IP
     if [ -z "$host_ip" ]; then
         log "Error: Could not determine IP address with internet route."
         exit 1
@@ -358,13 +351,10 @@ restore_file() {
     fi
 }
 
-# Update docker-compose.yml with host IP - properly handles YAML formatting
+# Update docker-compose.yml with host IP
 update_docker_compose_ip() {
-    # IMPORTANT: Capture host IP directly in a variable, don't use command substitution with logs
     local host_ip
     host_ip=$(get_host_ip_silent)
-
-    # Now log after capturing the IP
     log "Updating docker-compose.yml with TARGET_IP=$host_ip"
 
     if [ ! -f "$DOCKER_COMPOSE_FILE" ]; then
@@ -372,20 +362,15 @@ update_docker_compose_ip() {
         exit 1
     fi
 
-    # Make a backup
     cp "$DOCKER_COMPOSE_FILE" "${DOCKER_COMPOSE_FILE}.bak" || {
         log "Error: Failed to create backup of docker-compose.yml"
         exit 1
     }
 
-    # Create a temporary file
     local tmpfile
     tmpfile=$(mktemp)
-
-    # Process the file line by line, only updating the TARGET_IP line
     while IFS= read -r line; do
         if echo "$line" | grep -q "TARGET_IP="; then
-            # Extract the indentation
             local indent
             indent=$(echo "$line" | sed -E 's/^([[:space:]]*-).*/\1/')
             echo "${indent} TARGET_IP=$host_ip" >> "$tmpfile"
@@ -394,41 +379,71 @@ update_docker_compose_ip() {
         fi
     done < "$DOCKER_COMPOSE_FILE"
 
-    # Replace original file
     mv "$tmpfile" "$DOCKER_COMPOSE_FILE" || {
         log "Error: Failed to update docker-compose.yml"
         mv "${DOCKER_COMPOSE_FILE}.bak" "$DOCKER_COMPOSE_FILE"
         rm -f "$tmpfile"
         exit 1
     }
+    log "Successfully updated docker-compose.yml with TARGET_IP"
+}
 
-    # Ensure volumes section is complete and properly formatted
-    if grep -q "^volumes:$" "$DOCKER_COMPOSE_FILE"; then
-        # Check if redis-data is already defined
-        if ! grep -q "redis-data:" "$DOCKER_COMPOSE_FILE"; then
-            # Create a temporary file
-            local vol_tmpfile
-            vol_tmpfile=$(mktemp)
+# Verify or generate SSL certificates
+verify_or_generate_ssl() {
+    log "Verifying SSL certificates..."
+    mkdir -p "$APP_DIR/certs" || { log "Error: Failed to create certs directory"; exit 1; }
+    if [ ! -f "$APP_DIR/certs/key.pem" ] || [ ! -f "$APP_DIR/certs/cert.pem" ]; then
+        log "SSL certificates not found, generating new ones..."
+        openssl req -x509 -newkey rsa:2048 -keyout "$APP_DIR/certs/key.pem" \
+            -out "$APP_DIR/certs/cert.pem" -days 365 -nodes \
+            -subj "/C=US/ST=State/L=City/O=YoLink/CN=localhost" || {
+            log "Error: Failed to generate SSL certificates"; exit 1;
+        }
+        chmod 600 "$APP_DIR/certs/key.pem" "$APP_DIR/certs/cert.pem"
+        log "New SSL certificates generated successfully"
+    else
+        log "SSL certificates found and verified"
+    fi
+}
 
-            # Process the file, adding proper volumes mapping
-            awk '{
-                print $0;
-                if ($0 ~ /^volumes:$/) {
-                    print "  redis-data: {}";
-                }
-            }' "$DOCKER_COMPOSE_FILE" > "$vol_tmpfile"
+# Ensure SSL volume mounts in docker-compose.yml
+ensure_ssl_mounts() {
+    log "Ensuring SSL volume mounts in docker-compose.yml"
+    if [ -f "$DOCKER_COMPOSE_FILE" ]; then
+        if ! grep -q "cert.pem:/app/cert.pem" "$DOCKER_COMPOSE_FILE"; then
+            log "Adding SSL volume mounts to docker-compose.yml"
+            cp "$DOCKER_COMPOSE_FILE" "${DOCKER_COMPOSE_FILE}.bak.ssl"
 
-            # Replace the original file
-            mv "$vol_tmpfile" "$DOCKER_COMPOSE_FILE" || {
-                log "Error: Failed to update volumes in docker-compose.yml"
-                exit 1;
+            local tmp_ssl_file
+            tmp_ssl_file=$(mktemp)
+            awk '
+            /yolink_chekt:/ {print; found=1; next}
+            found && /volumes:/ {
+                print;
+                print "      - ./certs/cert.pem:/app/cert.pem";
+                print "      - ./certs/key.pem:/app/key.pem";
+                next
             }
+            {print}
+            ' "$DOCKER_COMPOSE_FILE" > "$tmp_ssl_file"
 
-            log "Fixed volumes section in docker-compose.yml with proper mapping"
+            if ! grep -q "volumes:" "$tmp_ssl_file"; then
+                awk '
+                /yolink_chekt:/ {print; print "    volumes:"; print "      - ./certs/cert.pem:/app/cert.pem"; print "      - ./certs/key.pem:/app/key.pem"; next}
+                {print}
+                ' "$DOCKER_COMPOSE_FILE" > "$tmp_ssl_file"
+            fi
+
+            mv "$tmp_ssl_file" "$DOCKER_COMPOSE_FILE" || {
+                log "Error: Failed to update docker-compose.yml with SSL mounts"
+                mv "${DOCKER_COMPOSE_FILE}.bak.ssl" "$DOCKER_COMPOSE_FILE"
+                exit 1
+            }
+            log "SSL volume mounts added to docker-compose.yml"
+        else
+            log "SSL volume mounts already present in docker-compose.yml"
         fi
     fi
-
-    log "Successfully updated docker-compose.yml"
 }
 
 # Download with retry logic
@@ -476,11 +491,11 @@ rm -rf "$TEMP_DIR"
 mkdir -p "$TEMP_DIR" || { log "Error: Failed to create temp directory"; exit 1; }
 unzip -o "$APP_DIR/repo.zip" -d "$TEMP_DIR" || { log "Error: Failed to unzip repository"; exit 1; }
 
-# Update files, excluding .env and docker-compose.yml (to preserve customizations)
+# Update files, excluding .env and docker-compose.yml
 log "Updating application files..."
 rsync -a --exclude='.env' --exclude='docker-compose.yml' "$TEMP_DIR/yolink-chekt-main/"* "$APP_DIR/" || { log "Error: Failed to sync updated files"; exit 1; }
 
-# Ensure rtsp-streamer directory is updated
+# Update rtsp-streamer directory
 if [ -d "$TEMP_DIR/yolink-chekt-main/rtsp-streamer" ]; then
     log "Updating rtsp-streamer directory..."
     rm -rf "$APP_DIR/rtsp-streamer"
@@ -504,8 +519,12 @@ log "Setting permissions..."
 chmod -R u+rwX,go+rX "$APP_DIR" || { log "Error: Failed to set directory permissions"; exit 1; }
 chmod +x "$APP_DIR/self-update.sh" || { log "Error: Failed to set script permissions"; exit 1; }
 
-# Update docker-compose.yml with the host IP
+# Verify or generate SSL certificates
+verify_or_generate_ssl
+
+# Update docker-compose.yml with the host IP and ensure SSL mounts
 update_docker_compose_ip
+ensure_ssl_mounts
 
 # Determine which Docker Compose command to use
 if docker compose version >/dev/null 2>&1; then
@@ -556,4 +575,4 @@ else
     echo "Cron not available; manual updates required."
 fi
 
-echo "The YoLink CHEKT integration is now installed and automatic updates are configured."
+echo "The YoLink CHEKT integration is now installed with HTTPS support and automatic updates configured."

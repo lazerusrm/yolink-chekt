@@ -8,7 +8,9 @@ services:
     volumes:
       - .:/app
       - ./logs:/app/logs
-      - ./templates:/app/templates  # Explicitly mount templates
+      - ./templates:/app/templates
+      - ./certs/cert.pem:/app/cert.pem
+      - ./certs/key.pem:/app/key.pem
     environment:
       - FLASK_ENV=production
       - LOG_DIR=/app/logs
