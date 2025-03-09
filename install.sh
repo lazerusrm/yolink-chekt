@@ -1525,7 +1525,7 @@ if [ "$OPERATION_MODE" = "update" ]; then
         log_info "Restoring rtsp-streamer from backup"
         cp -r "$APP_DIR/rtsp-streamer.bak" "$APP_DIR/rtsp-streamer" || log_warning "Failed to restore rtsp-streamer"
     fi
-}
+fi
 
 # Step 9: Clean up temporary files
 log_info "Cleaning up..."
