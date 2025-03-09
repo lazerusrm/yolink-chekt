@@ -353,6 +353,8 @@ async def login():
             return await render_template("login.html", totp_required=True, username=pending_user)
     return await render_template("login.html", totp_required=False)
 
+from quart_auth import current_user
+
 @app.route("/logout")
 @login_required
 async def logout():
@@ -361,6 +363,8 @@ async def logout():
     logout_user()
     logger.info(f"User {username} logged out")
     return redirect(url_for("login"))
+
+from quart_auth import current_user
 
 @app.route("/change_password", methods=["GET", "POST"])
 @login_required
@@ -392,6 +396,8 @@ async def change_password():
             return redirect(url_for("index"))
 
     return await render_template("change_password.html")
+
+from quart_auth import current_user
 
 @app.route("/setup_totp", methods=["GET", "POST"])
 @login_required
@@ -431,6 +437,8 @@ async def setup_totp():
     return await render_template("setup_totp.html", qr_img=qr_img)
 
 # ----------------------- Main Routes -----------------------
+
+from quart_auth import current_user
 
 @app.route("/")
 @login_required
