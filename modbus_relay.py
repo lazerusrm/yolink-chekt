@@ -129,7 +129,7 @@ async def ensure_connection(max_retries: int = 3) -> bool:
     if modbus_client.connected:
         try:
             # Test the connection with a simple read
-            result = await modbus_client.read_coils(0, 1, unit=config["modbus"].get("unit_id", 1))
+            result = await modbus_client.read_coils(0, 1, slave=config["modbus"].get("unit_id", 1))
             if not hasattr(result, 'isError') or not result.isError():
                 logger.debug("Modbus connection is healthy")
                 return True
@@ -265,7 +265,7 @@ async def trigger_relay(channel: int, state: bool = True, pulse_seconds: float =
         # Track attempt count for write operation
         for write_attempt in range(3):  # Try up to 3 times
             try:
-                result = await modbus_client.write_coil(coil_address, state, unit=unit_id)
+                result = await modbus_client.write_coil(coil_address, state, slave=unit_id)
                 if hasattr(result, 'isError') and result.isError():
                     logger.error(f"Failed to set relay channel {channel} (attempt {write_attempt + 1}/3): {result}")
                     if write_attempt < 2:  # Don't sleep on the last attempt
