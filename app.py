@@ -61,17 +61,17 @@ logger = logging.getLogger(__name__)
 
 # Extensions
 class User(AuthUser):
-    def __init__(self, auth_id):
+    def __init__(self, auth_id: Optional[str]) -> None:
         super().__init__(auth_id)
 
     @property
-    def is_authenticated(self):
+    def is_authenticated(self) -> bool:
         return self.auth_id is not None
 
 bcrypt = Bcrypt(app)
 auth = QuartAuth(app)
 scheduler = AsyncIOScheduler()
-app.bg_tasks = []
+app.bg_tasks: List[asyncio.Task] = []
 
 # Initialize WebSocket functionality
 init_websocket(app)
@@ -130,7 +130,7 @@ async def is_system_configured() -> bool:
 # ----------------------- Background Startup & Shutdown -----------------------
 
 @app.before_serving
-async def startup():
+async def startup() -> None:
     """Initialize background services and resources."""
     logger.info("Starting application services")
 
@@ -164,7 +164,7 @@ async def startup():
     logger.info("Scheduler started")
 
 @app.after_serving
-async def shutdown():
+async def shutdown() -> None:
     """Gracefully shut down services and resources."""
     logger.info("Shutting down application services")
 
@@ -204,26 +204,38 @@ async def shutdown():
 
 @app.route("/login", methods=["GET", "POST"])
 async def login():
+    """Handle user login with password and optional TOTP authentication."""
     if request.method == "POST":
         form = await request.form
         username = form.get("username", "")
         password = form.get("password", "")
         totp_code = form.get("totp_code")
 
+        if not username or not password:
+            await flash("Username and password are required", "error")
+            return await render_template("login.html", totp_required=False)
+
         user_data = await get_user_data(username)
-        if user_data:
-            logger.debug(f"check_password_hash type: {type(bcrypt.check_password_hash)}")
-            result = bcrypt.check_password_hash(user_data["password"], password)
-            logger.debug(f"result type: {type(result)}")
-            password_match = await result
-        else:
-            password_match = False
-        if not user_data or not password_match:
+        if not user_data:
+            logger.info(f"Login attempt with non-existent username: {username}")
+            await flash("Invalid credentials", "error")
+            return await render_template("login.html", totp_required=False)
+
+        try:
+            password_match = bcrypt.check_password_hash(user_data["password"], password)
+        except Exception as e:
+            logger.error(f"Error verifying password for {username}: {e}")
+            await flash("Authentication error", "error")
+            return await render_template("login.html", totp_required=False)
+
+        if not password_match:
+            logger.info(f"Failed login attempt for {username}: incorrect password")
             await flash("Invalid credentials", "error")
             return await render_template("login.html", totp_required=False)
 
         if user_data.get("force_password_change", False):
             login_user(User(username))
+            logger.info(f"User {username} logged in, redirecting to change password")
             return redirect(url_for("change_password"))
 
         if "totp_secret" in user_data:
@@ -231,13 +243,16 @@ async def login():
                 return await render_template("login.html", totp_required=True, username=username)
             totp = pyotp.TOTP(user_data["totp_secret"])
             if not totp.verify(totp_code):
+                logger.info(f"Failed TOTP verification for {username}")
                 await flash("Invalid TOTP code", "error")
                 return await render_template("login.html", totp_required=True, username=username)
         else:
             login_user(User(username))
+            logger.info(f"User {username} logged in, redirecting to TOTP setup")
             return redirect(url_for("setup_totp"))
 
         login_user(User(username))
+        logger.info(f"User {username} logged in successfully")
         return redirect(url_for("index"))
 
     return await render_template("login.html", totp_required=False)
@@ -245,12 +260,16 @@ async def login():
 @app.route("/logout")
 @login_required
 async def logout():
+    """Log out the current user."""
+    username = auth.current_user.auth_id
     logout_user()
+    logger.info(f"User {username} logged out")
     return redirect(url_for("login"))
 
 @app.route("/change_password", methods=["GET", "POST"])
 @login_required
 async def change_password():
+    """Handle password change for the current user."""
     user_data = await get_user_data(auth.current_user.auth_id)
     if request.method == "POST":
         form = await request.form
@@ -258,7 +277,7 @@ async def change_password():
         new_password = form.get("new_password", "")
         confirm_password = form.get("confirm_password", "")
 
-        if not await bcrypt.check_password_hash(user_data["password"], current_password):
+        if not bcrypt.check_password_hash(user_data["password"], current_password):
             await flash("Current password is incorrect", "error")
         elif new_password != confirm_password:
             await flash("New passwords do not match", "error")
@@ -271,6 +290,7 @@ async def change_password():
             if "totp_secret" not in user_data:
                 return redirect(url_for("setup_totp"))
             await flash("Password changed successfully", "success")
+            logger.info(f"User {auth.current_user.auth_id} changed password successfully")
             return redirect(url_for("index"))
 
     return await render_template("change_password.html")
@@ -278,6 +298,7 @@ async def change_password():
 @app.route("/setup_totp", methods=["GET", "POST"])
 @login_required
 async def setup_totp():
+    """Set up TOTP two-factor authentication for the current user."""
     user_data = await get_user_data(auth.current_user.auth_id)
     if "totp_secret" in user_data:
         await flash("TOTP already set up", "info")
@@ -297,6 +318,7 @@ async def setup_totp():
             await save_user_data(auth.current_user.auth_id, user_data)
             session.pop("totp_secret", None)
             await flash("TOTP setup complete", "success")
+            logger.info(f"User {auth.current_user.auth_id} completed TOTP setup")
             return redirect(url_for("index"))
         else:
             await flash("Invalid TOTP code", "error")
@@ -315,6 +337,7 @@ async def setup_totp():
 @app.route("/")
 @login_required
 async def index():
+    """Render the main dashboard page."""
     user_data = await get_user_data(auth.current_user.auth_id)
     if user_data.get("force_password_change", False):
         await flash("Please change your default password.", "warning")
@@ -334,6 +357,7 @@ async def index():
 @app.route("/config", methods=["GET", "POST"])
 @login_required
 async def config():
+    """Handle configuration viewing and updates."""
     config_data = await load_config()
     if request.method == "POST":
         try:
@@ -412,6 +436,7 @@ async def config():
 @app.route('/get_config')
 @login_required
 async def get_config():
+    """Return the current configuration as JSON."""
     config = await load_config()
     return jsonify(config)
 
@@ -420,6 +445,7 @@ async def get_config():
 @app.route("/create_user", methods=["POST"])
 @login_required
 async def create_user():
+    """Create a new user with a password."""
     form = await request.form
     username = form.get("username", "")
     password = form.get("password", "")
@@ -447,6 +473,7 @@ async def create_user():
 @app.route("/refresh_devices")
 @login_required
 async def refresh_devices():
+    """Refresh the list of YoLink devices."""
     try:
         is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.args.get('ajax') == '1'
         await refresh_yolink_devices()
@@ -464,6 +491,7 @@ async def refresh_devices():
 @app.route("/system_uptime")
 @login_required
 async def system_uptime():
+    """Return the system uptime in seconds."""
     boot_time = psutil.boot_time()
     current_time = datetime.now().timestamp()
     uptime_seconds = current_time - boot_time
@@ -472,6 +500,7 @@ async def system_uptime():
 @app.route("/save_mapping", methods=["POST"])
 @login_required
 async def save_mapping_route():
+    """Save a mapping for a YoLink device."""
     data = await request.get_json()
     device_id = data.get("yolink_device_id")
     chekt_zone = data.get("chekt_zone", "N/A")
@@ -486,6 +515,7 @@ async def save_mapping_route():
 @app.route("/set_door_prop_alarm", methods=["POST"])
 @login_required
 async def set_door_prop_alarm():
+    """Set the door prop alarm setting for a device."""
     data = await request.get_json()
     device_id = data.get("device_id")
     enabled = data.get("enabled", False)
@@ -513,6 +543,7 @@ async def set_door_prop_alarm():
 @app.route("/get_sensor_data")
 @login_required
 async def get_sensor_data():
+    """Return sensor data for all devices."""
     devices = await get_all_devices()
     mappings = await get_mappings()
     mappings_list = mappings.get("mappings", [])
@@ -539,6 +570,7 @@ async def get_sensor_data():
 @app.route("/get_logs", methods=["GET"])
 @login_required
 async def get_logs():
+    """Return the last 50 lines of application logs."""
     try:
         with open("/app/logs/app.log", "r") as f:
             logs = "".join(f.readlines()[-50:])
@@ -552,16 +584,19 @@ async def get_logs():
 @app.route("/check_mqtt_status")
 @login_required
 async def check_mqtt_status():
+    """Check the status of the YoLink MQTT connection."""
     return jsonify(await check_mqtt_connection_active())
 
 @app.route("/check_monitor_mqtt_status")
 @login_required
 async def check_monitor_mqtt_status():
+    """Check the status of the Monitor MQTT connection."""
     return jsonify(await check_monitor_connection_active())
 
 @app.route("/check_receiver_status")
 @login_required
 async def check_receiver_status():
+    """Check the status of the configured receiver."""
     config = await load_config()
     receiver_type = config.get("receiver_type", "CHEKT")
     return jsonify({"status": "success", "message": f"{receiver_type} receiver assumed alive."})
@@ -569,6 +604,7 @@ async def check_receiver_status():
 @app.route('/check_all_statuses')
 @login_required
 async def check_all_statuses():
+    """Check the status of all services."""
     yolink_status = await check_mqtt_connection_active()
     monitor_status = await check_monitor_connection_active()
     config = await load_config()
@@ -585,6 +621,7 @@ async def check_all_statuses():
 @app.route('/last_refresh')
 @login_required
 async def last_refresh():
+    """Return the time of the last device refresh."""
     try:
         redis_client = await get_redis()
         last_refresh_time = await redis_client.get("last_refresh_time")
@@ -601,6 +638,7 @@ async def last_refresh():
 @app.route('/restart_services', methods=['POST'])
 @login_required
 async def restart_services():
+    """Restart MQTT services."""
     try:
         shutdown_yolink_mqtt()
         shutdown_monitor_mqtt()
@@ -614,6 +652,7 @@ async def restart_services():
 @app.route("/save_relay_mapping", methods=["POST"])
 @login_required
 async def save_relay_mapping_route():
+    """Save relay mapping for a device."""
     data = await request.get_json()
     device_id = data.get("yolink_device_id")
     relay_channel = data.get("relay_channel", "N/A")
@@ -629,6 +668,7 @@ async def save_relay_mapping_route():
 @app.route('/check_modbus_status')
 @login_required
 async def check_modbus_status():
+    """Check the status of the Modbus relay connection."""
     config = await load_config()
     if not config.get("modbus", {}).get("enabled", False):
         return jsonify({"status": "warning", "message": "Modbus relay is disabled in configuration."})
@@ -645,6 +685,7 @@ async def check_modbus_status():
 @app.route('/test_relay_channel', methods=['POST'])
 @login_required
 async def test_relay_channel():
+    """Test a specific relay channel."""
     data = await request.get_json()
     channel = data.get('channel')
     if not channel:
@@ -666,6 +707,7 @@ async def test_relay_channel():
 @app.route('/test_modbus', methods=['GET'])
 @login_required
 async def test_modbus():
+    """Perform a comprehensive test of the Modbus connection."""
     config = await load_config()
     modbus_config = config.get('modbus', {})
     if not modbus_config.get('enabled', False):
@@ -718,14 +760,17 @@ async def test_modbus():
 
 @app.errorhandler(Unauthorized)
 async def handle_unauthorized(error):
+    """Redirect unauthorized users to the login page."""
     return redirect(url_for("login"))
 
 @app.errorhandler(404)
 async def page_not_found(error):
+    """Handle 404 errors."""
     return await render_template("error.html", error="Page not found"), 404
 
 @app.errorhandler(500)
 async def server_error(error):
+    """Handle 500 errors."""
     logger.error(f"Server error: {error}")
     return await render_template("error.html", error="Internal server error"), 500
 
