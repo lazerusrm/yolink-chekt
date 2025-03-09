@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # YoLink CHEKT Integration - Unified Installation and Update Script
-# This script handles both first-time installation and updates
+# This script handles both first-time installation and updates with zero manual edits required
 
 # Ensure the script is run with bash
 if [ -z "$BASH_VERSION" ]; then
@@ -19,62 +19,8 @@ fi
 REPO_URL="${REPO_URL:-https://github.com/lazerusrm/yolink-chekt/archive/refs/heads/main.zip}"
 APP_DIR="${APP_DIR:-/opt/yolink-chekt}"
 LOG_FILE="/var/log/yolink-installer.log"
-
-#----------------Migration From Old Self-Update (Deprecate 3/11/25)----------------------------------------
-# Add this code near the beginning of the unified install.sh script,
-# before the OPERATION_MODE is set:
-
-# Check if this script is being executed as self-update.sh
-SCRIPT_NAME=$(basename "$0")
-if [ "$SCRIPT_NAME" = "self-update.sh" ]; then
-    echo "Detected execution as self-update.sh, running in update mode."
-    OPERATION_MODE="update"
-
-    # Optional: Create a symlink to install.sh for future runs
-    if [ ! -L "$APP_DIR/self-update.sh" ] && [ -f "$APP_DIR/install.sh" ]; then
-        echo "Creating symbolic link from self-update.sh to install.sh"
-        ln -sf "$APP_DIR/install.sh" "$APP_DIR/self-update.sh"
-    fi
-fi
-
-# Process command-line arguments
-for arg in "$@"; do
-  case $arg in
-    --install)
-      OPERATION_MODE="install"
-      shift
-      ;;
-    --update)
-      OPERATION_MODE="update"
-      shift
-      ;;
-    --help)
-      echo "Usage: $0 [--install|--update|--help]"
-      echo ""
-      echo "Options:"
-      echo "  --install  Force installation mode even if existing installation is detected"
-      echo "  --update   Force update mode even if no existing installation is detected"
-      echo "  --help     Show this help message"
-      echo ""
-      echo "Without options, the script will automatically detect whether to install or update."
-      exit 0
-      ;;
-  esac
-done
-
-# Auto-detect operation mode if not specified (and not set by script name)
-if [ "$OPERATION_MODE" = "auto" ]; then
-    if [ -d "$APP_DIR" ] && [ -f "$APP_DIR/current_ip.txt" ]; then
-        OPERATION_MODE="update"
-        echo "Detected existing installation. Running in update mode."
-    else
-        OPERATION_MODE="install"
-        echo "No existing installation detected. Running in install mode."
-    fi
-fi
-
-#------------End Migration From Old Self-Update (Deprecate 3/11/25)----------------------------------------
 OPERATION_MODE="auto"
+RTSP_HTTP_PORT=8080  # Use an alternative port for RTSP HTTP service to avoid conflict with nginx
 
 # Process command-line arguments
 for arg in "$@"; do
@@ -106,6 +52,30 @@ mkdir -p "$(dirname "$LOG_FILE")"
 
 # Redirect output to log file
 exec > >(tee -a "$LOG_FILE") 2>&1
+
+# Check if this script is being executed as self-update.sh
+SCRIPT_NAME=$(basename "$0")
+if [ "$SCRIPT_NAME" = "self-update.sh" ]; then
+    echo "Detected execution as self-update.sh, running in update mode."
+    OPERATION_MODE="update"
+
+    # Create a symlink to install.sh for future runs
+    if [ ! -L "$APP_DIR/self-update.sh" ] && [ -f "$APP_DIR/install.sh" ]; then
+        echo "Creating symbolic link from self-update.sh to install.sh"
+        ln -sf "$APP_DIR/install.sh" "$APP_DIR/self-update.sh"
+    fi
+
+    # Update cron job to use install.sh directly in future
+    if command -v crontab >/dev/null 2>&1; then
+        CRON_ENTRY="0 2 * * * $APP_DIR/install.sh --update >> /var/log/yolink-update.log 2>&1"
+        CURRENT_CRON=$(crontab -l 2>/dev/null || echo "")
+        if echo "$CURRENT_CRON" | grep -q "$APP_DIR/self-update.sh"; then
+            echo "Updating cron job to use install.sh instead of self-update.sh"
+            NEW_CRON=$(echo "$CURRENT_CRON" | sed "s|$APP_DIR/self-update.sh|$APP_DIR/install.sh --update|g")
+            echo "$NEW_CRON" | crontab -
+        fi
+    fi
+fi
 
 # Auto-detect operation mode if not specified
 if [ "$OPERATION_MODE" = "auto" ]; then
@@ -209,23 +179,13 @@ EOF
     rm -f "$ssl_config"
 }
 
-# Function to update nginx.conf with the current IP
-update_nginx_conf() {
+# Function to generate nginx.conf with the current IP
+generate_nginx_conf() {
     local host_ip=$1
     local nginx_conf="$APP_DIR/nginx.conf"
 
-    if [ -f "$nginx_conf" ]; then
-        echo "Updating nginx.conf with current IP: $host_ip"
-        # Create a backup
-        cp "$nginx_conf" "${nginx_conf}.bak.$(date +%Y%m%d%H%M%S)"
-
-        # Update server_name directive with the new IP
-        sed -i "s/server_name localhost [0-9.]\+;/server_name localhost $host_ip;/g" "$nginx_conf"
-
-        echo "nginx.conf updated with server_name: localhost $host_ip"
-    else
-        echo "Creating new nginx.conf with proper server_name settings..."
-        cat <<EOT > "$nginx_conf"
+    echo "Generating nginx.conf with IP $host_ip..."
+    cat > "$nginx_conf" << EOF
 server {
     listen 80;
     server_name localhost $host_ip;
@@ -252,6 +212,7 @@ server {
     ssl_session_cache shared:SSL:10m;
     ssl_session_timeout 10m;
 
+    # Main application
     location / {
         proxy_pass http://yolink_chekt:5000;
 
@@ -265,7 +226,7 @@ server {
         proxy_set_header X-Forwarded-Host \$host;
         proxy_set_header X-Forwarded-Server \$host;
 
-        # WebSocket support
+        # Websocket support
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -275,174 +236,159 @@ server {
         proxy_send_timeout 60s;
         proxy_read_timeout 60s;
     }
-}
-EOT
-        echo "New nginx.conf created"
-    fi
-}
 
-# Update docker-compose.yml with host IP
-update_docker_compose_ip() {
-    local host_ip=$1
-    local docker_compose_file="$APP_DIR/docker-compose.yml"
-
-    echo "Updating docker-compose.yml with TARGET_IP=$host_ip"
-
-    if [ ! -f "$docker_compose_file" ]; then
-        echo "Error: docker-compose.yml not found at $docker_compose_file"
-        exit 1
-    fi
-
-    cp "$docker_compose_file" "${docker_compose_file}.bak.$(date +%Y%m%d%H%M%S)" || {
-        echo "Error: Failed to create backup of docker-compose.yml"
-        exit 1
+    # Proxy RTSP HTTP API requests to port $RTSP_HTTP_PORT
+    location /rtsp/ {
+        proxy_pass http://rtsp-streamer:$RTSP_HTTP_PORT/;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
     }
-
-    local tmpfile
-    tmpfile=$(mktemp)
-    while IFS= read -r line; do
-        if echo "$line" | grep -q "TARGET_IP="; then
-            local indent
-            indent=$(echo "$line" | sed -E 's/^([[:space:]]*-).*/\1/')
-            echo "${indent} TARGET_IP=$host_ip" >> "$tmpfile"
-        else
-            echo "$line" >> "$tmpfile"
-        fi
-    done < "$docker_compose_file"
-
-    # Validate the updated file
-    if docker compose -f "$tmpfile" config >/dev/null 2>&1 || docker-compose -f "$tmpfile" config >/dev/null 2>&1; then
-        mv "$tmpfile" "$docker_compose_file" || {
-            echo "Error: Failed to update docker-compose.yml"
-            exit 1
-        }
-        echo "Successfully updated docker-compose.yml with TARGET_IP"
-    else
-        echo "Error: Invalid docker-compose.yml after update"
-        rm -f "$tmpfile"
-        exit 1
-    fi
+}
+EOF
+    echo "nginx.conf generated successfully."
 }
 
-# Backup a file if it exists
-backup_file() {
-    local src="$1"
-    local dest="$2"
-    if [ -f "$src" ]; then
-        cp "$src" "$dest" || { echo "Error: Failed to backup $(basename "$src")"; exit 1; }
-        echo "Backed up $(basename "$src") to $(basename "$dest")"
-    else
-        echo "Note: $(basename "$src") not found, skipping backup"
-    fi
-}
-
-# Restore a file if backup exists
-restore_file() {
-    local src="$1"
-    local dest="$2"
-    if [ -f "$src" ]; then
-        mv "$src" "$dest" || { echo "Error: Failed to restore $(basename "$dest")"; exit 1; }
-        echo "Restored $(basename "$dest") from backup"
-    else
-        echo "Note: Backup $(basename "$src") not found, skipping restore"
-    fi
-}
-
-# Ensure SSL volume mounts in docker-compose.yml
-ensure_ssl_mounts() {
+# Generate docker-compose.yml with correct config
+generate_docker_compose() {
+    local host_ip=$1
+    local rtsp_http_port=$2
     local docker_compose_file="$APP_DIR/docker-compose.yml"
-    echo "Ensuring SSL volume mounts in docker-compose.yml"
-    if [ -f "$docker_compose_file" ]; then
-        # Check for websocket-proxy volume mounts
-        if ! grep -q "certs:/app/certs" "$docker_compose_file"; then
-            echo "Adding SSL volume mounts to docker-compose.yml"
-            cp "$docker_compose_file" "${docker_compose_file}.bak.ssl" || {
-                echo "Error: Failed to backup docker-compose.yml"
-                exit 1
-            }
 
-            # Create a temporary file for the updated docker-compose.yml
-            local temp_file=$(mktemp)
+    echo "Generating docker-compose.yml with IP $host_ip..."
+    cat > "$docker_compose_file" << EOF
+version: '3'
 
-            # Add SSL mounts to yolink_chekt and websocket-proxy services
-            awk '
-            /yolink_chekt:/ {
-                print;
-                found_yolink = 1;
-                next;
-            }
-            found_yolink && /environment:/ {
-                print;
-                if (!env_updated) {
-                    print "      - DISABLE_HTTPS=true  # Let Nginx handle SSL";
-                    env_updated = 1;
-                }
-                next;
-            }
-            found_yolink && /volumes:/ {
-                print;
-                if (!vol_updated) {
-                    print "      - ./certs:/app/certs";
-                    vol_updated = 1;
-                }
-                next;
-            }
-            /websocket-proxy:/ {
-                print;
-                found_ws = 1;
-                next;
-            }
-            found_ws && /volumes:/ {
-                print;
-                if (!ws_vol_updated) {
-                    print "      - ./certs:/app/certs";
-                    ws_vol_updated = 1;
-                }
-                next;
-            }
-            {print}
-            ' "$docker_compose_file" > "$temp_file"
+services:
+  nginx:
+    image: nginx:latest
+    ports:
+      - "443:443"
+      - "80:80"
+    volumes:
+      - ./certs:/etc/nginx/certs
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - yolink_chekt
+    restart: unless-stopped
+    networks:
+      - yolink-network
 
-            # Validate before moving
-            if docker compose -f "$temp_file" config >/dev/null 2>&1 || docker-compose -f "$temp_file" config >/dev/null 2>&1; then
-                mv "$temp_file" "$docker_compose_file"
-                echo "SSL volume mounts added to docker-compose.yml"
-            else
-                echo "Error: Invalid docker-compose.yml after adding SSL mounts"
-                mv "${docker_compose_file}.bak.ssl" "$docker_compose_file"
-                rm -f "$temp_file"
-            fi
-        else
-            echo "SSL volume mounts already present in docker-compose.yml"
-        fi
-    fi
-}
+  yolink_chekt:
+    build: .
+    expose:
+      - "5000"
+    volumes:
+      - ./certs:/app/certs
+      - .:/app
+      - ./logs:/app/logs
+      - ./templates:/app/templates
+    environment:
+      - FLASK_ENV=production
+      - LOG_DIR=/app/logs
+      - DISABLE_HTTPS=true  # Let Nginx handle SSL
+    depends_on:
+      - redis
+      - modbus-proxy
+    restart: unless-stopped
+    networks:
+      - yolink-network
 
-# Download with retry logic
-download_with_retry() {
-    local url="$1"
-    local output="$2"
-    local max_retries=3
-    local retry_delay=5
-    local attempt=1
+  modbus-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile.modbus-proxy
+    container_name: modbus-proxy
+    ports:
+      - "1502:1502"
+      - "5001:5000"
+    environment:
+      - TARGET_IP=$host_ip
+      - TARGET_PORT=502
+      - LISTEN_PORT=1502
+      - API_PORT=5000
+      - FLASK_SECRET_KEY=Skunkworks1!
+    restart: unless-stopped
+    networks:
+      - yolink-network
 
-    while [ "$attempt" -le "$max_retries" ]; do
-        echo "Downloading from $url (Attempt $attempt/$max_retries)..."
-        if curl -L --fail "$url" -o "$output" 2>/tmp/curl_error; then
-            echo "Download successful"
-            return 0
-        else
-            local curl_err
-            curl_err=$(cat /tmp/curl_error)
-            echo "Download failed: $curl_err"
-            if [ "$attempt" -eq "$max_retries" ]; then
-                echo "Error: Failed to download repository after $max_retries attempts"
-                exit 1
-            fi
-            sleep "$retry_delay"
-            ((attempt++))
-        fi
-    done
+  redis:
+    image: redis:6
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    networks:
+      - yolink-network
+
+  websocket-proxy:
+    build:
+      context: .
+      dockerfile: websocket-proxy/Dockerfile
+    container_name: yolink-websocket-proxy
+    restart: unless-stopped
+    environment:
+      - PORT=3000
+      - API_URL=http://yolink_chekt:5000/get_sensor_data
+      - FETCH_INTERVAL=5000
+    ports:
+      - "3010:3000"
+    volumes:
+      - ./certs:/app/certs
+    depends_on:
+      - yolink_chekt
+    networks:
+      - yolink-network
+
+  rtsp-streamer:
+    build:
+      context: ./rtsp-streamer
+      dockerfile: Dockerfile
+    container_name: yolink-rtsp-streamer
+    restart: unless-stopped
+    environment:
+      - DASHBOARD_URL=http://websocket-proxy:3000
+      - RTSP_PORT=554
+      - STREAM_NAME=yolink-dashboard
+      - FRAME_RATE=6
+      - WIDTH=1920
+      - HEIGHT=1080
+      - CYCLE_INTERVAL=10000
+      - ONVIF_AUTH_REQUIRED=true
+      - ONVIF_USERNAME=admin
+      - ONVIF_PASSWORD=123456
+      - ONVIF_AUTH_METHOD=both
+      - ONVIF_PORT=8000
+      - ONVIF_TEST_MODE=true
+      - SERVER_IP=0.0.0.0
+      - ANNOUNCE_IP=$host_ip
+      - RTSP_API_PORT=$rtsp_http_port
+      - WS_PORT=9999
+      - LOW_RES_SENSORS_PER_PAGE=6
+      - SENSORS_PER_PAGE=20
+      - MAC_ADDRESS=51:12:56:73:D6:AA
+    ports:
+      - "554:554"
+      - "$rtsp_http_port:$rtsp_http_port"
+      - "9999:9999"
+      - "3702:3702/udp"
+    volumes:
+      - /tmp/streams:/tmp/streams
+    depends_on:
+      - websocket-proxy
+    networks:
+      - yolink-network
+
+networks:
+  yolink-network:
+    driver: bridge
+
+volumes:
+  redis-data:
+EOF
+    echo "docker-compose.yml generated successfully."
 }
 
 # Create IP monitor script
@@ -463,6 +409,7 @@ CURRENT_IP_FILE="$APP_DIR/current_ip.txt"
 DOCKER_COMPOSE_FILE="$APP_DIR/docker-compose.yml"
 LOCK_FILE="/tmp/yolink-ip-monitor.lock"
 MAX_LOCK_AGE=300  # 5 minutes in seconds
+RTSP_HTTP_PORT=8080  # Use the same port as in the main script
 
 # Create log directory if it doesn't exist
 mkdir -p "$(dirname "$LOG_FILE")"
@@ -518,6 +465,77 @@ check_ip_changed() {
     fi
 }
 
+# Function to generate nginx.conf with the current IP
+generate_nginx_conf() {
+    local host_ip=$1
+    local nginx_conf="$APP_DIR/nginx.conf"
+
+    echo "Generating nginx.conf with IP $host_ip..."
+    cat > "$nginx_conf" << EOF
+server {
+    listen 80;
+    server_name localhost $host_ip;
+
+    # Redirect HTTP to HTTPS
+    location / {
+        return 301 https://\$host\$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    server_name localhost $host_ip;
+
+    ssl_certificate /etc/nginx/certs/cert.pem;
+    ssl_certificate_key /etc/nginx/certs/key.pem;
+
+    # Improved SSL configuration
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers on;
+    ssl_ciphers 'ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305';
+
+    # Add SSL session cache for better performance
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+
+    # Main application
+    location / {
+        proxy_pass http://yolink_chekt:5000;
+
+        # Standard proxy headers
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+
+        # Additional headers to help with redirection
+        proxy_set_header X-Forwarded-Host \$host;
+        proxy_set_header X-Forwarded-Server \$host;
+
+        # Websocket support
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+
+        # Timeouts
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
+
+    # Proxy RTSP HTTP API requests to port $RTSP_HTTP_PORT
+    location /rtsp/ {
+        proxy_pass http://rtsp-streamer:$RTSP_HTTP_PORT/;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+}
+EOF
+    echo "nginx.conf generated successfully."
+}
+
 # Generate SSL certificates with proper Subject Alternative Name (SAN)
 generate_ssl_certificates() {
     local host_ip=$1
@@ -570,78 +588,6 @@ EOF
     rm -f "$ssl_config"
 }
 
-# Function to update nginx.conf with the current IP
-update_nginx_conf() {
-    local host_ip=$1
-    local nginx_conf="$APP_DIR/nginx.conf"
-
-    if [ -f "$nginx_conf" ]; then
-        echo "Updating nginx.conf with current IP: $host_ip"
-        # Create a backup
-        cp "$nginx_conf" "${nginx_conf}.bak.$(date +%Y%m%d%H%M%S)"
-
-        # Update server_name directive with the new IP
-        sed -i "s/server_name localhost [0-9.]\+;/server_name localhost $host_ip;/g" "$nginx_conf"
-
-        echo "nginx.conf updated with server_name: localhost $host_ip"
-    else
-        echo "Creating new nginx.conf with proper server_name settings..."
-        cat <<EOF > "$nginx_conf"
-server {
-    listen 80;
-    server_name localhost $host_ip;
-
-    # Redirect HTTP to HTTPS
-    location / {
-        return 301 https://\$host\$request_uri;
-    }
-}
-
-server {
-    listen 443 ssl;
-    server_name localhost $host_ip;
-
-    ssl_certificate /etc/nginx/certs/cert.pem;
-    ssl_certificate_key /etc/nginx/certs/key.pem;
-
-    # Improved SSL configuration
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_prefer_server_ciphers on;
-    ssl_ciphers 'ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305';
-
-    # Add SSL session cache for better performance
-    ssl_session_cache shared:SSL:10m;
-    ssl_session_timeout 10m;
-
-    location / {
-        proxy_pass http://yolink_chekt:5000;
-
-        # Standard proxy headers
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-
-        # Additional headers to help with redirection
-        proxy_set_header X-Forwarded-Host \$host;
-        proxy_set_header X-Forwarded-Server \$host;
-
-        # WebSocket support
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-
-        # Timeouts
-        proxy_connect_timeout 60s;
-        proxy_send_timeout 60s;
-        proxy_read_timeout 60s;
-    }
-}
-EOF
-        echo "New nginx.conf created"
-    fi
-}
-
 # Update docker-compose.yml with host IP
 update_docker_compose_ip() {
     local host_ip=$1
@@ -664,6 +610,10 @@ update_docker_compose_ip() {
             local indent
             indent=$(echo "$line" | sed -E 's/^([[:space:]]*-).*/\1/')
             echo "${indent} TARGET_IP=$host_ip" >> "$tmpfile"
+        elif echo "$line" | grep -q "ANNOUNCE_IP="; then
+            local indent
+            indent=$(echo "$line" | sed -E 's/^([[:space:]]*-).*/\1/')
+            echo "${indent} ANNOUNCE_IP=$host_ip" >> "$tmpfile"
         else
             echo "$line" >> "$tmpfile"
         fi
@@ -675,7 +625,7 @@ update_docker_compose_ip() {
             echo "Error: Failed to update docker-compose.yml"
             exit 1
         }
-        echo "Successfully updated docker-compose.yml with TARGET_IP"
+        echo "Successfully updated docker-compose.yml with IP addresses"
     else
         echo "Error: Invalid docker-compose.yml after update"
         rm -f "$tmpfile"
@@ -725,7 +675,7 @@ main() {
     generate_ssl_certificates "$HOST_IP" "$APP_DIR/certs"
 
     # Update nginx.conf
-    update_nginx_conf "$HOST_IP"
+    generate_nginx_conf "$HOST_IP"
 
     # Update docker-compose.yml
     update_docker_compose_ip "$HOST_IP"
@@ -789,38 +739,55 @@ EOF
     echo "IP monitor service and timer installed. Checking for IP changes every 5 minutes."
 }
 
-# Start Docker containers
-start_containers() {
-    # Determine which Docker Compose command to use
-    if docker compose version >/dev/null 2>&1; then
-        DOCKER_COMPOSE_CMD="docker compose"
-    elif docker-compose --version >/dev/null 2>&1; then
-        DOCKER_COMPOSE_CMD="docker-compose"
+# Backup a file if it exists
+backup_file() {
+    local src="$1"
+    local dest="$2"
+    if [ -f "$src" ]; then
+        cp "$src" "$dest" || { echo "Error: Failed to backup $(basename "$src")"; exit 1; }
+        echo "Backed up $(basename "$src") to $(basename "$dest")"
     else
-        echo "Error: No Docker Compose command available."
-        exit 1
+        echo "Note: $(basename "$src") not found, skipping backup"
     fi
+}
 
-    echo "Starting Docker containers..."
-    cd "$APP_DIR" || { echo "Failed to navigate to app directory."; exit 1; }
-
-    # Build and run the app using Docker Compose
-    if [ "$OPERATION_MODE" = "install" ]; then
-        echo "Building and running Docker containers for first-time setup..."
-        $DOCKER_COMPOSE_CMD -f "$APP_DIR/docker-compose.yml" up --build -d || { echo "Docker Compose up failed."; exit 1; }
+# Restore a file if backup exists
+restore_file() {
+    local src="$1"
+    local dest="$2"
+    if [ -f "$src" ]; then
+        mv "$src" "$dest" || { echo "Error: Failed to restore $(basename "$dest")"; exit 1; }
+        echo "Restored $(basename "$dest") from backup"
     else
-        echo "Restarting Docker containers for update..."
-        $DOCKER_COMPOSE_CMD -f "$APP_DIR/docker-compose.yml" down || { echo "Failed to stop Docker containers"; exit 1; }
-        $DOCKER_COMPOSE_CMD -f "$APP_DIR/docker-compose.yml" up -d || { echo "Failed to start Docker containers"; exit 1; }
+        echo "Note: Backup $(basename "$src") not found, skipping restore"
     fi
+}
 
-    # Verify Docker containers are running
-    if ! $DOCKER_COMPOSE_CMD -f "$APP_DIR/docker-compose.yml" ps | grep -q "Up"; then
-        echo "Docker containers are not running as expected."
-        exit 1
-    else
-        echo "Docker containers are running successfully."
-    fi
+# Download with retry logic
+download_with_retry() {
+    local url="$1"
+    local output="$2"
+    local max_retries=3
+    local retry_delay=5
+    local attempt=1
+
+    while [ "$attempt" -le "$max_retries" ]; do
+        echo "Downloading from $url (Attempt $attempt/$max_retries)..."
+        if curl -L --fail "$url" -o "$output" 2>/tmp/curl_error; then
+            echo "Download successful"
+            return 0
+        else
+            local curl_err
+            curl_err=$(cat /tmp/curl_error)
+            echo "Download failed: $curl_err"
+            if [ "$attempt" -eq "$max_retries" ]; then
+                echo "Error: Failed to download repository after $max_retries attempts"
+                exit 1
+            fi
+            sleep "$retry_delay"
+            ((attempt++))
+        fi
+    done
 }
 
 #===================================
@@ -916,7 +883,7 @@ if [ "$OPERATION_MODE" = "install" ]; then
         cat <<EOT > "$APP_DIR/.env"
 # RTSP Streamer Configuration
 RTSP_PORT=554
-RTSP_API_PORT=80
+RTSP_API_PORT=$RTSP_HTTP_PORT
 ONVIF_PORT=8000
 STREAM_NAME=yolink-dashboard
 FRAME_RATE=1
@@ -959,11 +926,18 @@ if [ "$OPERATION_MODE" = "install" ] || check_ip_changed; then
     echo "$HOST_IP" > "$APP_DIR/current_ip.txt"
 
     # Create/update nginx.conf
-    update_nginx_conf "$HOST_IP"
+    generate_nginx_conf "$HOST_IP"
 
-    # Update TARGET_IP in docker-compose.yml
-    if [ -f "$APP_DIR/docker-compose.yml" ]; then
-        update_docker_compose_ip "$HOST_IP"
+    # If docker-compose.yml exists, update IPs
+    if [ -f "$APP_DIR/docker-compose.yml" ] && [ "$OPERATION_MODE" = "update" ]; then
+        # In update mode, find and replace the IPs
+        sed -i "s/TARGET_IP=.*/TARGET_IP=$HOST_IP/g" "$APP_DIR/docker-compose.yml"
+        sed -i "s/ANNOUNCE_IP=.*/ANNOUNCE_IP=$HOST_IP/g" "$APP_DIR/docker-compose.yml"
+        # Update RTSP_API_PORT in case we need to change it
+        sed -i "s/RTSP_API_PORT=.*/RTSP_API_PORT=$RTSP_HTTP_PORT/g" "$APP_DIR/docker-compose.yml"
+    else
+        # In install mode or if docker-compose.yml doesn't exist, generate it
+        generate_docker_compose "$HOST_IP" "$RTSP_HTTP_PORT"
     fi
 fi
 
@@ -992,7 +966,7 @@ fi
 
 # Move extracted files and clean up
 echo "Updating application files..."
-rsync -a --exclude='.env' --exclude='docker-compose.yml' --exclude='nginx.conf' --exclude='monitor-ip.sh' "$TEMP_DIR/yolink-chekt-main/" "$APP_DIR/" || { echo "Failed to sync updated files"; exit 1; }
+rsync -a --exclude='.env' --exclude='docker-compose.yml' --exclude='nginx.conf' --exclude='monitor-ip.sh' --exclude='current_ip.txt' "$TEMP_DIR/yolink-chekt-main/" "$APP_DIR/" || { echo "Failed to sync updated files"; exit 1; }
 rm -rf "$TEMP_DIR/yolink-chekt-main" "$APP_DIR/repo.zip"
 
 # For updates, restore files that shouldn't be overwritten
@@ -1020,22 +994,48 @@ rm -f "$APP_DIR/rtsp-streamer.bak" /tmp/curl_error 2>/dev/null || true
 echo "Setting permissions..."
 chmod -R u+rwX,go+rX "$APP_DIR" || { echo "Failed to set directory permissions."; exit 1; }
 
-# Update or create the docker-compose.yml with SSL settings
-if [ -f "$APP_DIR/docker-compose.yml" ]; then
-    ensure_ssl_mounts
-fi
-
 # Create and set up IP monitor script and service
 create_ip_monitor_script
 setup_ip_monitor_service
 
-# Build/start Docker containers
-start_containers
+# Determine which Docker Compose command to use
+if docker compose version >/dev/null 2>&1; then
+    DOCKER_COMPOSE_CMD="docker compose"
+elif docker-compose --version >/dev/null 2>&1; then
+    DOCKER_COMPOSE_CMD="docker-compose"
+else
+    echo "Error: No Docker Compose command available."
+    exit 1
+fi
 
-# Set up a cron job to run the script daily at 2 AM
+# Build/start Docker containers
+echo "Building/starting Docker containers..."
+cd "$APP_DIR" || { echo "Failed to navigate to app directory."; exit 1; }
+$DOCKER_COMPOSE_CMD down || { echo "Warning: Failed to stop Docker containers"; }
+$DOCKER_COMPOSE_CMD up --build -d || { echo "Error: Failed to start Docker containers"; exit 1; }
+
+# Copy self to app directory (if not already there)
+if [ "$0" != "$APP_DIR/install.sh" ]; then
+    echo "Copying installer script to $APP_DIR/install.sh..."
+    cp "$0" "$APP_DIR/install.sh"
+    chmod +x "$APP_DIR/install.sh"
+fi
+
+# Set up cron job to run updates
 if command -v crontab >/dev/null 2>&1; then
-    (crontab -l 2>/dev/null | grep -v "$APP_DIR/$(basename "$0")"; echo "0 2 * * * $APP_DIR/$(basename "$0") --update >> /var/log/yolink-update.log 2>&1") | crontab - || { echo "Cron job setup failed."; exit 1; }
-    echo "Cron job set up to run daily updates at 2 AM."
+    CRON_ENTRY="0 2 * * * $APP_DIR/install.sh --update >> /var/log/yolink-update.log 2>&1"
+    CURRENT_CRON=$(crontab -l 2>/dev/null || echo "")
+
+    if ! echo "$CURRENT_CRON" | grep -q "$APP_DIR/install.sh --update"; then
+        # Remove old self-update.sh entries if present
+        NEW_CRON=$(echo "$CURRENT_CRON" | grep -v "$APP_DIR/self-update.sh")
+        # Add new entry
+        NEW_CRON="${NEW_CRON}\n${CRON_ENTRY}"
+        echo -e "$NEW_CRON" | crontab -
+        echo "Cron job set up to run daily updates at 2 AM."
+    else
+        echo "Cron job for updates already exists."
+    fi
 else
     echo "Cron not available; manual updates required."
 fi
