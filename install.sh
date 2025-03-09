@@ -42,6 +42,58 @@ get_host_ip() {
     echo "$HOST_IP"
 }
 
+# Generate SSL certificates with proper Subject Alternative Name (SAN)
+generate_ssl_certificates() {
+    local host_ip=$1
+    local cert_dir=$2
+    local cert_file="${cert_dir}/cert.pem"
+    local key_file="${cert_dir}/key.pem"
+
+    mkdir -p "$cert_dir"
+
+    # Create a temporary OpenSSL configuration file
+    local ssl_config=$(mktemp)
+    cat > "$ssl_config" << EOF
+[req]
+distinguished_name = req_distinguished_name
+req_extensions = v3_req
+prompt = no
+
+[req_distinguished_name]
+CN = YoLink CHEKT Integration
+
+[v3_req]
+keyUsage = keyEncipherment, dataEncipherment
+extendedKeyUsage = serverAuth
+subjectAltName = @alt_names
+
+[alt_names]
+DNS.1 = localhost
+IP.1 = 127.0.0.1
+IP.2 = $host_ip
+EOF
+
+    echo "Generating SSL certificates with IP $host_ip in SAN field..."
+    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+        -keyout "$key_file" -out "$cert_file" \
+        -config "$ssl_config"
+
+    if [ $? -eq 0 ]; then
+        echo "SSL certificates generated successfully with IP $host_ip in SAN field."
+        # Verify the certificate
+        echo "Certificate SAN field verification:"
+        openssl x509 -in "$cert_file" -text -noout | grep -A1 "Subject Alternative Name"
+    else
+        echo "Failed to generate SSL certificates. Falling back to basic certificates..."
+        openssl req -x509 -newkey rsa:2048 -keyout "$key_file" \
+            -out "$cert_file" -days 365 -nodes \
+            -subj "/C=US/ST=State/L=City/O=YoLink/CN=localhost"
+    fi
+
+    chmod 600 "$key_file" "$cert_file"
+    rm -f "$ssl_config"
+}
+
 # Update package list
 echo "Updating package lists..."
 apt-get update || { echo "apt-get update failed."; exit 1; }
@@ -124,19 +176,12 @@ echo "Creating application directory at $APP_DIR..."
 mkdir -p "$APP_DIR" || { echo "Failed to create $APP_DIR."; exit 1; }
 mkdir -p "$APP_DIR/logs" "$APP_DIR/templates" "$APP_DIR/certs"
 
-# Generate self-signed SSL certificates
-echo "Generating self-signed SSL certificates..."
-if [ ! -f "$APP_DIR/certs/key.pem" ] || [ ! -f "$APP_DIR/certs/cert.pem" ]; then
-    openssl req -x509 -newkey rsa:2048 -keyout "$APP_DIR/certs/key.pem" \
-        -out "$APP_DIR/certs/cert.pem" -days 365 -nodes \
-        -subj "/C=US/ST=State/L=City/O=YoLink/CN=localhost" || {
-        echo "Failed to generate SSL certificates."; exit 1;
-    }
-    chmod 600 "$APP_DIR/certs/key.pem" "$APP_DIR/certs/cert.pem"
-    echo "SSL certificates generated successfully in $APP_DIR/certs"
-else
-    echo "SSL certificates already exist in $APP_DIR/certs"
-fi
+# Generate SSL certificates with proper SAN
+HOST_IP=$(get_host_ip)
+generate_ssl_certificates "$HOST_IP" "$APP_DIR/certs"
+
+# Store the current IP for future reference
+echo "$HOST_IP" > "$APP_DIR/current_ip.txt"
 
 # Download and extract the repository
 echo "Downloading repository from $REPO_URL..."
@@ -159,6 +204,44 @@ RUN pip install --no-cache-dir -r requirements.txt
 EXPOSE 1502
 CMD ["python", "modbus_proxy.py"]
 EOT
+fi
+
+# Add/update nginx.conf for improved SSL
+if [ ! -f "$APP_DIR/nginx.conf" ] || ! grep -q "server_name localhost $HOST_IP" "$APP_DIR/nginx.conf"; then
+    echo "Creating/updating nginx.conf with proper server_name settings..."
+    cat <<EOT > "$APP_DIR/nginx.conf"
+server {
+    listen 80;
+    server_name localhost $HOST_IP;
+    return 301 https://\$host\$request_uri;  # Redirect HTTP to HTTPS
+}
+
+server {
+    listen 443 ssl;
+    server_name localhost $HOST_IP;
+
+    ssl_certificate /etc/nginx/certs/cert.pem;
+    ssl_certificate_key /etc/nginx/certs/key.pem;
+
+    # Improved SSL configuration
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers on;
+    ssl_ciphers 'ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305';
+
+    # Add SSL session cache for better performance
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+
+    location / {
+        proxy_pass http://yolink_chekt:5000;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+}
+EOT
+    echo "nginx.conf updated with server_name: localhost $HOST_IP"
 fi
 
 # Set permissions
@@ -189,8 +272,6 @@ fi
 
 # Update docker-compose.yml with host IP and SSL mounts
 echo "Updating docker-compose.yml with TARGET_IP and SSL mounts"
-HOST_IP=$(get_host_ip_silent)
-echo "Detected host IP: $HOST_IP"
 
 if [ -f "$APP_DIR/docker-compose.yml" ]; then
     cp "$APP_DIR/docker-compose.yml" "$APP_DIR/docker-compose.yml.bak"
@@ -218,33 +299,75 @@ if [ -f "$APP_DIR/docker-compose.yml" ]; then
         rm -f "$TEMP_FILE"
     fi
 
-    # Add SSL volume mounts
+    # Add SSL volume mounts and update NGINX configuration
     cp "$APP_DIR/docker-compose.yml" "$APP_DIR/docker-compose.yml.bak.ssl"
     TEMP_SSL_FILE=$(mktemp)
+
+    # Make the following changes:
+    # 1. Add SSL volume mounts to yolink_chekt
+    # 2. Set DISABLE_HTTPS=true for yolink_chekt (let Nginx handle SSL)
+    # 3. Update websocket-proxy API_URL to http instead of https
+
     awk '
-    /yolink_chekt:/ {print; found=1; next}
-    found && /volumes:/ {
+    /yolink_chekt:/ {
         print;
-        print "      - ./certs/cert.pem:/app/cert.pem";
-        print "      - ./certs/key.pem:/app/key.pem";
-        next
+        found_yolink = 1;
+        next;
+    }
+    found_yolink && /environment:/ {
+        print;
+        print "      - DISABLE_HTTPS=true  # Let Nginx handle SSL";
+        found_env = 1;
+        next;
+    }
+    found_yolink && !found_env && /[a-zA-Z]/ {
+        print "    environment:";
+        print "      - DISABLE_HTTPS=true  # Let Nginx handle SSL";
+        found_env = 1;
+        print;
+        next;
+    }
+    found_yolink && /volumes:/ {
+        print;
+        print "      - ./certs:/app/certs";
+        found_volumes = 1;
+        next;
+    }
+    found_yolink && !found_volumes && /expose:/ {
+        print;
+        print "    volumes:";
+        print "      - ./certs:/app/certs";
+        print "      - .:/app";
+        print "      - ./logs:/app/logs";
+        print "      - ./templates:/app/templates";
+        found_volumes = 1;
+        next;
+    }
+    /API_URL=https:/ {
+        sub("https:", "http:", $0);
+        print;
+        next;
+    }
+    /websocket-proxy:/ {
+        print;
+        found_websocket = 1;
+        next;
+    }
+    found_websocket && /volumes:/ {
+        print;
+        print "      - ./certs:/app/certs";
+        found_ws_volumes = 1;
+        next;
     }
     {print}
     ' "$APP_DIR/docker-compose.yml" > "$TEMP_SSL_FILE"
 
-    if ! grep -q "volumes:" "$TEMP_SSL_FILE"; then
-        awk '
-        /yolink_chekt:/ {print; print "    volumes:"; print "      - ./certs/cert.pem:/app/cert.pem"; print "      - ./certs/key.pem:/app/key.pem"; next}
-        {print}
-        ' "$APP_DIR/docker-compose.yml" > "$TEMP_SSL_FILE"
-    fi
-
     mv "$TEMP_SSL_FILE" "$APP_DIR/docker-compose.yml" || {
-        echo "Failed to update docker-compose.yml with SSL mounts"
+        echo "Failed to update docker-compose.yml with SSL settings"
         mv "$APP_DIR/docker-compose.yml.bak.ssl" "$APP_DIR/docker-compose.yml"
         exit 1
     }
-    echo "docker-compose.yml updated with TARGET_IP and SSL mounts"
+    echo "docker-compose.yml updated with TARGET_IP and SSL settings"
 else
     echo "Error: docker-compose.yml not found."
     exit 1
@@ -272,8 +395,8 @@ else
     echo "Docker containers are running successfully."
 fi
 
-# Create the self-update script
-echo "Creating self-update script..."
+# Create the improved self-update script with certificate handling
+echo "Creating self-update script with improved certificate handling..."
 cat > "$APP_DIR/self-update.sh" << 'EOF'
 #!/bin/bash
 
@@ -291,6 +414,7 @@ MAX_RETRIES=3
 RETRY_DELAY=5
 TEMP_DIR="$APP_DIR/temp-update"
 DOCKER_COMPOSE_FILE="$APP_DIR/docker-compose.yml"
+CURRENT_IP_FILE="$APP_DIR/current_ip.txt"
 
 # Ensure log directory exists
 mkdir -p "$LOG_DIR" || { echo "Failed to create log directory $LOG_DIR"; exit 1; }
@@ -327,6 +451,129 @@ get_host_ip() {
     echo "$host_ip"
 }
 
+# Generate SSL certificates with proper Subject Alternative Name (SAN)
+generate_ssl_certificates() {
+    local host_ip=$1
+    local cert_dir=$2
+    local cert_file="${cert_dir}/cert.pem"
+    local key_file="${cert_dir}/key.pem"
+
+    mkdir -p "$cert_dir"
+
+    # Create a temporary OpenSSL configuration file
+    local ssl_config=$(mktemp)
+    cat > "$ssl_config" << EOT
+[req]
+distinguished_name = req_distinguished_name
+req_extensions = v3_req
+prompt = no
+
+[req_distinguished_name]
+CN = YoLink CHEKT Integration
+
+[v3_req]
+keyUsage = keyEncipherment, dataEncipherment
+extendedKeyUsage = serverAuth
+subjectAltName = @alt_names
+
+[alt_names]
+DNS.1 = localhost
+IP.1 = 127.0.0.1
+IP.2 = $host_ip
+EOT
+
+    log "Generating SSL certificates with IP $host_ip in SAN field..."
+    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+        -keyout "$key_file" -out "$cert_file" \
+        -config "$ssl_config"
+
+    if [ $? -eq 0 ]; then
+        log "SSL certificates generated successfully with IP $host_ip in SAN field."
+        # Verify the certificate
+        log "Certificate SAN field verification:"
+        openssl x509 -in "$cert_file" -text -noout | grep -A1 "Subject Alternative Name"
+    else
+        log "Failed to generate SSL certificates with SAN. Falling back to basic certificates..."
+        openssl req -x509 -newkey rsa:2048 -keyout "$key_file" \
+            -out "$cert_file" -days 365 -nodes \
+            -subj "/C=US/ST=State/L=City/O=YoLink/CN=localhost"
+    fi
+
+    chmod 600 "$key_file" "$cert_file"
+    rm -f "$ssl_config"
+}
+
+# Function to check if IP has changed
+check_ip_changed() {
+    local current_ip=$(get_host_ip_silent)
+    local stored_ip=""
+
+    if [ -f "$CURRENT_IP_FILE" ]; then
+        stored_ip=$(cat "$CURRENT_IP_FILE")
+    fi
+
+    if [ "$current_ip" != "$stored_ip" ]; then
+        log "IP address changed from $stored_ip to $current_ip"
+        echo "$current_ip" > "$CURRENT_IP_FILE"
+        return 0  # IP has changed
+    else
+        log "IP address unchanged: $current_ip"
+        return 1  # IP has not changed
+    fi
+}
+
+# Function to update nginx.conf with the current IP
+update_nginx_conf() {
+    local host_ip=$1
+    local nginx_conf="$APP_DIR/nginx.conf"
+
+    if [ -f "$nginx_conf" ]; then
+        log "Updating nginx.conf with current IP: $host_ip"
+        # Create a backup
+        cp "$nginx_conf" "${nginx_conf}.bak"
+
+        # Update server_name directive with the new IP
+        sed -i "s/server_name localhost [0-9.]\+;/server_name localhost $host_ip;/g" "$nginx_conf"
+
+        log "nginx.conf updated with server_name: localhost $host_ip"
+    else
+        log "Creating new nginx.conf with proper server_name settings..."
+        cat <<EOT > "$nginx_conf"
+server {
+    listen 80;
+    server_name localhost $host_ip;
+    return 301 https://\$host\$request_uri;  # Redirect HTTP to HTTPS
+}
+
+server {
+    listen 443 ssl;
+    server_name localhost $host_ip;
+
+    ssl_certificate /etc/nginx/certs/cert.pem;
+    ssl_certificate_key /etc/nginx/certs/key.pem;
+
+    # Improved SSL configuration
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers on;
+    ssl_ciphers 'ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305';
+
+    # Add SSL session cache for better performance
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+
+    location / {
+        proxy_pass http://yolink_chekt:5000;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+}
+EOT
+        log "New nginx.conf created"
+    fi
+}
+
 # Backup a file if it exists
 backup_file() {
     local src="$1"
@@ -353,8 +600,7 @@ restore_file() {
 
 # Update docker-compose.yml with host IP
 update_docker_compose_ip() {
-    local host_ip
-    host_ip=$(get_host_ip_silent)
+    local host_ip=$1
     log "Updating docker-compose.yml with TARGET_IP=$host_ip"
 
     if [ ! -f "$DOCKER_COMPOSE_FILE" ]; then
@@ -379,30 +625,20 @@ update_docker_compose_ip() {
         fi
     done < "$DOCKER_COMPOSE_FILE"
 
-    mv "$tmpfile" "$DOCKER_COMPOSE_FILE" || {
-        log "Error: Failed to update docker-compose.yml"
+    # Validate the updated file
+    if docker compose -f "$tmpfile" config >/dev/null 2>&1 || docker-compose -f "$tmpfile" config >/dev/null 2>&1; then
+        mv "$tmpfile" "$DOCKER_COMPOSE_FILE" || {
+            log "Error: Failed to update docker-compose.yml"
+            mv "${DOCKER_COMPOSE_FILE}.bak" "$DOCKER_COMPOSE_FILE"
+            rm -f "$tmpfile"
+            exit 1
+        }
+        log "Successfully updated docker-compose.yml with TARGET_IP"
+    else
+        log "Error: Invalid docker-compose.yml after update"
         mv "${DOCKER_COMPOSE_FILE}.bak" "$DOCKER_COMPOSE_FILE"
         rm -f "$tmpfile"
         exit 1
-    }
-    log "Successfully updated docker-compose.yml with TARGET_IP"
-}
-
-# Verify or generate SSL certificates
-verify_or_generate_ssl() {
-    log "Verifying SSL certificates..."
-    mkdir -p "$APP_DIR/certs" || { log "Error: Failed to create certs directory"; exit 1; }
-    if [ ! -f "$APP_DIR/certs/key.pem" ] || [ ! -f "$APP_DIR/certs/cert.pem" ]; then
-        log "SSL certificates not found, generating new ones..."
-        openssl req -x509 -newkey rsa:2048 -keyout "$APP_DIR/certs/key.pem" \
-            -out "$APP_DIR/certs/cert.pem" -days 365 -nodes \
-            -subj "/C=US/ST=State/L=City/O=YoLink/CN=localhost" || {
-            log "Error: Failed to generate SSL certificates"; exit 1;
-        }
-        chmod 600 "$APP_DIR/certs/key.pem" "$APP_DIR/certs/cert.pem"
-        log "New SSL certificates generated successfully"
-    else
-        log "SSL certificates found and verified"
     fi
 }
 
@@ -410,36 +646,62 @@ verify_or_generate_ssl() {
 ensure_ssl_mounts() {
     log "Ensuring SSL volume mounts in docker-compose.yml"
     if [ -f "$DOCKER_COMPOSE_FILE" ]; then
-        if ! grep -q "cert.pem:/app/cert.pem" "$DOCKER_COMPOSE_FILE"; then
+        # Check for websocket-proxy volume mounts
+        if ! grep -q "certs:/app/certs" "$DOCKER_COMPOSE_FILE"; then
             log "Adding SSL volume mounts to docker-compose.yml"
             cp "$DOCKER_COMPOSE_FILE" "${DOCKER_COMPOSE_FILE}.bak.ssl"
 
-            local tmp_ssl_file
-            tmp_ssl_file=$(mktemp)
+            # Create a temporary file for the updated docker-compose.yml
+            local temp_file=$(mktemp)
+
+            # Add SSL mounts to yolink_chekt and websocket-proxy services
             awk '
-            /yolink_chekt:/ {print; found=1; next}
-            found && /volumes:/ {
+            /yolink_chekt:/ {
                 print;
-                print "      - ./certs/cert.pem:/app/cert.pem";
-                print "      - ./certs/key.pem:/app/key.pem";
-                next
+                found_yolink = 1;
+                next;
+            }
+            found_yolink && /environment:/ {
+                print;
+                if (!env_updated) {
+                    print "      - DISABLE_HTTPS=true  # Let Nginx handle SSL";
+                    env_updated = 1;
+                }
+                next;
+            }
+            found_yolink && /volumes:/ {
+                print;
+                if (!vol_updated) {
+                    print "      - ./certs:/app/certs";
+                    vol_updated = 1;
+                }
+                next;
+            }
+            /websocket-proxy:/ {
+                print;
+                found_ws = 1;
+                next;
+            }
+            found_ws && /volumes:/ {
+                print;
+                if (!ws_vol_updated) {
+                    print "      - ./certs:/app/certs";
+                    ws_vol_updated = 1;
+                }
+                next;
             }
             {print}
-            ' "$DOCKER_COMPOSE_FILE" > "$tmp_ssl_file"
+            ' "$DOCKER_COMPOSE_FILE" > "$temp_file"
 
-            if ! grep -q "volumes:" "$tmp_ssl_file"; then
-                awk '
-                /yolink_chekt:/ {print; print "    volumes:"; print "      - ./certs/cert.pem:/app/cert.pem"; print "      - ./certs/key.pem:/app/key.pem"; next}
-                {print}
-                ' "$DOCKER_COMPOSE_FILE" > "$tmp_ssl_file"
-            fi
-
-            mv "$tmp_ssl_file" "$DOCKER_COMPOSE_FILE" || {
-                log "Error: Failed to update docker-compose.yml with SSL mounts"
+            # Validate before moving
+            if docker compose -f "$temp_file" config >/dev/null 2>&1 || docker-compose -f "$temp_file" config >/dev/null 2>&1; then
+                mv "$temp_file" "$DOCKER_COMPOSE_FILE"
+                log "SSL volume mounts added to docker-compose.yml"
+            else
+                log "Error: Invalid docker-compose.yml after adding SSL mounts"
                 mv "${DOCKER_COMPOSE_FILE}.bak.ssl" "$DOCKER_COMPOSE_FILE"
-                exit 1
-            }
-            log "SSL volume mounts added to docker-compose.yml"
+                rm -f "$temp_file"
+            fi
         else
             log "SSL volume mounts already present in docker-compose.yml"
         fi
@@ -474,6 +736,22 @@ download_with_retry() {
 log "Starting update process in $APP_DIR"
 cd "$APP_DIR" || { log "Error: Cannot access $APP_DIR"; exit 1; }
 
+# Check if IP has changed
+if check_ip_changed; then
+    HOST_IP=$(get_host_ip)
+    # Regenerate SSL certificates with the new IP
+    log "Regenerating SSL certificates with the new IP address"
+    generate_ssl_certificates "$HOST_IP" "$APP_DIR/certs"
+    # Update nginx.conf with the new IP
+    update_nginx_conf "$HOST_IP"
+    # Update docker-compose.yml with the new TARGET_IP
+    update_docker_compose_ip "$HOST_IP"
+    # Flag to indicate that SSL has been updated and containers need to be restarted
+    SSL_UPDATED=true
+else
+    SSL_UPDATED=false
+fi
+
 # Backup existing .env file
 backup_file "$ENV_FILE" "$ENV_BACKUP"
 
@@ -493,7 +771,7 @@ unzip -o "$APP_DIR/repo.zip" -d "$TEMP_DIR" || { log "Error: Failed to unzip rep
 
 # Update files, excluding .env and docker-compose.yml
 log "Updating application files..."
-rsync -a --exclude='.env' --exclude='docker-compose.yml' "$TEMP_DIR/yolink-chekt-main/"* "$APP_DIR/" || { log "Error: Failed to sync updated files"; exit 1; }
+rsync -a --exclude='.env' --exclude='docker-compose.yml' --exclude='nginx.conf' "$TEMP_DIR/yolink-chekt-main/"* "$APP_DIR/" || { log "Error: Failed to sync updated files"; exit 1; }
 
 # Update rtsp-streamer directory
 if [ -d "$TEMP_DIR/yolink-chekt-main/rtsp-streamer" ]; then
@@ -519,12 +797,10 @@ log "Setting permissions..."
 chmod -R u+rwX,go+rX "$APP_DIR" || { log "Error: Failed to set directory permissions"; exit 1; }
 chmod +x "$APP_DIR/self-update.sh" || { log "Error: Failed to set script permissions"; exit 1; }
 
-# Verify or generate SSL certificates
-verify_or_generate_ssl
-
-# Update docker-compose.yml with the host IP and ensure SSL mounts
-update_docker_compose_ip
-ensure_ssl_mounts
+# Ensure SSL volume mounts in docker-compose.yml (only if not already updated)
+if [ "$SSL_UPDATED" != "true" ]; then
+    ensure_ssl_mounts
+fi
 
 # Determine which Docker Compose command to use
 if docker compose version >/dev/null 2>&1; then
@@ -575,4 +851,8 @@ else
     echo "Cron not available; manual updates required."
 fi
 
-echo "The YoLink CHEKT integration is now installed with HTTPS support and automatic updates configured."
+echo -e "\n\n======================================================================"
+echo "The YoLink CHEKT integration is now installed with enhanced HTTPS support."
+echo "Access the system at: https://$HOST_IP"
+echo "Default login credentials: username=admin, password=admin123"
+echo "======================================================================\n"

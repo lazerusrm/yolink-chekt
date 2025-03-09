@@ -1,17 +1,18 @@
 """
-WebSocket Handler for YoLink Integration - Async Version
+WebSocket Handler for YoLink Integration - Async Version with HTTPS Support
 ======================================================
 
 This module provides WebSocket integration for the YoLink dashboard,
-enabling real-time updates of device status.
+enabling real-time updates of device status with secure WSS support.
 """
 
 import asyncio
 import json
 import logging
+import os
 from typing import Dict, Any, List, Set, Optional
 import aiohttp
-from quart import Quart, websocket
+from quart import Quart, websocket, request
 from redis.asyncio import Redis
 
 # Logging setup
@@ -37,7 +38,12 @@ async def setup_websocket_routes(app: Quart) -> None:
         """WebSocket endpoint for real-time sensor updates."""
         connection = websocket._get_current_object()
         active_connections.add(connection)
-        logger.info(f"New WebSocket connection established. Active connections: {len(active_connections)}")
+
+        # Log connection details with protocol information
+        client_info = f"{request.remote_addr}:{request.environ.get('REMOTE_PORT', '?')}"
+        is_secure = request.scheme == 'https' or request.headers.get('X-Forwarded-Proto') == 'https'
+        protocol = "WSS" if is_secure else "WS"
+        logger.info(f"New {protocol} connection from {client_info}. Active connections: {len(active_connections)}")
 
         if last_broadcast_data:
             await connection.send(json.dumps(last_broadcast_data))
@@ -51,7 +57,7 @@ async def setup_websocket_routes(app: Quart) -> None:
             logger.error(f"WebSocket error: {e}")
         finally:
             active_connections.discard(connection)
-            logger.info(f"WebSocket connection closed. Active connections: {len(active_connections)}")
+            logger.info(f"WebSocket connection closed from {client_info}. Active connections: {len(active_connections)}")
 
 
 async def broadcast_sensor_update(sensors: List[Dict[str, Any]]) -> None:
@@ -149,4 +155,10 @@ def init_websocket(app: Quart) -> None:
     """
     asyncio.run(setup_websocket_routes(app))
     asyncio.run(start_device_broadcaster(app, 10))
-    logger.info("WebSocket functionality initialized")
+
+    # Log SSL configuration for WebSockets
+    ssl_enabled = os.environ.get('DISABLE_HTTPS', 'false').lower() != 'true'
+    if ssl_enabled:
+        logger.info("WebSocket server initialized with WSS (secure) support")
+    else:
+        logger.info("WebSocket server initialized in WS mode (HTTPS handled by Nginx)")

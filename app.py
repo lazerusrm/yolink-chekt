@@ -836,20 +836,57 @@ async def server_error(error):
     logger.error(f"Server error: {error}")
     return await render_template("error.html", error="Internal server error"), 500
 
-if __name__ == "__main__":
-    # Configure SSL context for HTTPS
-    ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-    try:
-        ssl_context.load_cert_chain(certfile="/app/cert.pem", keyfile="/app/key.pem")
-        logger.info("SSL certificates loaded successfully for HTTPS")
-    except Exception as e:
-        logger.error(f"Failed to load SSL certificates: {e}")
-        raise SystemExit(1)
 
-    # Run the app with HTTPS
-    asyncio.run(app.run(
-        host='0.0.0.0',
-        port=int(os.getenv("API_PORT", 5000)),
-        ssl=ssl_context,
-        debug=os.getenv("QUART_DEBUG", "false").lower() == "true"
-    ))
+if __name__ == "__main__":
+    # Check if HTTPS should be disabled (when using Nginx as SSL terminator)
+    disable_https = os.getenv("DISABLE_HTTPS", "false").lower() == "true"
+    port = int(os.getenv("API_PORT", 5000))
+    debug_mode = os.getenv("QUART_DEBUG", "false").lower() == "true"
+
+    if disable_https:
+        logger.info(f"Running in HTTP mode (SSL termination handled by Nginx) on port {port}")
+        asyncio.run(app.run(
+            host='0.0.0.0',
+            port=port,
+            debug=debug_mode
+        ))
+    else:
+        # Check for certificate files - use certs directory for flexibility
+        cert_paths = [
+            ("/app/cert.pem", "/app/key.pem"),  # Original path
+            ("/app/certs/cert.pem", "/app/certs/key.pem"),  # New path in volume
+        ]
+
+        cert_file = None
+        key_file = None
+
+        for cert_path, key_path in cert_paths:
+            if os.path.exists(cert_path) and os.path.exists(key_path):
+                cert_file = cert_path
+                key_file = key_path
+                break
+
+        if not cert_file or not key_file:
+            logger.error("SSL certificates not found. Checking in all possible locations...")
+            for path in ["/app", "/app/certs"]:
+                if os.path.exists(path):
+                    logger.info(f"Directory {path} exists, contents: {os.listdir(path)}")
+            raise SystemExit(1)
+
+        # Configure SSL context for HTTPS
+        ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        try:
+            ssl_context.load_cert_chain(certfile=cert_file, keyfile=key_file)
+            logger.info(f"SSL certificates loaded successfully for HTTPS from {cert_file}")
+        except Exception as e:
+            logger.error(f"Failed to load SSL certificates: {e}")
+            raise SystemExit(1)
+
+        # Run the app with HTTPS
+        logger.info(f"Running with HTTPS on port {port}")
+        asyncio.run(app.run(
+            host='0.0.0.0',
+            port=port,
+            ssl=ssl_context,
+            debug=debug_mode
+        ))
