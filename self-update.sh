@@ -102,13 +102,16 @@ update_docker_compose_ip() {
         fi
     done < "$DOCKER_COMPOSE_FILE"
 
-    mv "$tmpfile" "$DOCKER_COMPOSE_FILE" || {
-        log "Error: Failed to update docker-compose.yml"
+    # Validate YAML before moving
+    if docker-compose -f "$tmpfile" config >/dev/null 2>&1; then
+        mv "$tmpfile" "$DOCKER_COMPOSE_FILE"
+        log "Successfully updated docker-compose.yml with TARGET_IP"
+    else
+        log "Error: Invalid YAML after updating TARGET_IP"
         mv "${DOCKER_COMPOSE_FILE}.bak" "$DOCKER_COMPOSE_FILE"
         rm -f "$tmpfile"
         exit 1
-    }
-    log "Successfully updated docker-compose.yml with TARGET_IP"
+    fi
 }
 
 # Verify or generate SSL certificates
@@ -117,6 +120,10 @@ verify_or_generate_ssl() {
     mkdir -p "$APP_DIR/certs" || { log "Error: Failed to create certs directory"; exit 1; }
     if [ ! -f "$APP_DIR/certs/key.pem" ] || [ ! -f "$APP_DIR/certs/cert.pem" ]; then
         log "SSL certificates not found, generating new ones..."
+        if ! command -v openssl >/dev/null 2>&1; then
+            log "Error: openssl not found, attempting to install..."
+            apt-get update && apt-get install -y openssl || { log "Error: Failed to install openssl"; exit 1; }
+        fi
         openssl req -x509 -newkey rsa:2048 -keyout "$APP_DIR/certs/key.pem" \
             -out "$APP_DIR/certs/cert.pem" -days 365 -nodes \
             -subj "/C=US/ST=State/L=City/O=YoLink/CN=localhost" || {
@@ -136,36 +143,46 @@ ensure_ssl_mounts() {
         if ! grep -q "cert.pem:/app/cert.pem" "$DOCKER_COMPOSE_FILE"; then
             log "Adding SSL volume mounts to docker-compose.yml"
             cp "$DOCKER_COMPOSE_FILE" "${DOCKER_COMPOSE_FILE}.bak.ssl"
-
             local tmp_ssl_file
             tmp_ssl_file=$(mktemp)
-            awk '
-            /yolink_chekt:/ {print; found=1; next}
-            found && /volumes:/ {
-                print;
-                print "      - ./certs/cert.pem:/app/cert.pem";
-                print "      - ./certs/key.pem:/app/key.pem";
-                next
-            }
-            {print}
-            ' "$DOCKER_COMPOSE_FILE" > "$tmp_ssl_file"
 
-            if ! grep -q "volumes:" "$tmp_ssl_file"; then
-                awk '
-                /yolink_chekt:/ {print; print "    volumes:"; print "      - ./certs/cert.pem:/app/cert.pem"; print "      - ./certs/key.pem:/app/key.pem"; next}
-                {print}
+            # Check if volumes section exists under yolink_chekt and append mounts
+            if grep -A 10 "yolink_chekt:" "$DOCKER_COMPOSE_FILE" | grep -q "volumes:"; then
+                sed '
+                /yolink_chekt:/,/^\s*[a-z-]*:/ {
+                    /volumes:/ {
+                        a\      - ./certs/cert.pem:/app/cert.pem
+                        a\      - ./certs/key.pem:/app/key.pem
+                    }
+                }
+                ' "$DOCKER_COMPOSE_FILE" > "$tmp_ssl_file"
+            else
+                # If no volumes section, add it under yolink_chekt
+                sed '
+                /yolink_chekt:/ {
+                    a\    volumes:
+                    a\      - ./certs/cert.pem:/app/cert.pem
+                    a\      - ./certs/key.pem:/app/key.pem
+                }
                 ' "$DOCKER_COMPOSE_FILE" > "$tmp_ssl_file"
             fi
 
-            mv "$tmp_ssl_file" "$DOCKER_COMPOSE_FILE" || {
-                log "Error: Failed to update docker-compose.yml with SSL mounts"
+            # Validate YAML before applying
+            if docker-compose -f "$tmp_ssl_file" config >/dev/null 2>&1; then
+                mv "$tmp_ssl_file" "$DOCKER_COMPOSE_FILE"
+                log "SSL volume mounts added to docker-compose.yml"
+            else
+                log "Error: Generated docker-compose.yml is invalid"
                 mv "${DOCKER_COMPOSE_FILE}.bak.ssl" "$DOCKER_COMPOSE_FILE"
+                rm -f "$tmp_ssl_file"
                 exit 1
-            }
-            log "SSL volume mounts added to docker-compose.yml"
+            fi
         else
             log "SSL volume mounts already present in docker-compose.yml"
         fi
+    else
+        log "Error: docker-compose.yml not found"
+        exit 1
     fi
 }
 
