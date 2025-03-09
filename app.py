@@ -83,6 +83,10 @@ init_websocket(app)
 @app.before_request
 async def enforce_https():
     """Redirect HTTP requests to HTTPS in production, respecting proxy headers."""
+    # Skip redirection for internal container network requests
+    if request.remote_addr.startswith('172.18.'):
+        return
+
     if app.config["ENV"] != "development" and request.scheme != "https" and not request.headers.get(
             'X-Forwarded-Proto') == 'https':
         # Get the host from X-Forwarded-Host header if available (set by nginx)
@@ -655,7 +659,7 @@ async def set_door_prop_alarm():
     await save_mappings(mappings)
     return jsonify({"status": "success"})
 
-@app.route("/get_sensor_data")
+@app.route("/get_sensor_data") #Internal API Endpoint. Consider adding API key security for the future.
 async def get_sensor_data():
     """Return sensor data for all devices."""
     devices = await get_all_devices()
