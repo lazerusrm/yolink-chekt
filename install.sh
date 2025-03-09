@@ -877,7 +877,7 @@ get_docker_compose_cmd() {
 
 # Function to restart containers with proper error handling
 restart_containers() {
-    local timeout="${1:-300}"  # Default timeout: 5 minutes
+    local stop_timeout=10  # Shorter timeout for stopping containers
 
     log_info "Restarting containers to apply changes..."
 
@@ -896,27 +896,49 @@ restart_containers() {
         return 1
     }
 
-    # Stop containers with timeout
-    log_info "Stopping containers..."
-    $DOCKER_COMPOSE_CMD down --timeout $timeout || {
-        log_warning "Failed to stop Docker containers gracefully. Forcing stop..."
-        $DOCKER_COMPOSE_CMD down -v --remove-orphans
-    }
+    # Stop containers with a shorter timeout
+    log_info "Stopping containers (timeout: ${stop_timeout}s)..."
+
+    # First try graceful shutdown with timeout
+    if ! timeout ${stop_timeout}s $DOCKER_COMPOSE_CMD down --timeout $stop_timeout; then
+        log_warning "Container shutdown taking too long. Forcing stop..."
+
+        # Get list of running containers for this project
+        local containers
+        containers=$($DOCKER_COMPOSE_CMD ps -q 2>/dev/null)
+
+        if [ -n "$containers" ]; then
+            # Force kill the containers
+            log_warning "Force killing containers..."
+            for container in $containers; do
+                docker kill "$container" >/dev/null 2>&1 || true
+            done
+        fi
+
+        # Force remove any remaining containers
+        log_warning "Force removing containers..."
+        $DOCKER_COMPOSE_CMD down -v --remove-orphans || {
+            log_warning "Failed to clean up containers. Continuing anyway..."
+        }
+    fi
+
+    # Small delay to ensure all resources are released
+    sleep 2
 
     # Start containers
     log_info "Starting containers with build..."
-    $DOCKER_COMPOSE_CMD up -d --build
 
-    if [ $? -eq 0 ]; then
+    # Try to start containers with a timeout
+    if timeout 120s $DOCKER_COMPOSE_CMD up -d --build; then
         log_success "Containers started successfully"
 
-        # Verify containers are running (only in debug mode to avoid polluting logs)
+        # Verify containers are running (only in debug mode)
         if [ "$DEBUG_MODE" = "true" ]; then
             log_info "Verifying container status..."
             $DOCKER_COMPOSE_CMD ps
         fi
     else
-        handle_error "Failed to start Docker containers" true
+        handle_error "Failed to start Docker containers within timeout" true
         return 1
     fi
 
