@@ -31,6 +31,12 @@ if [ ! -f "$APP_DIR/install.sh" ]; then
     exit 1
 fi
 
+# Ensure install.sh is executable
+if [ ! -x "$APP_DIR/install.sh" ]; then
+    echo "Setting executable permissions on install.sh"
+    chmod +x "$APP_DIR/install.sh"
+fi
+
 # Check if cron already updated
 CRON_UPDATED_FILE="$APP_DIR/.cron_updated"
 if [ ! -f "$CRON_UPDATED_FILE" ]; then
@@ -55,4 +61,5 @@ fi
 
 # Execute the new unified script with update flag
 echo "Forwarding to new unified script (install.sh --update)..."
+cd "$APP_DIR" # Change to the app directory to ensure any relative paths work
 exec "$APP_DIR/install.sh" --update

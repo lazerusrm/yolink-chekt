@@ -102,10 +102,10 @@ get_host_ip() {
     local HOST_IP
     HOST_IP=$(get_host_ip_silent)
     if [ -z "$HOST_IP" ]; then
-        echo "Error: Could not determine IP address with internet route."
+        echo "Error: Could not determine IP address with internet route." >&2
         exit 1
     fi
-    echo "Detected host IP with internet route: $HOST_IP"
+    echo "Detected host IP with internet route: $HOST_IP" >&2
     echo "$HOST_IP"
 }
 
@@ -134,49 +134,59 @@ generate_ssl_certificates() {
     local cert_file="${cert_dir}/cert.pem"
     local key_file="${cert_dir}/key.pem"
 
+    # Validate host_ip
+    if ! echo "$host_ip" | grep -Pq '^(\d{1,3}\.){3}\d{1,3}$'; then
+        echo "Error: Invalid IP address: $host_ip" >&2
+        exit 1
+    fi
+
     mkdir -p "$cert_dir"
 
     # Create a temporary OpenSSL configuration file
     local ssl_config=$(mktemp)
     cat > "$ssl_config" << EOF
 [req]
-distinguished_name = req_distinguished_name
-req_extensions = v3_req
-prompt = no
+distinguished_name=req_distinguished_name
+req_extensions=v3_req
+prompt=no
 
 [req_distinguished_name]
-CN = YoLink CHEKT Integration
+CN=YoLink CHEKT Integration
 
 [v3_req]
-keyUsage = keyEncipherment, dataEncipherment
-extendedKeyUsage = serverAuth
-subjectAltName = @alt_names
+keyUsage=keyEncipherment,dataEncipherment
+extendedKeyUsage=serverAuth
+subjectAltName=@alt_names
 
 [alt_names]
-DNS.1 = localhost
-IP.1 = 127.0.0.1
-IP.2 = $host_ip
+DNS.1=localhost
+IP.1=127.0.0.1
+IP.2=$host_ip
 EOF
 
     echo "Generating SSL certificates with IP $host_ip in SAN field..."
-    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+    if openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
         -keyout "$key_file" -out "$cert_file" \
-        -config "$ssl_config"
-
-    if [ $? -eq 0 ]; then
+        -config "$ssl_config" 2>/tmp/openssl_error; then
         echo "SSL certificates generated successfully with IP $host_ip in SAN field."
         # Verify the certificate
         echo "Certificate SAN field verification:"
         openssl x509 -in "$cert_file" -text -noout | grep -A1 "Subject Alternative Name"
     else
-        echo "Failed to generate SSL certificates. Falling back to basic certificates..."
-        openssl req -x509 -newkey rsa:2048 -keyout "$key_file" \
+        local openssl_err=$(cat /tmp/openssl_error)
+        echo "Failed to generate SSL certificates: $openssl_err" >&2
+        echo "Falling back to basic certificates..."
+        if ! openssl req -x509 -newkey rsa:2048 -keyout "$key_file" \
             -out "$cert_file" -days 365 -nodes \
-            -subj "/C=US/ST=State/L=City/O=YoLink/CN=localhost"
+            -subj "/C=US/ST=State/L=City/O=YoLink/CN=localhost" 2>/tmp/openssl_fallback_error; then
+            local fallback_err=$(cat /tmp/openssl_fallback_error)
+            echo "Error: Failed to generate fallback certificates: $fallback_err" >&2
+            exit 1
+        fi
     fi
 
     chmod 600 "$key_file" "$cert_file"
-    rm -f "$ssl_config"
+    rm -f "$ssl_config" /tmp/openssl_error /tmp/openssl_fallback_error
 }
 
 # Function to generate nginx.conf with the current IP
@@ -591,15 +601,18 @@ EOF
 # Update docker-compose.yml with host IP
 update_docker_compose_ip() {
     local host_ip=$1
+    local docker_compose_file="$APP_DIR/docker-compose.yml"
+
     echo "Updating docker-compose.yml with TARGET_IP=$host_ip"
 
-    if [ ! -f "$DOCKER_COMPOSE_FILE" ]; then
-        echo "Error: docker-compose.yml not found at $DOCKER_COMPOSE_FILE"
+    if [ ! -f "$docker_compose_file" ]; then
+        echo "Error: docker-compose.yml not found at $docker_compose_file" >&2
         exit 1
     fi
 
-    cp "$DOCKER_COMPOSE_FILE" "${DOCKER_COMPOSE_FILE}.bak.$(date +%Y%m%d%H%M%S)" || {
-        echo "Error: Failed to create backup of docker-compose.yml"
+    # Backup the original file
+    cp "$docker_compose_file" "${docker_compose_file}.bak.$(date +%Y%m%d%H%M%S)" || {
+        echo "Error: Failed to create backup of docker-compose.yml" >&2
         exit 1
     }
 
@@ -609,25 +622,25 @@ update_docker_compose_ip() {
         if echo "$line" | grep -q "TARGET_IP="; then
             local indent
             indent=$(echo "$line" | sed -E 's/^([[:space:]]*-).*/\1/')
-            echo "${indent} TARGET_IP=$host_ip" >> "$tmpfile"
+            echo "${indent}TARGET_IP=$host_ip" >> "$tmpfile"
         elif echo "$line" | grep -q "ANNOUNCE_IP="; then
             local indent
             indent=$(echo "$line" | sed -E 's/^([[:space:]]*-).*/\1/')
-            echo "${indent} ANNOUNCE_IP=$host_ip" >> "$tmpfile"
+            echo "${indent}ANNOUNCE_IP=$host_ip" >> "$tmpfile"
         else
             echo "$line" >> "$tmpfile"
         fi
-    done < "$DOCKER_COMPOSE_FILE"
+    done < "$docker_compose_file"
 
     # Validate the updated file
     if docker compose -f "$tmpfile" config >/dev/null 2>&1 || docker-compose -f "$tmpfile" config >/dev/null 2>&1; then
-        mv "$tmpfile" "$DOCKER_COMPOSE_FILE" || {
-            echo "Error: Failed to update docker-compose.yml"
+        mv "$tmpfile" "$docker_compose_file" || {
+            echo "Error: Failed to update docker-compose.yml" >&2
             exit 1
         }
         echo "Successfully updated docker-compose.yml with IP addresses"
     else
-        echo "Error: Invalid docker-compose.yml after update"
+        echo "Error: Invalid docker-compose.yml after update" >&2
         rm -f "$tmpfile"
         exit 1
     fi
@@ -930,11 +943,15 @@ if [ "$OPERATION_MODE" = "install" ] || check_ip_changed; then
 
     # If docker-compose.yml exists, update IPs
     if [ -f "$APP_DIR/docker-compose.yml" ] && [ "$OPERATION_MODE" = "update" ]; then
-        # In update mode, find and replace the IPs
-        sed -i "s/TARGET_IP=.*/TARGET_IP=$HOST_IP/g" "$APP_DIR/docker-compose.yml"
-        sed -i "s/ANNOUNCE_IP=.*/ANNOUNCE_IP=$HOST_IP/g" "$APP_DIR/docker-compose.yml"
-        # Update RTSP_API_PORT in case we need to change it
-        sed -i "s/RTSP_API_PORT=.*/RTSP_API_PORT=$RTSP_HTTP_PORT/g" "$APP_DIR/docker-compose.yml"
+        # In update mode, find and replace the IPs safely
+        sed -i "s|server_name .*;|server_name localhost $HOST_IP;|" "$APP_DIR/nginx.conf" || {
+            echo "Error: Failed to update nginx.conf with sed" >&2
+            exit 1
+        }
+        echo "nginx.conf updated with server_name: localhost $HOST_IP"
+
+        # Use update_docker_compose_ip instead of sed for consistency
+        update_docker_compose_ip "$HOST_IP"
     else
         # In install mode or if docker-compose.yml doesn't exist, generate it
         generate_docker_compose "$HOST_IP" "$RTSP_HTTP_PORT"
