@@ -129,14 +129,19 @@ async def init_default_user() -> None:
         if not keys:
             default_username = "admin"
             default_password = "admin123"
+            # Ensure proper async handling of password hashing
             hashed_password = await bcrypt.generate_password_hash(default_password)
-            user_data = {"password": hashed_password.decode('utf-8'), "force_password_change": True}
+            if isinstance(hashed_password, bytes):
+                hashed_password_str = hashed_password.decode('utf-8')
+            else:
+                hashed_password_str = hashed_password  # In case it's already a string
+            user_data = {"password": hashed_password_str, "force_password_change": True}
             await save_user_data(default_username, user_data)
             logger.info("Created default admin user")
     except Exception as e:
         logger.error(f"Error creating default user: {e}")
 
-@app.route("/init_user_debug", methods=["GET"])
+@app.route("/init_user_debug", methods=["GET"]) #Remove Before Production
 async def debug_init_user():
     await init_default_user()
     return jsonify({"status": "init triggered"})
