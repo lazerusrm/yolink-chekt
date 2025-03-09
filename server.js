@@ -107,9 +107,12 @@ async function fetchSensorData() {
     const timeoutId = setTimeout(() => controller.abort(), 5000);
 
     const response = await fetch(API_URL, {
-      headers: { 'X-Requested-With': 'XMLHttpRequest' },
-      signal: controller.signal
-    });
+  headers: {
+    'X-Requested-With': 'XMLHttpRequest',
+    'X-Forwarded-Proto': 'https'  // Add this to bypass HTTPS redirect
+  },
+  signal: controller.signal
+});
 
     clearTimeout(timeoutId);
 
