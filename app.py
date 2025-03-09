@@ -455,13 +455,26 @@ async def index():
 async def config():
     """Handle configuration viewing and updates."""
     config_data = await load_config()
+    is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+
     if request.method == "POST":
         try:
             form = await request.form
             if not form.get("yolink_uaid") or not form.get("yolink_secret_key"):
-                await flash("YoLink UAID and Secret Key are required", "error")
+                error_msg = "YoLink UAID and Secret Key are required"
+                if is_ajax:
+                    return jsonify({"status": "error", "message": error_msg}), 400
+                await flash(error_msg, "error")
                 return redirect(url_for("config"))
 
+            # Helper function to safely parse integers with a default
+            def safe_int(value, default, field_name):
+                try:
+                    return int(value) if value else default
+                except ValueError:
+                    raise ValueError(f"Invalid {field_name}: '{value}' must be an integer")
+
+            # Parse form data with safe defaults
             chekt_enabled = form.get("chekt_enabled") == "on"
             sia_enabled = form.get("sia_enabled") == "on"
             modbus_enabled = form.get("modbus_enabled") == "on"
@@ -477,12 +490,12 @@ async def config():
                 },
                 "mqtt": {
                     "url": form.get("yolink_url", "mqtt://api.yosmart.com"),
-                    "port": int(form.get("yolink_port", 8003)),
+                    "port": safe_int(form.get("yolink_port"), 8003, "YoLink MQTT Port"),
                     "topic": form.get("yolink_topic", "yl-home/${Home ID}/+/report")
                 },
                 "mqtt_monitor": {
                     "url": form.get("monitor_mqtt_url", "mqtt://monitor.industrialcamera.com"),
-                    "port": int(form.get("monitor_mqtt_port", 1883)),
+                    "port": safe_int(form.get("monitor_mqtt_port"), 1883, "Monitor MQTT Port"),
                     "username": form.get("monitor_mqtt_username", ""),
                     "password": form.get("monitor_mqtt_password", ""),
                     "client_id": "monitor_client_id"
@@ -491,12 +504,12 @@ async def config():
                 "chekt": {
                     "api_token": form.get("chekt_api_token", ""),
                     "ip": form.get("chekt_ip", ""),
-                    "port": int(form.get("chekt_port", 30003)),
+                    "port": safe_int(form.get("chekt_port"), 30003, "CHEKT Receiver Port"),
                     "enabled": chekt_enabled
                 },
                 "sia": {
                     "ip": form.get("sia_ip", ""),
-                    "port": int(form.get("sia_port", "")) or "",
+                    "port": safe_int(form.get("sia_port"), 0, "SIA Port") or "",  # Allow empty port if SIA disabled
                     "account_id": form.get("sia_account_id", ""),
                     "transmitter_id": form.get("sia_transmitter_id", ""),
                     "encryption_key": form.get("sia_encryption_key", ""),
@@ -504,28 +517,37 @@ async def config():
                 },
                 "modbus": {
                     "ip": form.get("modbus_ip", ""),
-                    "port": int(form.get("modbus_port", 502)),
-                    "unit_id": int(form.get("modbus_unit_id", 1)),
-                    "max_channels": int(form.get("modbus_max_channels", 16)),
+                    "port": safe_int(form.get("modbus_port"), 502, "Modbus Relay Port"),
+                    "unit_id": safe_int(form.get("modbus_unit_id"), 1, "Modbus Unit ID"),
+                    "max_channels": safe_int(form.get("modbus_max_channels"), 16, "Modbus Max Channels"),
                     "pulse_seconds": float(form.get("modbus_pulse_seconds", 1.0)),
                     "enabled": modbus_enabled,
                     "follower_mode": modbus_follower_mode
                 },
                 "monitor": {"api_key": form.get("monitor_api_key", "")},
                 "timezone": "UTC",
-                "door_open_timeout": int(form.get("door_open_timeout", 30)),
+                "door_open_timeout": safe_int(form.get("door_open_timeout"), 30, "Door Open Timeout"),
                 "home_id": config_data.get("home_id", ""),
                 "supported_timezones": SUPPORTED_TIMEZONES
             }
             await save_config(new_config)
-            await flash("Configuration saved", "success")
+            success_msg = "Configuration saved"
+            if is_ajax:
+                return jsonify({"status": "success", "message": success_msg})
+            await flash(success_msg, "success")
+            return redirect(url_for("config"))
         except ValueError as e:
             logger.error(f"Invalid input in configuration: {str(e)}")
+            if is_ajax:
+                return jsonify({"status": "error", "message": str(e)}), 400
             await flash(f"Invalid input: {str(e)}", "error")
+            return redirect(url_for("config"))
         except Exception as e:
             logger.error(f"Error saving configuration: {str(e)}")
+            if is_ajax:
+                return jsonify({"status": "error", "message": str(e)}), 500
             await flash(f"Error saving configuration: {str(e)}", "error")
-        return redirect(url_for("config"))
+            return redirect(url_for("config"))
 
     return await render_template("config.html", config=config_data)
 

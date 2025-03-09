@@ -1086,8 +1086,19 @@
         // Configuration form validation
         function validateConfigForm() {
             const form = document.getElementById('config-form');
+            let isValid = true;
 
-            if (form.checkValidity() === false) {
+            const numberInputs = form.querySelectorAll('input[type="number"][required]');
+            numberInputs.forEach(input => {
+                if (!input.value.trim() || isNaN(input.value)) {
+                    input.classList.add('is-invalid');
+                    isValid = false;
+                } else {
+                input.classList.remove('is-invalid');
+                }
+            });
+
+            if (!form.checkValidity() || !isValid) {
                 event.preventDefault();
                 event.stopPropagation();
                 form.classList.add('was-validated');
