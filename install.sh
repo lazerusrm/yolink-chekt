@@ -1501,7 +1501,7 @@ if [ "$OPERATION_MODE" = "update" ]; then
         rm -rf "$APP_DIR/rtsp-streamer.bak"
         cp -r "$APP_DIR/rtsp-streamer" "$APP_DIR/rtsp-streamer.bak" || log_warning "Failed to backup rtsp-streamer"
     fi
-}
+fi
 
 # Step 7: Move extracted files and clean up
 track_progress "Updating application files"
