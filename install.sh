@@ -1683,16 +1683,4 @@ if [ $ERRORS_ENCOUNTERED -gt 0 ]; then
 fi
 echo "======================================================================\n"
 
-# Print summary
-echo -e "\n\n======================================================================"
-echo "YoLink CHEKT integration $([ "$OPERATION_MODE" = "install" ] && echo "installation" || echo "update") completed with $([ $ERRORS_ENCOUNTERED -eq 0 ] && echo "no errors" || echo "$ERRORS_ENCOUNTERED errors")."
-echo "IP address monitoring is active and will check for changes every 5 minutes."
-echo "Access the system at: https://$HOST_IP"
-echo "Default login credentials: username=admin, password=admin123"
-if [ $ERRORS_ENCOUNTERED -gt 0 ]; then
-    echo -e "\nWarning: Some errors were encountered during the process."
-    echo "Please check the log file for details: $LOG_FILE"
-fi
-echo "======================================================================\n"
-
 exit ${ERRORS_ENCOUNTERED:-0}
