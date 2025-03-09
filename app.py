@@ -85,11 +85,39 @@ init_websocket(app)
 
 @app.before_request
 async def enforce_https():
-    """Redirect HTTP requests to HTTPS in production."""
-    if app.config["ENV"] != "development" and request.scheme != "https":
-        url = request.url.replace("http://", "https://", 1)
-        logger.debug(f"Redirecting HTTP request to HTTPS: {url}")
-        return redirect(url, code=301)
+    """Redirect HTTP requests to HTTPS in production, respecting proxy headers."""
+    if app.config["ENV"] != "development" and request.scheme != "https" and not request.headers.get(
+            'X-Forwarded-Proto') == 'https':
+        # Get the host from X-Forwarded-Host header if available (set by nginx)
+        host = request.headers.get('X-Forwarded-Host')
+
+        # If X-Forwarded-Host is not available, try X-Forwarded-Server or Host header
+        if not host:
+            host = request.headers.get('X-Forwarded-Server') or request.headers.get('Host')
+
+        # If still no host found, use the host from the original URL, but only if it's not an internal name
+        if not host or 'yolink_chekt' in host:
+            # Get server's IP address as fallback
+            import socket
+            try:
+                # Try to get the server's public-facing IP
+                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                    # Doesn't actually connect but gets the route
+                    s.connect(('8.8.8.8', 80))
+                    host = s.getsockname()[0]
+            except Exception:
+                # Fallback to localhost if all else fails
+                host = '127.0.0.1'
+
+        # Build the redirect URL with the proper host
+        path = request.path
+        query_string = request.query_string.decode('utf-8')
+        if query_string:
+            path = f"{path}?{query_string}"
+
+        redirect_url = f"https://{host}{path}"
+        logger.debug(f"Redirecting HTTP request to HTTPS: {redirect_url}")
+        return redirect(redirect_url, code=301)
 
 # ----------------------- Authentication Helpers -----------------------
 
