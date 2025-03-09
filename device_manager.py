@@ -416,23 +416,51 @@ async def update_device_state(device_id: str, payload: Dict[str, Any]) -> bool:
         data = payload.get("data", {})
         device["last_seen"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+        # Update state with extra logging
         if "state" in data:
+            device["previous_state"] = device.get("state", "unknown")
             device["state"] = data["state"]
+            logger.debug(f"Updated state for device {device_id}: {device['previous_state']} -> {device['state']}")
+
+        # Better battery handling with explicit logging
         if "battery" in data:
-            battery = data["battery"]
-            device["battery"] = map_battery_value(battery) if isinstance(battery, int) else "unknown"
+            raw_battery = data["battery"]
+            logger.debug(f"Raw battery value for device {device_id}: {raw_battery}")
+
+            if isinstance(raw_battery, int) and 0 <= raw_battery <= 4:
+                mapped_battery = map_battery_value(raw_battery)
+                device["battery"] = mapped_battery
+                logger.debug(f"Mapped battery value for device {device_id}: {raw_battery} -> {mapped_battery}%")
+            elif raw_battery is None:
+                # For powered devices
+                device["battery"] = None
+                logger.debug(f"Device {device_id} is mains powered (battery=None)")
+            else:
+                # Unknown battery state
+                logger.warning(f"Unexpected battery value for device {device_id}: {raw_battery}")
+                device["battery"] = raw_battery  # Store original value for debugging
+
+        # Update signal
         if "signal" in data:
             device["signal"] = data["signal"]
         elif "loraInfo" in data:
             device["signal"] = data["loraInfo"].get("signal", device["signal"])
+
+        # Update temperature and humidity
         if "temperature" in data:
             device["temperature"] = data["temperature"]
         if "humidity" in data:
             device["humidity"] = data["humidity"]
         if "temperatureUnit" in data:
             device["temperatureUnit"] = data["temperatureUnit"]
+
+        # Update alarms
         if "alarm" in data:
             device["alarms"]["state"] = data["alarm"]
+
+        # Update device type if available
+        if "type" in payload:
+            device["type"] = payload["type"]
 
         return await save_device_data(device_id, device)
     except Exception as e:
