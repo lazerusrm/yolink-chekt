@@ -73,8 +73,9 @@ services:
     restart: unless-stopped
     environment:
       - PORT=3000
-      - API_URL=http://yolink_chekt:5000/get_sensor_data?internal=true
-      - FETCH_INTERVAL=5000
+      - API_URL=http://yolink-chekt-yolink_chekt-1:5000/get_sensor_data
+      - FETCH_INTERVAL=2500
+      - DISABLE_HTTPS=true
     expose:
       - "3000"  # Only expose to internal network
     volumes:
