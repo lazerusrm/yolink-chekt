@@ -135,7 +135,7 @@ async def startup() -> None:
     """Initialize background services and resources."""
     logger.info("Starting application services")
 
-    # Ensure Redis connection
+    # Ensure Redis connection with retries
     if not await ensure_redis_connection(max_retries=5, backoff_base=1.5):
         logger.error("Failed to connect to Redis after retries")
         raise SystemExit(1)
@@ -143,17 +143,26 @@ async def startup() -> None:
     # Initialize default user
     await init_default_user()
 
-    # Start services if configured
+    # Start services if configured, with staggered delays
     if await is_system_configured():
         logger.info("System configured, launching background tasks")
+
+        # Start YoLink MQTT
         app.bg_tasks.append(asyncio.create_task(run_mqtt_client()))
         app.config['shutdown_yolink'] = shutdown_yolink_mqtt
+        await asyncio.sleep(1)  # Delay to allow Redis pool to stabilize
 
+        # Start Monitor MQTT
         app.bg_tasks.append(asyncio.create_task(run_monitor_mqtt()))
         app.config['shutdown_monitor'] = shutdown_monitor_mqtt
+        await asyncio.sleep(1)
 
+        # Start Modbus
         app.bg_tasks.append(asyncio.create_task(modbus_initialize()))
         app.config['shutdown_modbus'] = shutdown_modbus
+        stats = await get_pool_stats()
+        logger.info(f"Redis pool stats after all tasks started: {stats}")
+
     else:
         logger.warning("System not fully configured; skipping background tasks")
         app.config['shutdown_yolink'] = None

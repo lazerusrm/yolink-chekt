@@ -12,6 +12,7 @@ import logging
 from typing import Dict, Any, List, Set, Optional
 import aiohttp
 from quart import Quart, websocket
+from redis.asyncio import Redis
 
 # Logging setup
 logger = logging.getLogger(__name__)
@@ -34,29 +35,21 @@ async def setup_websocket_routes(app: Quart) -> None:
     @app.websocket('/ws')
     async def ws():
         """WebSocket endpoint for real-time sensor updates."""
-        # Register new connection
         connection = websocket._get_current_object()
         active_connections.add(connection)
         logger.info(f"New WebSocket connection established. Active connections: {len(active_connections)}")
 
-        # Send current data if available
         if last_broadcast_data:
             await connection.send(json.dumps(last_broadcast_data))
 
-        # Handle connection
         try:
-            # Keep connection alive until client disconnects
             while True:
-                # This is mostly to handle disconnections
-                data = await connection.receive()
-                # We don't expect client messages, but could process them here
+                await connection.receive()
         except asyncio.CancelledError:
-            # Handle graceful shutdown
             logger.info("WebSocket connection cancelled (shutdown)")
         except Exception as e:
             logger.error(f"WebSocket error: {e}")
         finally:
-            # Remove the connection when done
             active_connections.discard(connection)
             logger.info(f"WebSocket connection closed. Active connections: {len(active_connections)}")
 
@@ -70,20 +63,14 @@ async def broadcast_sensor_update(sensors: List[Dict[str, Any]]) -> None:
     """
     global last_broadcast_data
 
-    # Create the message payload
     payload = {
         "type": "sensors-update",
         "sensors": sensors,
         "timestamp": asyncio.get_event_loop().time()
     }
-
-    # Store the payload for sending to new connections
     last_broadcast_data = payload
-
-    # Convert to JSON string
     message = json.dumps(payload)
 
-    # Send to all active connections
     if active_connections:
         send_tasks = []
         for connection in list(active_connections):
@@ -93,7 +80,6 @@ async def broadcast_sensor_update(sensors: List[Dict[str, Any]]) -> None:
                 logger.error(f"Error preparing to send to WebSocket: {e}")
                 active_connections.discard(connection)
 
-        # Execute all sends concurrently
         if send_tasks:
             results = await asyncio.gather(*send_tasks, return_exceptions=True)
             for i, result in enumerate(results):
@@ -109,12 +95,12 @@ async def start_device_broadcaster(app: Quart, interval: int = 15) -> None:
         app (Quart): The Quart application
         interval (int): Update interval in seconds
     """
-
-    # Add the task to app context for proper cleanup
     @app.before_serving
     async def setup_broadcast_task():
         """Set up the broadcast task before serving."""
-        app.broadcast_task = asyncio.create_task(broadcast_loop(interval))
+        from redis_manager import get_redis
+        redis_client = await get_redis()  # Single client for the loop
+        app.broadcast_task = asyncio.create_task(broadcast_loop(redis_client, interval))
         app.bg_tasks.append(app.broadcast_task)
 
     @app.after_serving
@@ -128,31 +114,29 @@ async def start_device_broadcaster(app: Quart, interval: int = 15) -> None:
                 pass
 
 
-async def broadcast_loop(interval: int) -> None:
+async def broadcast_loop(redis_client: Redis, interval: int) -> None:
     """
-    Background loop that periodically broadcasts device updates.
+    Background loop that periodically broadcasts device updates using a single Redis client.
 
     Args:
+        redis_client (Redis): Shared Redis client instance
         interval (int): Update interval in seconds
     """
     while True:
         try:
-            # Get all devices
             from device_manager import get_all_devices
-            devices = await get_all_devices()  # No redis_client argument
-
-            # Broadcast update if there are devices and WebSocket connections
+            devices = await get_all_devices()  # Uses internal Redis, but we minimize external calls
             if devices and active_connections:
                 await broadcast_sensor_update(devices)
                 logger.debug(f"Broadcast device update to {len(active_connections)} connections")
+            from redis_manager import get_pool_stats
+            stats = await get_pool_stats()
+            logger.debug(f"Redis pool stats during broadcast: {stats}")
         except asyncio.CancelledError:
-            # Handle graceful shutdown
             logger.info("Device broadcaster task cancelled")
             break
         except Exception as e:
             logger.error(f"Error in device broadcast loop: {e}")
-
-        # Wait for next update interval
         await asyncio.sleep(interval)
 
 
@@ -160,15 +144,9 @@ def init_websocket(app: Quart) -> None:
     """
     Initialize WebSocket functionality for the application.
 
-    Call this function from app.py to set up WebSocket support.
-
     Args:
         app (Quart): The Quart application
     """
-    # Set up WebSocket routes
     asyncio.run(setup_websocket_routes(app))
-
-    # Start background broadcaster with 10-second interval
     asyncio.run(start_device_broadcaster(app, 10))
-
     logger.info("WebSocket functionality initialized")

@@ -15,8 +15,8 @@ import aiohttp
 from datetime import datetime
 import json
 
-# Import the Redis manager instead of direct Redis client
-from redis_manager import get_redis
+# Import the Redis manager
+from redis_manager import get_redis, get_pool_stats
 
 # Logging setup
 logging.basicConfig(
@@ -26,7 +26,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Global Modbus client - IMPORTANT: initialized as None, not at module level
+# Global Modbus client - initialized as None
 client = None
 
 # Configuration (will be loaded from config.py)
@@ -63,7 +63,6 @@ async def get_client() -> AsyncModbusTcpClient:
     """
     global client
     if client is None:
-        # Create the client within a running event loop
         logger.debug("Creating new AsyncModbusTcpClient instance")
         client = AsyncModbusTcpClient("modbus-proxy", port=1502, timeout=1)
     return client
@@ -98,7 +97,6 @@ async def configure_proxy(target_ip: str, target_port: int, retry_count: int = 3
                                    f"Status {response.status} - {response_text}")
 
                     if attempt < retry_count - 1:
-                        # Exponential backoff with jitter
                         wait_time = min(10, 0.5 * (2 ** attempt)) * (0.9 + 0.2 * (hash(datetime.now().microsecond) % 10) / 10)
                         logger.debug(f"Retrying in {wait_time:.2f}s")
                         await asyncio.sleep(wait_time)
@@ -120,7 +118,6 @@ async def ensure_connection(max_retries: int = 3) -> bool:
     Returns:
         bool: True if connection is successful, False otherwise
     """
-    # First check if we should be connected at all
     local_config = await load_config()
     config["modbus"] = local_config.get("modbus", {})
 
@@ -128,24 +125,20 @@ async def ensure_connection(max_retries: int = 3) -> bool:
         logger.info("Modbus relay is disabled in configuration")
         return False
 
-    # Get the modbus client
     modbus_client = await get_client()
 
-    # If not connected, try to connect
     if not modbus_client.connected:
         for attempt in range(max_retries):
             try:
                 await modbus_client.connect()
                 if modbus_client.connected:
                     logger.info("Connected to Modbus proxy at modbus-proxy:1502")
-                    # Store successful connection time
                     redis_client = await get_redis()
                     await redis_client.set("modbus_last_connected", datetime.now().isoformat())
                     return True
                 else:
                     logger.error(f"Failed to establish socket connection to Modbus proxy (attempt {attempt+1}/{max_retries})")
                     if attempt < max_retries - 1:
-                        # Exponential backoff
                         wait_time = min(10, 1 * (2 ** attempt))
                         logger.debug(f"Retrying in {wait_time:.1f}s")
                         await asyncio.sleep(wait_time)
@@ -155,7 +148,6 @@ async def ensure_connection(max_retries: int = 3) -> bool:
                     await asyncio.sleep(1.5 * (attempt + 1))
         return False
 
-    # Already connected
     return True
 
 
@@ -174,9 +166,11 @@ async def initialize() -> bool:
             logger.info("Modbus relay disabled, skipping initialization")
             return False
 
-        # Get Redis client
+        # Get Redis client once and reuse
         redis_client = await get_redis()
         await redis_client.ping()  # Test connection
+        stats = await get_pool_stats()
+        logger.debug(f"Redis pool stats at Modbus init: {stats}")
 
         modbus_config = config.get("modbus", {})
         if not modbus_config.get("ip"):
@@ -187,7 +181,6 @@ async def initialize() -> bool:
         if await configure_proxy(modbus_config["ip"], modbus_config["port"]):
             connection_result = await ensure_connection()
             if connection_result:
-                # Log successful initialization
                 logger.info(f"Modbus relay initialized successfully to {modbus_config['ip']}:{modbus_config['port']}")
                 return True
             else:
@@ -214,43 +207,32 @@ async def trigger_relay(channel: int, state: bool = True, pulse_seconds: float =
     Returns:
         bool: True if successful, False otherwise
     """
-    # First ensure we have a connection
     if not await ensure_connection():
         logger.error("No active connection to Modbus relay")
         return False
 
-    # Get configuration
     local_config = await load_config()
     modbus_config = local_config.get("modbus", {})
     max_channels = modbus_config.get("max_channels", 8)
     unit_id = modbus_config.get("unit_id", 1)
 
-    # Validate channel number
     if not 1 <= channel <= max_channels:
         logger.error(f"Invalid channel {channel}. Must be between 1 and {max_channels}")
         return False
 
-    # Get follower_mode from config if not specified
     is_follower_mode = follower_mode if follower_mode is not None else modbus_config.get("follower_mode", False)
-
-    # If not specified, get pulse_seconds from config
     pulse_duration = pulse_seconds if pulse_seconds is not None else modbus_config.get("pulse_seconds", 1.0)
-
-    # Modbus uses 0-based addressing, while our channels are 1-based
     coil_address = channel - 1
 
-    # Get the Modbus client
     modbus_client = await get_client()
 
     try:
-        # Connect if not connected
         if not modbus_client.connected:
             await modbus_client.connect()
             if not modbus_client.connected:
                 logger.error("Failed to connect to Modbus proxy")
                 return False
 
-        # Write to coil
         result = await modbus_client.write_coil(coil_address, state, slave=unit_id)
         if hasattr(result, 'isError') and result.isError():
             logger.error(f"Failed to set relay channel {channel}: {result}")
@@ -258,7 +240,6 @@ async def trigger_relay(channel: int, state: bool = True, pulse_seconds: float =
 
         logger.info(f"Set relay channel {channel} to {'ON' if state else 'OFF'}")
 
-        # Store relay state in Redis
         try:
             redis_client = await get_redis()
             relay_state_data = {
@@ -271,21 +252,17 @@ async def trigger_relay(channel: int, state: bool = True, pulse_seconds: float =
         except Exception as e:
             logger.error(f"Failed to store relay state for channel {channel}: {e}")
 
-        # In pulse mode, if turning ON, schedule turn OFF after delay
         if state and not is_follower_mode and pulse_duration:
             asyncio.create_task(pulse_off(channel, pulse_duration))
 
         return True
     except Exception as e:
         logger.exception(f"Error setting relay channel {channel}: {e}")
-
-        # Try to reconnect on error
         try:
             await modbus_client.close()
             logger.info("Closed Modbus connection due to error")
         except:
             pass
-
         return False
 
 
@@ -345,7 +322,6 @@ async def test_channels(channel_count: int = None) -> Dict[str, Any]:
     if channel_count is None:
         channel_count = modbus_config.get("max_channels", 8)
 
-    # Initialize Modbus
     if not await initialize():
         return {
             "status": "error",
@@ -356,11 +332,9 @@ async def test_channels(channel_count: int = None) -> Dict[str, Any]:
     results = []
     success_count = 0
 
-    # Test each channel
     for channel in range(1, channel_count + 1):
         logger.info(f"Testing relay channel {channel}")
         try:
-            # Pulse the relay for 0.2 seconds
             result = await trigger_relay(channel, True, 0.2)
             results.append({
                 "channel": channel,
@@ -369,7 +343,6 @@ async def test_channels(channel_count: int = None) -> Dict[str, Any]:
             })
             if result:
                 success_count += 1
-            # Add a small delay between channels
             await asyncio.sleep(0.3)
         except Exception as e:
             logger.error(f"Error testing channel {channel}: {e}")
@@ -379,7 +352,6 @@ async def test_channels(channel_count: int = None) -> Dict[str, Any]:
                 "message": f"Error: {str(e)}"
             })
 
-    # Build response
     return {
         "status": "success" if success_count == channel_count else "partial" if success_count > 0 else "error",
         "message": f"{success_count}/{channel_count} channels tested successfully",
@@ -392,23 +364,19 @@ async def main():
     Main entry point for testing the Modbus relay functions.
     """
     try:
-        # Set up logging
         root_logger = logging.getLogger()
         root_logger.setLevel(logging.DEBUG)
 
         logger.info("Testing Modbus relay module")
 
-        # Initialize the relay
         if not await initialize():
             logger.error("Failed to initialize Modbus relay, exiting")
             return
 
-        # Test channel 1 with a 1-second pulse
         logger.info("Testing relay channel 1 with a 1-second pulse")
         await trigger_relay(1, True, 1.0)
         await asyncio.sleep(2)
 
-        # Test follower mode
         logger.info("Testing follower mode ON for channel 2")
         await trigger_relay(2, True, follower_mode=True)
         await asyncio.sleep(2)
@@ -417,7 +385,6 @@ async def main():
         await trigger_relay(2, False, follower_mode=True)
         await asyncio.sleep(1)
 
-        # Test all channels
         logger.info("Running test on all channels")
         results = await test_channels(8)
         logger.info(f"Test results: {json.dumps(results, indent=2)}")

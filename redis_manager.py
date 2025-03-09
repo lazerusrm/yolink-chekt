@@ -1,5 +1,5 @@
 """
-Redis Connection Manager - Shared Redis Client Pool (Enhanced)
+Redis Connection Manager - Shared Redis Client Pool
 =============================================================
 
 Provides a centralized Redis connection manager with a shared connection pool,
@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 # Global connection pool and client
 _pool: Optional[ConnectionPool] = None
 _redis_client: Optional[Redis] = None
+_lock = asyncio.Lock()  # Ensure thread-safe initialization
 
 # Configuration with environment variable fallbacks
 _config: Dict[str, Any] = {
@@ -30,8 +31,9 @@ _config: Dict[str, Any] = {
     "port": int(os.getenv("REDIS_PORT", 6379)),
     "db": int(os.getenv("REDIS_DB", 0)),
     "decode_responses": True,  # Decode responses as strings
-    "max_connections": int(os.getenv("REDIS_MAX_CONNECTIONS", 10))
+    "max_connections": int(os.getenv("REDIS_MAX_CONNECTIONS", 50))  # Increased from 10 to 50
 }
+
 
 async def get_redis() -> Redis:
     """
@@ -45,27 +47,47 @@ async def get_redis() -> Redis:
     """
     global _redis_client, _pool
 
-    if _redis_client is None:
-        if _pool is None or _pool.disconnected:
-            logger.debug(f"Creating new Redis connection pool: host={_config['host']}, port={_config['port']}")
-            _pool = ConnectionPool(
-                host=_config["host"],
-                port=_config["port"],
-                db=_config["db"],
-                decode_responses=_config["decode_responses"],
-                max_connections=_config["max_connections"]
-            )
+    async with _lock:
+        if _redis_client is None or not await is_client_alive(_redis_client):
+            if _pool is None or _pool.disconnected:
+                logger.debug(f"Creating new Redis connection pool: host={_config['host']}, port={_config['port']}, max_connections={_config['max_connections']}")
+                _pool = ConnectionPool(
+                    host=_config["host"],
+                    port=_config["port"],
+                    db=_config["db"],
+                    decode_responses=_config["decode_responses"],
+                    max_connections=_config["max_connections"]
+                )
 
-        _redis_client = Redis(connection_pool=_pool)
-        try:
-            await _redis_client.ping()
-            logger.info(f"Connected to Redis at {_config['host']}:{_config['port']}, db={_config['db']}")
-        except Exception as e:
-            logger.error(f"Failed to connect to Redis: {e}")
-            _redis_client = None
-            raise ConnectionError(f"Redis connection failed: {e}")
+            _redis_client = Redis(connection_pool=_pool)
+            try:
+                await _redis_client.ping()
+                logger.info(f"Connected to Redis at {_config['host']}:{_config['port']}, db={_config['db']}")
+                logger.debug(f"Pool stats - total: {_pool.max_connections}, in use: {_pool._in_use_connections}")
+            except Exception as e:
+                logger.error(f"Failed to connect to Redis: {e}")
+                _redis_client = None
+                raise ConnectionError(f"Redis connection failed: {e}")
 
     return _redis_client
+
+
+async def is_client_alive(client: Redis) -> bool:
+    """
+    Check if the Redis client is still alive.
+
+    Args:
+        client (Redis): The Redis client to check
+
+    Returns:
+        bool: True if alive, False otherwise
+    """
+    try:
+        await client.ping()
+        return True
+    except Exception:
+        return False
+
 
 async def ensure_connection(max_retries: int = 5, backoff_base: float = 1.5) -> bool:
     """
@@ -101,6 +123,7 @@ async def ensure_connection(max_retries: int = 5, backoff_base: float = 1.5) -> 
                 return False
     return False
 
+
 async def update_config(new_config: Dict[str, Any]) -> bool:
     """
     Update Redis configuration and re-establish the connection.
@@ -113,26 +136,28 @@ async def update_config(new_config: Dict[str, Any]) -> bool:
     """
     global _config, _redis_client, _pool
 
-    try:
-        # Update configuration
-        _config.update(new_config)
-        logger.info(f"Updated Redis config: {json.dumps(_config, indent=2)}")
+    async with _lock:
+        try:
+            # Update configuration
+            _config.update(new_config)
+            logger.info(f"Updated Redis config: {json.dumps(_config, indent=2)}")
 
-        # Close existing connections
-        if _redis_client is not None:
-            await _redis_client.close()
-            _redis_client = None
-        if _pool is not None:
-            await _pool.disconnect()
-            _pool = None
+            # Close existing connections
+            if _redis_client is not None:
+                await _redis_client.close()
+                _redis_client = None
+            if _pool is not None:
+                await _pool.disconnect()
+                _pool = None
 
-        # Re-establish connection with new config
-        await get_redis()
-        logger.info("Redis connection re-established with updated config")
-        return True
-    except Exception as e:
-        logger.error(f"Failed to update Redis config and reconnect: {e}")
-        return False
+            # Re-establish connection with new config
+            await get_redis()
+            logger.info("Redis connection re-established with updated config")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to update Redis config and reconnect: {e}")
+            return False
+
 
 async def close() -> None:
     """
@@ -140,23 +165,42 @@ async def close() -> None:
     """
     global _redis_client, _pool
 
-    if _redis_client is not None:
-        try:
-            await _redis_client.close()
-            logger.info("Redis client closed successfully")
-        except Exception as e:
-            logger.error(f"Error closing Redis client: {e}")
-        finally:
-            _redis_client = None
+    async with _lock:
+        if _redis_client is not None:
+            try:
+                await _redis_client.close()
+                logger.info("Redis client closed successfully")
+            except Exception as e:
+                logger.error(f"Error closing Redis client: {e}")
+            finally:
+                _redis_client = None
 
-    if _pool is not None:
-        try:
-            await _pool.disconnect()
-            logger.info("Redis connection pool disconnected successfully")
-        except Exception as e:
-            logger.error(f"Error disconnecting Redis pool: {e}")
-        finally:
-            _pool = None
+        if _pool is not None:
+            try:
+                await _pool.disconnect()
+                logger.info("Redis connection pool disconnected successfully")
+            except Exception as e:
+                logger.error(f"Error disconnecting Redis pool: {e}")
+            finally:
+                _pool = None
+
+
+async def get_pool_stats() -> Dict[str, int]:
+    """
+    Get current connection pool statistics for debugging.
+
+    Returns:
+        Dict[str, int]: Pool stats (total, in use, available)
+    """
+    global _pool
+    if _pool is None:
+        return {"total": 0, "in_use": 0, "available": 0}
+    return {
+        "total": _pool.max_connections,
+        "in_use": _pool._in_use_connections,
+        "available": _pool.max_connections - _pool._in_use_connections
+    }
+
 
 if __name__ == "__main__":
     async def test_redis_manager():
@@ -181,6 +225,10 @@ if __name__ == "__main__":
             # Verify connection still works
             await redis.set("post_update_key", "updated")
             print(f"Post-update value: {await redis.get('post_update_key')}")
+
+            # Check pool stats
+            stats = await get_pool_stats()
+            print(f"Pool stats: {stats}")
         except Exception as e:
             print(f"Test failed: {e}")
         finally:

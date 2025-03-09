@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 # Default timeout for API requests
 DEFAULT_TIMEOUT = aiohttp.ClientTimeout(total=10)
 
+
 def map_battery_value(raw_value: int) -> Optional[int]:
     """
     Map YoLink battery levels (0-4) to percentage values.
@@ -43,6 +44,7 @@ def map_battery_value(raw_value: int) -> Optional[int]:
     battery_map = {0: 0, 1: 25, 2: 50, 3: 75, 4: 100}
     return battery_map.get(raw_value) if isinstance(raw_value, int) and 0 <= raw_value <= 4 else None
 
+
 async def load_config() -> Dict[str, Any]:
     """
     Load configuration asynchronously from the config module.
@@ -51,6 +53,7 @@ async def load_config() -> Dict[str, Any]:
         Dict[str, Any]: Configuration dictionary
     """
     return await load_config_impl()
+
 
 async def remove_device(device_id: str) -> bool:
     """
@@ -73,6 +76,7 @@ async def remove_device(device_id: str) -> bool:
     except Exception as e:
         logger.error(f"Error removing device {device_id}: {e}")
         return False
+
 
 async def cleanup_inactive_devices(days_threshold: int = 14) -> int:
     """
@@ -106,9 +110,10 @@ async def cleanup_inactive_devices(days_threshold: int = 14) -> int:
                 logger.warning(f"Invalid last_seen for {device_id}: {last_seen}, error: {e}")
 
         if devices_to_remove:
-            removal_tasks = [remove_device(device_id) for device_id in devices_to_remove]
+            redis_client = await get_redis()
+            removal_tasks = [redis_client.delete(f"device:{device_id}") for device_id in devices_to_remove]
             results = await asyncio.gather(*removal_tasks, return_exceptions=True)
-            removed_count = sum(1 for r in results if r is True)
+            removed_count = sum(1 for r in results if r and not isinstance(r, Exception))
 
             # Update mappings
             mappings = await get_mappings()
@@ -128,6 +133,7 @@ async def cleanup_inactive_devices(days_threshold: int = 14) -> int:
     except Exception as e:
         logger.error(f"Error during inactive device cleanup: {e}")
         return 0
+
 
 async def get_access_token(config: Optional[Dict[str, Any]] = None) -> Optional[str]:
     """
@@ -183,6 +189,7 @@ async def get_access_token(config: Optional[Dict[str, Any]] = None) -> Optional[
         logger.error(f"Unexpected error fetching token: {e}")
         return None
 
+
 async def process_device(device: Dict[str, Any]) -> bool:
     """
     Process and update a single device entry in Redis.
@@ -221,6 +228,7 @@ async def process_device(device: Dict[str, Any]) -> bool:
         logger.error(f"Error processing device {device.get('deviceId', 'unknown')}: {e}")
         return False
 
+
 async def refresh_yolink_devices() -> bool:
     """
     Refresh all YoLink devices from the API and update Redis.
@@ -228,10 +236,10 @@ async def refresh_yolink_devices() -> bool:
     Returns:
         bool: True if successful, False otherwise
     """
-    redis_client = await get_redis()
-    current_timestamp = datetime.now().timestamp()
-
     try:
+        redis_client = await get_redis()
+        current_timestamp = datetime.now().timestamp()
+
         await redis_client.set("last_refresh_time", str(current_timestamp))
         logger.info("Initiating YoLink device refresh")
 
@@ -300,6 +308,7 @@ async def refresh_yolink_devices() -> bool:
         logger.error(f"Device refresh failed: {e}")
         return False
 
+
 async def get_all_devices() -> List[Dict[str, Any]]:
     """
     Retrieve all devices from Redis.
@@ -322,6 +331,7 @@ async def get_all_devices() -> List[Dict[str, Any]]:
         logger.error(f"Error retrieving all devices: {e}")
         return []
 
+
 async def get_device_data(device_id: str) -> Optional[Dict[str, Any]]:
     """
     Retrieve device data from Redis by device_id.
@@ -339,6 +349,7 @@ async def get_device_data(device_id: str) -> Optional[Dict[str, Any]]:
     except Exception as e:
         logger.error(f"Error retrieving device {device_id}: {e}")
         return None
+
 
 async def save_device_data(device_id: str, data: Dict[str, Any]) -> bool:
     """
@@ -364,6 +375,7 @@ async def save_device_data(device_id: str, data: Dict[str, Any]) -> bool:
     except Exception as e:
         logger.error(f"Error saving device {device_id}: {e}")
         return False
+
 
 async def update_device_state(device_id: str, payload: Dict[str, Any]) -> bool:
     """
@@ -418,6 +430,7 @@ async def update_device_state(device_id: str, payload: Dict[str, Any]) -> bool:
         logger.error(f"Error updating device {device_id} state: {e}")
         return False
 
+
 async def get_last_refresh_time() -> Optional[Dict[str, Any]]:
     """
     Get information about the last device refresh.
@@ -448,6 +461,7 @@ async def get_last_refresh_time() -> Optional[Dict[str, Any]]:
         logger.error(f"Error getting last refresh time: {e}")
         return None
 
+
 if __name__ == "__main__":
     async def test_device_manager():
         """Test the device manager functionality."""
@@ -464,7 +478,7 @@ if __name__ == "__main__":
             refresh_info = await get_last_refresh_time()
             print(f"Last refresh: {refresh_info}")
         finally:
-            from .redis_manager import close
+            from redis_manager import close
             await close()
 
     asyncio.run(test_device_manager())
