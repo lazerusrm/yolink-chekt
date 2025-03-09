@@ -33,18 +33,15 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-# Function to get the IP address silently (no logging during capture)
+# Function to get the IP address silently
 get_host_ip_silent() {
     ip route get 8.8.8.8 | grep -o 'src [0-9.]*' | awk '{print $2}'
 }
 
 # Function to get the IP address with logging
 get_host_ip() {
-    # First capture the IP silently
     local host_ip
     host_ip=$(get_host_ip_silent)
-
-    # Only log after we've captured the IP
     if [ -z "$host_ip" ]; then
         log "Error: Could not determine IP address with internet route."
         exit 1
@@ -77,13 +74,10 @@ restore_file() {
     fi
 }
 
-# Update docker-compose.yml with host IP - properly handles YAML formatting
+# Update docker-compose.yml with host IP
 update_docker_compose_ip() {
-    # IMPORTANT: Capture host IP directly in a variable, don't use command substitution with logs
     local host_ip
     host_ip=$(get_host_ip_silent)
-
-    # Now log after capturing the IP
     log "Updating docker-compose.yml with TARGET_IP=$host_ip"
 
     if [ ! -f "$DOCKER_COMPOSE_FILE" ]; then
@@ -91,20 +85,15 @@ update_docker_compose_ip() {
         exit 1
     fi
 
-    # Make a backup
     cp "$DOCKER_COMPOSE_FILE" "${DOCKER_COMPOSE_FILE}.bak" || {
         log "Error: Failed to create backup of docker-compose.yml"
         exit 1
     }
 
-    # Create a temporary file
     local tmpfile
     tmpfile=$(mktemp)
-
-    # Process the file line by line, only updating the TARGET_IP line
     while IFS= read -r line; do
         if echo "$line" | grep -q "TARGET_IP="; then
-            # Extract the indentation
             local indent
             indent=$(echo "$line" | sed -E 's/^([[:space:]]*-).*/\1/')
             echo "${indent} TARGET_IP=$host_ip" >> "$tmpfile"
@@ -113,40 +102,12 @@ update_docker_compose_ip() {
         fi
     done < "$DOCKER_COMPOSE_FILE"
 
-    # Replace original file
     mv "$tmpfile" "$DOCKER_COMPOSE_FILE" || {
         log "Error: Failed to update docker-compose.yml"
         mv "${DOCKER_COMPOSE_FILE}.bak" "$DOCKER_COMPOSE_FILE"
         rm -f "$tmpfile"
         exit 1
     }
-
-    # Ensure volumes section is complete and properly formatted
-    if grep -q "^volumes:$" "$DOCKER_COMPOSE_FILE"; then
-        # Check if redis-data is already defined
-        if ! grep -q "redis-data:" "$DOCKER_COMPOSE_FILE"; then
-            # Create a temporary file
-            local vol_tmpfile
-            vol_tmpfile=$(mktemp)
-
-            # Process the file, adding proper volumes mapping
-            awk '{
-                print $0;
-                if ($0 ~ /^volumes:$/) {
-                    print "  redis-data: {}";
-                }
-            }' "$DOCKER_COMPOSE_FILE" > "$vol_tmpfile"
-
-            # Replace the original file
-            mv "$vol_tmpfile" "$DOCKER_COMPOSE_FILE" || {
-                log "Error: Failed to update volumes in docker-compose.yml"
-                exit 1;
-            }
-
-            log "Fixed volumes section in docker-compose.yml with proper mapping"
-        fi
-    fi
-
     log "Successfully updated docker-compose.yml"
 }
 
@@ -195,11 +156,20 @@ rm -rf "$TEMP_DIR"
 mkdir -p "$TEMP_DIR" || { log "Error: Failed to create temp directory"; exit 1; }
 unzip -o "$APP_DIR/repo.zip" -d "$TEMP_DIR" || { log "Error: Failed to unzip repository"; exit 1; }
 
-# Update files, excluding .env and docker-compose.yml (to preserve customizations)
+# Update files, excluding .env and docker-compose.yml
 log "Updating application files..."
 rsync -a --exclude='.env' --exclude='docker-compose.yml' "$TEMP_DIR/yolink-chekt-main/"* "$APP_DIR/" || { log "Error: Failed to sync updated files"; exit 1; }
 
-# Ensure rtsp-streamer directory is updated
+# Ensure templates directory exists on host
+if [ -d "$TEMP_DIR/yolink-chekt-main/templates" ]; then
+    log "Ensuring templates directory is updated on host..."
+    mkdir -p "$APP_DIR/templates"
+    cp -r "$TEMP_DIR/yolink-chekt-main/templates/"* "$APP_DIR/templates/" || { log "Error: Failed to update templates directory"; exit 1; }
+else
+    log "Warning: templates directory not found in repository"
+fi
+
+# Update rtsp-streamer directory
 if [ -d "$TEMP_DIR/yolink-chekt-main/rtsp-streamer" ]; then
     log "Updating rtsp-streamer directory..."
     rm -rf "$APP_DIR/rtsp-streamer"
