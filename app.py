@@ -400,7 +400,7 @@ async def change_password():
 @login_required
 async def setup_totp():
     """Set up TOTP and redirect to dashboard."""
-    user_data = await get_user_data(current_user.auth_id)  # Changed from auth.current_user.auth_id
+    user_data = await get_user_data(current_user.auth_id)
     if "totp_secret" in user_data:
         await flash("TOTP already set up", "info")
         return redirect(url_for("index"))
@@ -416,9 +416,9 @@ async def setup_totp():
         totp = pyotp.TOTP(totp_secret)
         if totp.verify(totp_code):
             user_data["totp_secret"] = totp_secret
-            await save_user_data(current_user.auth_id, user_data)  # Changed from auth.current_user.auth_id
+            await save_user_data(current_user.auth_id, user_data)
             session.pop("totp_secret", None)
-            logger.info(f"User {current_user.auth_id} completed TOTP setup")  # Changed from auth.current_user.auth_id
+            logger.info(f"User {current_user.auth_id} completed TOTP setup")
             await flash("TOTP setup complete, you’re all set!", "success")
             return redirect(url_for("index"))
         else:
@@ -426,12 +426,12 @@ async def setup_totp():
 
     totp_secret = pyotp.random_base32()
     session["totp_secret"] = totp_secret
-    totp_uri = pyotp.TOTP(totp_secret).provisioning_uri(current_user.auth_id, issuer_name="YoLink-CHEKT")  # Changed from auth.current_user.auth_id
+    totp_uri = pyotp.TOTP(totp_secret).provisioning_uri(current_user.auth_id, issuer_name="YoLink-CHEKT")
     img = qrcode.make(totp_uri)
     buffered = io.BytesIO()
     img.save(buffered, format="PNG")
     qr_img = base64.b64encode(buffered.getvalue()).decode("utf-8")
-    return await render_template("setup_totp.html", qr_img=qr_img)
+    return await render_template("setup_totp.html", qr_img=qr_img, totp_secret=totp_secret)  # Added totp_secret
 
 # ----------------------- Main Routes -----------------------
 
