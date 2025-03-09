@@ -309,6 +309,7 @@ get_clean_ip() {
 }
 
 # Function to generate SSL certificates with proper error handling
+# Function to generate SSL certificates with proper error handling - completely revised
 generate_ssl_certificates() {
     local host_ip="$1"
     local cert_dir="$2"
@@ -394,7 +395,7 @@ EOF
 }
 
 #===================================
-# ROBUST CONFIGURATION GENERATION
+# CONFIGURATION GENERATION
 #===================================
 
 # Function to generate nginx.conf
