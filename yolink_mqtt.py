@@ -166,7 +166,8 @@ def should_trigger_event(current_state: str, previous_state: str, device_type: s
 
 async def process_message(payload):
     """
-    Process incoming MQTT messages asynchronously.
+    Process incoming MQTT messages asynchronously with comprehensive error handling
+    and proper integration with alert systems.
 
     Args:
         payload (Dict[str, Any]): MQTT message payload
@@ -180,6 +181,7 @@ async def process_message(payload):
         # Log the full payload for debugging
         logger.debug(f"MQTT payload for {device_id}: {json.dumps(payload, indent=2)}")
 
+        # Get existing device data or initialize new device
         device = await get_device_data(device_id) or {}
         if not device.get("deviceId"):
             logger.info(f"Device {device_id} not found, initializing new device")
@@ -205,7 +207,7 @@ async def process_message(payload):
         data = payload.get("data", {})
         previous_state = device.get("state", "unknown")
 
-        # Update state
+        # Update state with state change tracking
         if "state" in data:
             device["previous_state"] = previous_state
             device["state"] = data["state"]
@@ -227,7 +229,7 @@ async def process_message(payload):
                 device["battery"] = mapped_battery
                 logger.debug(f"Mapped battery value for device {device_id}: {raw_battery} -> {mapped_battery}")
 
-        # Update signal
+        # Update signal strength
         if "signal" in data:
             device["signal"] = data["signal"]
         elif "loraInfo" in data and "signal" in data["loraInfo"]:
@@ -243,20 +245,74 @@ async def process_message(payload):
             device["type"] = payload["type"]
         device["last_seen"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        # Save updated device data
+        # Save device data before triggering alerts
+        # This ensures the device state is updated even if alert handling fails
         save_result = await save_device_data(device_id, device)
         if not save_result:
-            logger.error(f"Failed to save device data for {device_id}")
+            logger.error(f"Failed to save device data for {device_id}. Device state: {device.get('state')}, " +
+                         f"previous state: {device.get('previous_state')}, battery: {device.get('battery')}")
+            try:
+                logger.debug(f"Device data that failed to save: {json.dumps(device)}")
+            except (TypeError, ValueError):
+                logger.error(f"Device data contains non-serializable values: {device}")
 
-        # Rest of the function remains the same...
-        # (process alerts, trigger CHEKT events, etc.)
+        # CRITICAL: Check for alerts/alarms that need to be processed
+        # Determine if an alert/event should be triggered based on state changes
+        state = device.get("state", "unknown")
+        trigger_event = False
+
+        # Check if this state change should trigger an event
+        if state == "alert":
+            logger.info(f"Alert event detected for device {device_id}")
+            trigger_event = True
+        elif previous_state and state and previous_state != state:
+            logger.info(f"State change event detected for device {device_id}: {previous_state} -> {state}")
+            trigger_event = True
+
+        # If we need to trigger an event
+        if trigger_event:
+            # Load configuration and mappings
+            config = await load_config()
+            mapping = await get_mapping(device_id)
+            if not mapping:
+                logger.warning(f"No mapping found for device {device_id}, cannot trigger event")
+                return
+
+            # Import alerts module for event triggering
+            from alerts import trigger_alert
+
+            # Map state to a generic device type for alert processing
+            if device.get("type") == "DoorSensor":
+                device_type = "door_contact"
+            elif device.get("type") == "MotionSensor":
+                device_type = "motion"
+            elif device.get("type") == "LeakSensor":
+                device_type = "leak_sensor"
+            else:
+                device_type = "generic"
+
+            # Process the device event/alarm
+            logger.info(f"Triggering alert for device {device_id} with state {state}")
+            await trigger_alert(device_id, state, device_type)
+
+        # Publish update to monitor system
+        try:
+            from monitor_mqtt import publish_update
+            await publish_update(device_id, {
+                "state": state,
+                "alarms": device.get("alarms", {}),
+                "signal": device.get("signal", "unknown"),
+                "battery": device.get("battery", "unknown"),
+                "last_seen": device.get("last_seen", "never")
+            })
+        except Exception as e:
+            logger.error(f"Failed to publish update to monitor for device {device_id}: {e}")
 
     except json.JSONDecodeError as e:
         logger.error(f"Invalid JSON in MQTT payload: {e}")
     except Exception as e:
         logger.error(f"Error processing message for device {device_id if 'device_id' in locals() else 'unknown'}: {e}")
         logger.exception("Detailed error information:")
-
 
 async def run_mqtt_client() -> None:
     """

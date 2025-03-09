@@ -362,7 +362,7 @@ async def get_device_data(device_id: str) -> Optional[Dict[str, Any]]:
 
 async def save_device_data(device_id: str, data: Dict[str, Any]) -> bool:
     """
-    Save device data to Redis.
+    Save device data to Redis with robust error handling and retry logic.
 
     Args:
         device_id (str): Device ID
@@ -371,19 +371,53 @@ async def save_device_data(device_id: str, data: Dict[str, Any]) -> bool:
     Returns:
         bool: True if successful, False otherwise
     """
-    try:
-        redis_client = await get_redis()
-        existing = await get_device_data(device_id) or {}
-        if "state" in data and data["state"] != existing.get("state"):
-            data["previous_state"] = existing.get("state", "unknown")
-        if "battery" in data and isinstance(data["battery"], int):
-            data["battery"] = map_battery_value(data["battery"])
-        await redis_client.set(f"device:{device_id}", json.dumps(data))
-        logger.debug(f"Saved device data for {device_id}")
-        return True
-    except Exception as e:
-        logger.error(f"Error saving device {device_id}: {e}")
-        return False
+    max_retries = 3
+
+    # Create a deep copy to avoid modifying the original data
+    device_data = copy.deepcopy(data)
+
+    for attempt in range(max_retries):
+        try:
+            redis_client = await get_redis()
+            existing = await get_device_data(device_id) or {}
+
+            # Ensure we have proper state and previous_state tracking
+            if "state" in device_data and device_data["state"] != existing.get("state"):
+                device_data["previous_state"] = existing.get("state", "unknown")
+
+            # Handle battery value mapping if needed
+            if "battery" in device_data and isinstance(device_data["battery"], int):
+                device_data["battery"] = map_battery_value(device_data["battery"])
+
+            # Validate data for any null bytes or control characters that would cause Redis issues
+            for key, value in dict(device_data).items():
+                if isinstance(value, str) and ('\x00' in value or any(ord(c) < 32 for c in value)):
+                    logger.warning(f"Invalid character in {key} for device {device_id}, sanitizing")
+                    device_data[key] = ''.join(c for c in value if ord(c) >= 32 and c != '\x00')
+
+            # Ensure data can be serialized to JSON
+            try:
+                json_data = json.dumps(device_data)
+            except (TypeError, ValueError) as json_error:
+                logger.error(f"JSON serialization error for device {device_id}: {json_error}")
+                logger.debug(f"Problematic data: {device_data}")
+                return False
+
+            # Set the data in Redis
+            await redis_client.set(f"device:{device_id}", json_data)
+            logger.debug(f"Saved device data for {device_id}")
+            return True
+
+        except Exception as e:
+            # Log detailed exception information
+            logger.error(f"Error saving device {device_id} (attempt {attempt + 1}/{max_retries}): {e}", exc_info=True)
+
+            if attempt < max_retries - 1:
+                # Exponential backoff before retrying
+                await asyncio.sleep(0.5 * (attempt + 1))
+            else:
+                logger.error(f"All attempts to save device {device_id} failed")
+                return False
 
 
 async def update_device_state(device_id: str, payload: Dict[str, Any]) -> bool:
