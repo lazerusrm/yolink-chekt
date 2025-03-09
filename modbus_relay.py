@@ -14,8 +14,6 @@ from pymodbus.client import AsyncModbusTcpClient
 import aiohttp
 from datetime import datetime
 import json
-
-# Import the Redis manager
 from redis_manager import get_redis, get_pool_stats
 
 # Logging setup

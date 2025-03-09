@@ -125,11 +125,11 @@ async def broadcast_loop(redis_client: Redis, interval: int) -> None:
     while True:
         try:
             from device_manager import get_all_devices
-            devices = await get_all_devices()  # Uses internal Redis, but we minimize external calls
+            devices = await get_all_devices()
             if devices and active_connections:
                 await broadcast_sensor_update(devices)
                 logger.debug(f"Broadcast device update to {len(active_connections)} connections")
-            from redis_manager import get_pool_stats
+            from redis_manager import get_pool_stats  # Already correct, just ensuring
             stats = await get_pool_stats()
             logger.debug(f"Redis pool stats during broadcast: {stats}")
         except asyncio.CancelledError:

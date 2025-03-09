@@ -22,6 +22,7 @@ from quart_auth import (
     logout_user, login_user, Unauthorized
 )
 from quart_bcrypt import Bcrypt
+from redis_manager import get_redis, ensure_connection as ensure_redis_connection, close as close_redis, get_pool_stats
 import pyotp
 import qrcode
 import psutil
@@ -140,6 +141,10 @@ async def startup() -> None:
         logger.error("Failed to connect to Redis after retries")
         raise SystemExit(1)
 
+    # Log initial pool stats
+    stats = await get_pool_stats()
+    logger.info(f"Redis pool stats before tasks: {stats}")
+
     # Initialize default user
     await init_default_user()
 
@@ -150,16 +155,21 @@ async def startup() -> None:
         # Start YoLink MQTT
         app.bg_tasks.append(asyncio.create_task(run_mqtt_client()))
         app.config['shutdown_yolink'] = shutdown_yolink_mqtt
-        await asyncio.sleep(1)  # Delay to allow Redis pool to stabilize
+        await asyncio.sleep(1)
+        stats = await get_pool_stats()
+        logger.debug(f"Redis pool stats after YoLink MQTT: {stats}")
 
         # Start Monitor MQTT
         app.bg_tasks.append(asyncio.create_task(run_monitor_mqtt()))
         app.config['shutdown_monitor'] = shutdown_monitor_mqtt
         await asyncio.sleep(1)
+        stats = await get_pool_stats()
+        logger.debug(f"Redis pool stats after Monitor MQTT: {stats}")
 
         # Start Modbus
         app.bg_tasks.append(asyncio.create_task(modbus_initialize()))
         app.config['shutdown_modbus'] = shutdown_modbus
+        await asyncio.sleep(1)
         stats = await get_pool_stats()
         logger.info(f"Redis pool stats after all tasks started: {stats}")
 

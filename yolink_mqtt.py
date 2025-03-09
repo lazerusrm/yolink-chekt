@@ -69,8 +69,7 @@ async def save_device_data(device_id: str, data: Dict[str, Any]) -> None:
         data (Dict[str, Any]): Device data to save
     """
     from device_manager import save_device_data as save_device_impl
-    redis_client = await get_redis()
-    await save_device_impl(redis_client, device_id, data)
+    await save_device_impl(device_id, data)  # Only two arguments
 
 
 async def get_access_token() -> Optional[str]:

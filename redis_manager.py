@@ -23,15 +23,15 @@ logger = logging.getLogger(__name__)
 # Global connection pool and client
 _pool: Optional[ConnectionPool] = None
 _redis_client: Optional[Redis] = None
-_lock = asyncio.Lock()  # Ensure thread-safe initialization
+_lock = asyncio.Lock()
 
 # Configuration with environment variable fallbacks
 _config: Dict[str, Any] = {
     "host": os.getenv("REDIS_HOST", "redis"),
     "port": int(os.getenv("REDIS_PORT", 6379)),
     "db": int(os.getenv("REDIS_DB", 0)),
-    "decode_responses": True,  # Decode responses as strings
-    "max_connections": int(os.getenv("REDIS_MAX_CONNECTIONS", 50))  # Increased from 10 to 50
+    "decode_responses": True,
+    "max_connections": int(os.getenv("REDIS_MAX_CONNECTIONS", 50))
 }
 
 
@@ -63,7 +63,8 @@ async def get_redis() -> Redis:
             try:
                 await _redis_client.ping()
                 logger.info(f"Connected to Redis at {_config['host']}:{_config['port']}, db={_config['db']}")
-                logger.debug(f"Pool stats - total: {_pool.max_connections}, in use: {_pool._in_use_connections}")
+                stats = await get_pool_stats()
+                logger.debug(f"Pool stats after connection: {stats}")
             except Exception as e:
                 logger.error(f"Failed to connect to Redis: {e}")
                 _redis_client = None
@@ -110,7 +111,7 @@ async def ensure_connection(max_retries: int = 5, backoff_base: float = 1.5) -> 
                 logger.info(f"Reconnected to Redis after {attempt + 1} attempts")
             return True
         except Exception as e:
-            wait_time = min(30, backoff_base ** attempt)  # Cap at 30s
+            wait_time = min(30, backoff_base ** attempt)
             logger.warning(
                 f"Redis connection attempt {attempt + 1}/{max_retries} failed: {e}. "
                 f"Retrying in {wait_time:.1f}s"
@@ -119,7 +120,7 @@ async def ensure_connection(max_retries: int = 5, backoff_base: float = 1.5) -> 
                 await asyncio.sleep(wait_time)
             else:
                 logger.error(f"Failed to connect to Redis after {max_retries} attempts")
-                _redis_client = None  # Reset client on final failure
+                _redis_client = None
                 return False
     return False
 
@@ -138,11 +139,9 @@ async def update_config(new_config: Dict[str, Any]) -> bool:
 
     async with _lock:
         try:
-            # Update configuration
             _config.update(new_config)
             logger.info(f"Updated Redis config: {json.dumps(_config, indent=2)}")
 
-            # Close existing connections
             if _redis_client is not None:
                 await _redis_client.close()
                 _redis_client = None
@@ -150,7 +149,6 @@ async def update_config(new_config: Dict[str, Any]) -> bool:
                 await _pool.disconnect()
                 _pool = None
 
-            # Re-establish connection with new config
             await get_redis()
             logger.info("Redis connection re-established with updated config")
             return True
@@ -195,10 +193,12 @@ async def get_pool_stats() -> Dict[str, int]:
     global _pool
     if _pool is None:
         return {"total": 0, "in_use": 0, "available": 0}
+    in_use = len(_pool._in_use_connections)  # Length of set
+    total = _pool.max_connections
     return {
-        "total": _pool.max_connections,
-        "in_use": _pool._in_use_connections,
-        "available": _pool.max_connections - _pool._in_use_connections
+        "total": total,
+        "in_use": in_use,
+        "available": total - in_use
     }
 
 
@@ -207,26 +207,21 @@ if __name__ == "__main__":
         """Test the Redis manager standalone."""
         logging.basicConfig(level=logging.DEBUG)
         try:
-            # Get Redis client and test basic operations
             redis = await get_redis()
             await redis.set("test_key", "test_value")
             value = await redis.get("test_key")
             print(f"Set and retrieved test value: {value}")
 
-            # Test ensure_connection
             connected = await ensure_connection(max_retries=3, backoff_base=1.0)
             print(f"Ensure connection result: {connected}")
 
-            # Test config update
             new_config = {"port": 6379, "max_connections": 20}
             updated = await update_config(new_config)
             print(f"Config update result: {updated}")
 
-            # Verify connection still works
             await redis.set("post_update_key", "updated")
             print(f"Post-update value: {await redis.get('post_update_key')}")
 
-            # Check pool stats
             stats = await get_pool_stats()
             print(f"Pool stats: {stats}")
         except Exception as e:
