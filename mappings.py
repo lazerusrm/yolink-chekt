@@ -67,6 +67,75 @@ async def get_mappings(use_cache: bool = True, cache_ttl: int = 5) -> Dict[str, 
         return {"mappings": []}
 
 
+async def save_mappings(mappings: Dict[str, Any]) -> bool:
+    """
+    Save all mappings to Redis asynchronously.
+
+    Args:
+        mappings (Dict[str, Any]): Mappings to save
+
+    Returns:
+        bool: Success status
+    """
+    global _mappings_cache, _cache_timestamp
+
+    try:
+        if not isinstance(mappings, dict) or "mappings" not in mappings:
+            logger.error("Invalid mappings format, expected {mappings: [...]}")
+            return False
+
+        # Normalize mappings to ensure consistent structure
+        normalized_mappings = {"mappings": []}
+
+        for mapping in mappings.get("mappings", []):
+            if not isinstance(mapping, dict) or "yolink_device_id" not in mapping:
+                logger.warning(f"Skipping invalid mapping entry: {mapping}")
+                continue
+
+            # Create normalized mapping with default values
+            normalized_mapping = {
+                "yolink_device_id": mapping["yolink_device_id"],
+                "chekt_zone": mapping.get("chekt_zone", "N/A"),
+                "sia_zone": mapping.get("sia_zone", "N/A"),
+                "relay_channel": mapping.get("relay_channel", "N/A"),
+                "door_prop_alarm": mapping.get("door_prop_alarm", False),
+                "use_relay": mapping.get("use_relay", False)
+            }
+
+            normalized_mappings["mappings"].append(normalized_mapping)
+
+        # Save to Redis
+        redis_client = await get_redis()
+        await redis_client.set("mappings", json.dumps(normalized_mappings))
+
+        # Update cache
+        _mappings_cache = normalized_mappings.copy()
+        _cache_timestamp = __import__('time').time()
+
+        logger.debug(f"Saved {len(normalized_mappings['mappings'])} mappings to Redis")
+        return True
+    except Exception as e:
+        logger.error(f"Error saving mappings: {e}")
+        return False
+
+
+async def get_mapping(yolink_device_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Retrieve a specific mapping by YoLink device ID asynchronously.
+
+    Args:
+        yolink_device_id (str): Device ID to get mapping for
+
+    Returns:
+        Optional[Dict[str, Any]]: Mapping for the device or None if not found
+    """
+    mappings = await get_mappings()
+    for mapping in mappings.get("mappings", []):
+        if mapping.get("yolink_device_id") == yolink_device_id:
+            return mapping
+    return None
+
+
 async def save_mapping(device_id: str, chekt_zone: str = None, sia_zone: str = None,
                        relay_channel: str = None, use_relay: bool = None,
                        door_prop_alarm: bool = None) -> bool:
@@ -149,100 +218,6 @@ async def save_mapping(device_id: str, chekt_zone: str = None, sia_zone: str = N
             # Clear cache to ensure future get_mapping calls retrieve updated data
             await clear_cache()
             logger.debug("Cleared mappings cache after saving")
-        return success
-    except Exception as e:
-        logger.error(f"Error saving mapping for device {device_id}: {e}")
-        return False
-
-
-async def get_mapping(yolink_device_id: str) -> Optional[Dict[str, Any]]:
-    """
-    Retrieve a specific mapping by YoLink device ID asynchronously.
-
-    Args:
-        yolink_device_id (str): Device ID to get mapping for
-
-    Returns:
-        Optional[Dict[str, Any]]: Mapping for the device or None if not found
-    """
-    mappings = await get_mappings()
-    for mapping in mappings.get("mappings", []):
-        if mapping.get("yolink_device_id") == yolink_device_id:
-            return mapping
-    return None
-
-
-async def save_mapping(device_id: str, chekt_zone: str = None, sia_zone: str = None,
-                       relay_channel: str = None, use_relay: bool = None,
-                       door_prop_alarm: bool = None) -> bool:
-    """
-    Save a mapping for a specific device ID asynchronously.
-    If relay_channel is set and not 'N/A', automatically set use_relay to True.
-
-    Args:
-        device_id (str): YoLink device ID
-        chekt_zone (str, optional): CHEKT zone to map to
-        sia_zone (str, optional): SIA zone to map to
-        relay_channel (str, optional): Relay channel to map to
-        use_relay (bool, optional): Whether to use relay
-        door_prop_alarm (bool, optional): Whether door prop alarm is enabled
-
-    Returns:
-        bool: Success status
-    """
-    try:
-        # Get all mappings
-        mappings = await get_mappings()
-        found = False
-
-        # If relay_channel is provided and valid, automatically set use_relay to True
-        if relay_channel is not None and relay_channel != 'N/A' and relay_channel.strip():
-            use_relay = True
-
-        # Find and update existing mapping
-        for mapping in mappings.get("mappings", []):
-            if mapping.get("yolink_device_id") == device_id:
-                # Update specified fields only
-                if chekt_zone is not None:
-                    mapping["chekt_zone"] = chekt_zone
-                if sia_zone is not None:
-                    mapping["sia_zone"] = sia_zone
-                if relay_channel is not None:
-                    mapping["relay_channel"] = relay_channel
-                if use_relay is not None:
-                    mapping["use_relay"] = use_relay
-                if door_prop_alarm is not None:
-                    mapping["door_prop_alarm"] = door_prop_alarm
-                found = True
-                break
-
-        # Create new mapping if not found
-        if not found:
-            new_mapping = {"yolink_device_id": device_id}
-            if chekt_zone is not None:
-                new_mapping["chekt_zone"] = chekt_zone
-            else:
-                new_mapping["chekt_zone"] = "N/A"
-
-            if sia_zone is not None:
-                new_mapping["sia_zone"] = sia_zone
-            else:
-                new_mapping["sia_zone"] = "N/A"
-
-            if relay_channel is not None:
-                new_mapping["relay_channel"] = relay_channel
-            else:
-                new_mapping["relay_channel"] = "N/A"
-
-            new_mapping["use_relay"] = use_relay if use_relay is not None else False
-            new_mapping["door_prop_alarm"] = door_prop_alarm if door_prop_alarm is not None else False
-
-            mappings.setdefault("mappings", []).append(new_mapping)
-
-        # Save all mappings
-        success = await save_mappings(mappings)
-        if success:
-            logger.debug(f"Successfully saved mapping for device {device_id}")
         return success
     except Exception as e:
         logger.error(f"Error saving mapping for device {device_id}: {e}")

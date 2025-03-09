@@ -8,11 +8,9 @@ and Modbus relays via MQTT, with a robust web interface for management, served o
 
 import os
 import logging
-import json
 import base64
 import io
 import asyncio
-import time
 import ssl
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
@@ -28,7 +26,6 @@ import pyotp
 import qrcode
 import psutil
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from redis.asyncio import Redis
 from dotenv import load_dotenv
 import aiohttp
 
