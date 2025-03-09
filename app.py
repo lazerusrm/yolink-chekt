@@ -126,24 +126,15 @@ async def init_default_user() -> None:
     try:
         redis_client = await get_redis()
         keys = await redis_client.keys("user:*")
-        logger.debug(f"Existing user keys: {keys}")
         if not keys:
             default_username = "admin"
             default_password = "admin123"
-            logger.debug("Attempting to hash password for default user")
-            # Hash the password asynchronously
-            hashed_password = await bcrypt.generate_password_hash(default_password)
-            logger.debug(f"Raw hashed password type: {type(hashed_password)}, value: {hashed_password}")
-            # Ensure it’s a string for Redis storage
-            hashed_password_str = hashed_password.decode('utf-8') if isinstance(hashed_password, bytes) else str(hashed_password)
-            logger.debug(f"Decoded hashed password: {hashed_password_str}")
-            user_data = {"password": hashed_password_str, "force_password_change": "True"}
+            hashed_password = bcrypt.generate_password_hash(default_password).decode('utf-8')
+            user_data = {"password": hashed_password, "force_password_change": True}  # Changed to True for consistency
             await save_user_data(default_username, user_data)
             logger.info("Created default admin user")
-        else:
-            logger.debug("Users already exist, skipping default user creation")
     except Exception as e:
-        logger.error(f"Error creating default user: {e}", exc_info=True)
+        logger.error(f"Error creating default user: {e}")
 
 @app.route("/init_user_debug", methods=["GET"]) #Remove Before Production
 async def debug_init_user():
@@ -390,7 +381,7 @@ async def change_password():
         elif len(new_password) < 8:
             await flash("Password must be at least 8 characters", "error")
         else:
-            user_data["password"] = (await bcrypt.generate_password_hash(new_password)).decode('utf-8')
+            user_data["password"] = bcrypt.generate_password_hash(new_password).decode('utf-8')  # Removed await
             user_data["force_password_change"] = False
             await save_user_data(auth.current_user.auth_id, user_data)
             logger.info(f"User {auth.current_user.auth_id} changed password successfully")
@@ -569,7 +560,7 @@ async def create_user():
     if existing_user:
         await flash("Username already exists", "error")
     else:
-        hashed_password = (await bcrypt.generate_password_hash(password)).decode('utf-8')
+        hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')  # Removed await
         user_data = {"password": hashed_password, "force_password_change": True}
         await save_user_data(username, user_data)
         await flash("User created successfully", "success")
