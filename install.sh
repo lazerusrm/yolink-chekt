@@ -285,13 +285,41 @@ generate_basic_certificate() {
     return 0
 }
 
+get_clean_ip() {
+    # Try multiple methods to get the IP address - NO LOGGING!
+    local host_ip=""
+
+    # Method 1: Using ip route (most common)
+    if command -v ip >/dev/null 2>&1; then
+        host_ip=$(ip route get 8.8.8.8 2>/dev/null | grep -o 'src [0-9.]*' | awk '{print $2}')
+    fi
+
+    # Method 2: Using hostname (fallback)
+    if [ -z "$host_ip" ] && command -v hostname >/dev/null 2>&1; then
+        host_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+    fi
+
+    # Method 3: Using ifconfig (older systems)
+    if [ -z "$host_ip" ] && command -v ifconfig >/dev/null 2>&1; then
+        host_ip=$(ifconfig | grep -Eo 'inet (addr:)?([0-9]*\.){3}[0-9]*' | grep -Eo '([0-9]*\.){3}[0-9]*' | grep -v '127.0.0.1' | head -n 1)
+    fi
+
+    # Just return the IP - nothing else
+    echo "$host_ip"
+}
+
 # Function to generate SSL certificates with proper error handling
 generate_ssl_certificates() {
     local host_ip="$1"
     local cert_dir="$2"
     local cert_file="${cert_dir}/cert.pem"
     local key_file="${cert_dir}/key.pem"
-    local error_output="/tmp/openssl_error_$$.txt"
+
+    # Ensure we have a clean IP (just the address, no log messages)
+    if [[ ! "$host_ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        echo "IP contains invalid characters, cleaning it up"
+        host_ip=$(get_clean_ip)
+    fi
 
     log_info "Generating SSL certificates..."
 
