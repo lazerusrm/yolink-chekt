@@ -160,13 +160,15 @@ unzip -o "$APP_DIR/repo.zip" -d "$TEMP_DIR" || { log "Error: Failed to unzip rep
 log "Updating application files..."
 rsync -a --exclude='.env' --exclude='docker-compose.yml' "$TEMP_DIR/yolink-chekt-main/"* "$APP_DIR/" || { log "Error: Failed to sync updated files"; exit 1; }
 
-# Ensure templates directory exists on host
+# Explicitly ensure templates directory is updated on host
 if [ -d "$TEMP_DIR/yolink-chekt-main/templates" ]; then
-    log "Ensuring templates directory is updated on host..."
-    mkdir -p "$APP_DIR/templates"
+    log "Updating templates directory on host..."
+    mkdir -p "$APP_DIR/templates" || { log "Error: Failed to create templates directory"; exit 1; }
     cp -r "$TEMP_DIR/yolink-chekt-main/templates/"* "$APP_DIR/templates/" || { log "Error: Failed to update templates directory"; exit 1; }
+    log "Templates directory updated successfully"
 else
-    log "Warning: templates directory not found in repository"
+    log "Error: templates directory not found in repository"
+    exit 1
 fi
 
 # Update rtsp-streamer directory

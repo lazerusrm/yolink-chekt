@@ -1,11 +1,3 @@
-Modified app.py
-python
-
-Collapse
-
-Wrap
-
-Copy
 """
 Yolink to CHEKT Integration - Version 1.4 (Enhanced)
 ======================================================
