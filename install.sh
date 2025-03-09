@@ -2,7 +2,7 @@
 
 # YoLink CHEKT Integration - Unified Robust Installation and Update Script
 # This script handles both first-time installation and updates with zero manual edits required
-VERSION="1.2.0"
+VERSION="1.2.1"
 
 # Ensure the script is run with bash
 if [ -z "$BASH_VERSION" ]; then
@@ -152,6 +152,7 @@ verify_success() {
 #===================================
 
 # Function to get the IP address silently (no logging during capture)
+# This is important when using in variable substitution to avoid log messages in config files
 get_host_ip_silent() {
     # Try multiple methods to get the IP address
     local host_ip=""
@@ -178,6 +179,11 @@ get_host_ip_silent() {
 
     echo "$host_ip"
     return 0
+}
+
+# Version for direct variable assignment that doesn't produce log output
+get_host_ip_for_config() {
+    get_host_ip_silent
 }
 
 # Function to get the IP address with logging and fallback mechanisms
@@ -225,7 +231,7 @@ save_host_ip() {
         cp "$ip_file" "${ip_file}.bak" 2>/dev/null || log_warning "Failed to backup current IP file"
     fi
 
-    # Save the new IP
+    # Save the new IP (just the IP, without any log messages)
     echo "$host_ip" > "$ip_file"
     verify_success "Failed to save IP address to $ip_file" false
 
@@ -459,6 +465,12 @@ generate_docker_compose() {
 
     log_info "Generating docker-compose.yml with IP $host_ip..."
 
+    # Make sure we have a clean IP address without any log messages
+    if [[ ! "$host_ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        log_warning "Invalid IP format detected. Getting clean IP address."
+        host_ip=$(get_host_ip_for_config)
+    fi
+
     # Backup existing file if it exists
     if [ -f "$docker_compose_file" ]; then
         cp "$docker_compose_file" "${docker_compose_file}.bak.$(date +%Y%m%d%H%M%S)" 2>/dev/null
@@ -466,7 +478,8 @@ generate_docker_compose() {
     fi
 
     # Generate the docker-compose.yml file
-    cat > "$docker_compose_file" << EOF
+    log_info "Writing docker-compose.yml with clean IP: $host_ip"
+    cat > "$docker_compose_file" << EOD
 version: '3'
 
 services:
@@ -597,10 +610,40 @@ networks:
 
 volumes:
   redis-data:
-EOF
+EOD
 
-    verify_success "Failed to generate docker-compose.yml" true
-    log_success "docker-compose.yml generated successfully with TARGET_IP=$host_ip"
+    # Remove any potential control characters from the file
+    if command -v dos2unix >/dev/null 2>&1; then
+        # If dos2unix is available, use it to clean up line endings
+        dos2unix "$docker_compose_file" >/dev/null 2>&1
+    else
+        # Otherwise, try to use tr to remove carriage returns
+        tr -d '\r' < "$docker_compose_file" > "${docker_compose_file}.tmp"
+        mv "${docker_compose_file}.tmp" "$docker_compose_file"
+    fi
+
+    # Verify the file was created properly
+    if [ -s "$docker_compose_file" ]; then
+        log_success "docker-compose.yml generated successfully with TARGET_IP=$host_ip"
+    else
+        handle_error "Failed to generate docker-compose.yml" true
+    fi
+
+    # Validate file format if docker-compose is available
+    if command -v docker >/dev/null 2>&1; then
+        log_info "Validating docker-compose.yml..."
+        if docker compose -f "$docker_compose_file" config >/dev/null 2>&1; then
+            log_success "docker-compose.yml validation successful"
+        elif command -v docker-compose >/dev/null 2>&1 && docker-compose -f "$docker_compose_file" config >/dev/null 2>&1; then
+            log_success "docker-compose.yml validation successful (using docker-compose)"
+        else
+            log_warning "docker-compose.yml validation failed - check for syntax errors"
+            if [ "$DEBUG_MODE" = "true" ]; then
+                log_info "Content of docker-compose.yml:"
+                cat "$docker_compose_file"
+            fi
+        fi
+    fi
 }
 
 #===================================
@@ -1098,7 +1141,7 @@ update_docker_compose_ip() {
         echo "Warning: Failed to create backup of docker-compose.yml"
     }
 
-    # Generate a new docker-compose.yml file
+    # Generate a new docker-compose.yml file with clean IP address (no logs)
     cat > "$docker_compose_file" << EOF
 version: '3'
 
@@ -1231,6 +1274,10 @@ networks:
 volumes:
   redis-data:
 EOF
+
+    # Remove any carriage returns that might cause issues
+    tr -d '\r' < "$docker_compose_file" > "${docker_compose_file}.clean" && \
+    mv "${docker_compose_file}.clean" "$docker_compose_file"
 
     # Verify the file was created
     if [ -s "$docker_compose_file" ]; then
@@ -1550,7 +1597,7 @@ if [ "$0" != "$APP_DIR/install.sh" ]; then
     log_info "Copying installer script to $APP_DIR/install.sh..."
     cp "$0" "$APP_DIR/install.sh"
     chmod +x "$APP_DIR/install.sh"
-}
+fi
 
 # Step 14: Set up cron job to run updates
 if command -v crontab >/dev/null 2>&1; then
