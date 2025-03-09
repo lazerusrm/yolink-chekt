@@ -41,10 +41,6 @@ async def load_config() -> Dict[str, Any]:
 
 
 async def run_monitor_mqtt() -> None:
-    """
-    Run the Monitor MQTT client asynchronously with graceful shutdown
-    and exponential backoff reconnection.
-    """
     global connected, mqtt_client, shutdown_event
 
     config = await load_config()
@@ -55,74 +51,56 @@ async def run_monitor_mqtt() -> None:
         f"password={'*' * len(mqtt_config['password']) if mqtt_config['password'] else 'None'}"
     )
 
-    # Record status in Redis
     redis_client = await get_redis()
     await redis_client.set("monitor_mqtt_status", "connecting")
 
-    # Continue to retry connection until a shutdown is requested
     retry_count = 0
-    max_retry_delay = 60  # Maximum retry delay in seconds
+    max_retry_delay = 60
 
     while not shutdown_event.is_set():
         try:
-            # Calculate retry delay with exponential backoff
             if retry_count > 0:
-                # Exponential backoff with a small random factor
                 base_delay = min(max_retry_delay, 1 * (2 ** (retry_count - 1)))
-                # Add a small random factor to avoid reconnection storms
                 jitter = 0.1 * base_delay * (0.9 + 0.2 * (hash(asyncio.get_event_loop().time()) % 10) / 10)
                 delay = base_delay + jitter
                 logger.info(f"Retrying Monitor MQTT connection in {delay:.1f} seconds (attempt {retry_count})...")
-
-                # Wait for the delay or until shutdown is requested
                 try:
                     await asyncio.wait_for(shutdown_event.wait(), timeout=delay)
                     if shutdown_event.is_set():
                         logger.info("Shutdown requested during reconnection delay")
                         break
                 except asyncio.TimeoutError:
-                    pass  # Delay completed
+                    pass
 
-            # Extract hostname without protocol
             hostname = mqtt_config["url"].replace("mqtt://", "").replace("mqtts://", "")
-
             async with Client(
-                    hostname=hostname,
-                    port=mqtt_config["port"],
-                    client_id=mqtt_config["client_id"],
-                    username=mqtt_config["username"] if mqtt_config["username"] else None,
-                    password=mqtt_config["password"] if mqtt_config["password"] else None,
-                    keepalive=60
+                hostname=hostname,
+                port=mqtt_config["port"],
+                identifier=mqtt_config["client_id"],  # Changed from client_id to identifier
+                username=mqtt_config["username"] if mqtt_config["username"] else None,
+                password=mqtt_config["password"] if mqtt_config["password"] else None,
+                keepalive=60
             ) as client:
-                mqtt_client = client  # Store the client for publishing
+                mqtt_client = client
                 connected = True
-                retry_count = 0  # Reset retry counter on successful connection
+                retry_count = 0
 
-                # Update status in Redis
                 await redis_client.set("monitor_mqtt_status", "connected")
                 await redis_client.set("monitor_mqtt_last_connected", asyncio.get_event_loop().time())
 
                 logger.info(f"Connected to Monitor MQTT at {hostname}:{mqtt_config['port']}")
-
-                # Keep the connection alive, but exit if a shutdown is requested
                 while not shutdown_event.is_set():
-                    # Periodically ping to ensure connection is still active
                     await asyncio.sleep(30)
-                    # Optional: perform a ping or other keep-alive action
 
-                # Exit the context, which will disconnect the client gracefully
                 logger.info("Shutdown requested, disconnecting Monitor MQTT client")
-                break  # Break out of the outer loop as well
+                break
 
         except MqttError as e:
             connected = False
             mqtt_client = None
             retry_count += 1
-
-            # Update status in Redis
             await redis_client.set("monitor_mqtt_status", "disconnected")
             await redis_client.set("monitor_mqtt_error", str(e))
-
             logger.error(f"Monitor MQTT connection failed (attempt {retry_count}): {e}")
             if str(e).startswith("authentication"):
                 logger.error("Authentication failed. Check username/password in config.")
@@ -131,14 +109,10 @@ async def run_monitor_mqtt() -> None:
             connected = False
             mqtt_client = None
             retry_count += 1
-
-            # Update status in Redis
             await redis_client.set("monitor_mqtt_status", "error")
             await redis_client.set("monitor_mqtt_error", str(e))
-
             logger.error(f"Unexpected error in Monitor MQTT client (attempt {retry_count}): {e}")
 
-    # Final cleanup
     connected = False
     mqtt_client = None
     await redis_client.set("monitor_mqtt_status", "shutdown")
