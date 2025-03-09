@@ -28,8 +28,8 @@ services:
       dockerfile: Dockerfile.modbus-proxy
     container_name: modbus-proxy
     ports:
-      - "1502:1502"  # Modbus TCP port
-      - "5001:5000"  # Proxy API port
+      - "1502:1502"
+      - "5001:5000"
     environment:
       - TARGET_IP=10.250.250.2
       - TARGET_PORT=502
