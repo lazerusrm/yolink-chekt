@@ -274,41 +274,14 @@ async def login():
         password = form.get("password", "")
         totp_code = form.get("totp_code", "").strip()
 
-        if not username or not password:
-            await flash("Username and password are required", "error")
-            logger.debug("Login attempt failed: Missing username or password")
-            return await render_template("login.html", totp_required=False)
-
-        user_data = await get_user_data(username)
-        if not user_data:
-            logger.info(f"Login attempt with non-existent username: {username}")
-            await flash("Invalid credentials", "error")
-            return await render_template("login.html", totp_required=False)
-
-        try:
-            # Use quart_bcrypt's check_password_hash
-            if not bcrypt.check_password_hash(user_data["password"], password):
-                logger.info(f"Failed login attempt for {username}: incorrect password")
-                await flash("Invalid credentials", "error")
+        # If totp_code is provided, use the pending_user from session
+        if totp_code and "pending_user" in session:
+            username = session["pending_user"]
+            user_data = await get_user_data(username)
+            if not user_data:
+                await flash("Session expired or invalid user", "error")
+                session.pop("pending_user", None)
                 return await render_template("login.html", totp_required=False)
-        except Exception as e:
-            logger.error(f"Error verifying password for {username}: {e}")
-            await flash("Authentication error", "error")
-            return await render_template("login.html", totp_required=False)
-
-        # Store username in session after password validation
-        session["pending_user"] = username
-        logger.debug(f"Session set with pending_user: {username}")
-
-        if user_data.get("force_password_change", False):
-            login_user(User(username))
-            logger.info(f"User {username} logged in, redirecting to change password")
-            return redirect(url_for("change_password"))
-
-        if "totp_secret" in user_data:
-            if not totp_code:
-                logger.debug(f"TOTP required for {username}, prompting for code")
-                return await render_template("login.html", totp_required=True, username=username)
 
             totp = pyotp.TOTP(user_data["totp_secret"])
             if not totp.verify(totp_code):
@@ -322,13 +295,48 @@ async def login():
             logger.info(f"User {username} logged in successfully with TOTP")
             return redirect(url_for("index"))
 
+        # Initial login attempt with username/password
+        if not username or not password:
+            await flash("Username and password are required", "error")
+            logger.debug("Login attempt failed: Missing username or password")
+            return await render_template("login.html", totp_required=False)
+
+        user_data = await get_user_data(username)
+        if not user_data:
+            logger.info(f"Login attempt with non-existent username: {username}")
+            await flash("Invalid credentials", "error")
+            return await render_template("login.html", totp_required=False)
+
+        try:
+            if not bcrypt.check_password_hash(user_data["password"], password):
+                logger.info(f"Failed login attempt for {username}: incorrect password")
+                await flash("Invalid credentials", "error")
+                return await render_template("login.html", totp_required=False)
+        except Exception as e:
+            logger.error(f"Error verifying password for {username}: {e}")
+            await flash("Authentication error", "error")
+            return await render_template("login.html", totp_required=False)
+
+        # Password verified, set pending_user and check TOTP
+        session["pending_user"] = username
+        logger.debug(f"Session set with pending_user: {username}")
+
+        if user_data.get("force_password_change", False):
+            login_user(User(username))
+            logger.info(f"User {username} logged in, redirecting to change password")
+            return redirect(url_for("change_password"))
+
+        if "totp_secret" in user_data:
+            logger.debug(f"TOTP required for {username}, prompting for code")
+            return await render_template("login.html", totp_required=True, username=username)
+
         # No TOTP configured, proceed to setup
         login_user(User(username))
         session.pop("pending_user", None)
         logger.info(f"User {username} logged in, redirecting to TOTP setup")
         return redirect(url_for("setup_totp"))
 
-    # Handle GET request or initial page load
+    # Handle GET request
     pending_user = session.get("pending_user")
     if pending_user:
         user_data = await get_user_data(pending_user)

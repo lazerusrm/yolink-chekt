@@ -198,18 +198,17 @@
         </form>
         {% with messages = get_flashed_messages(with_categories=True) %}
             {% if messages %}
-                <div class="message-box {{ 'error' if message[0] == 'error' else 'success' }}" style="margin-top: 1.5rem;">
-                    {% for category, message in messages %}
+                {% for category, message in messages %}
+                    <div class="message-box {{ category }}">
                         <p class="mb-0">{{ message }}</p>
-                    {% endfor %}
-                </div>
+                    </div>
+                {% endfor %}
             {% endif %}
         {% endwith %}
     </div>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/js/bootstrap.bundle.min.js"></script>
     <script>
-        // Auto-focus the first visible input field
         document.addEventListener('DOMContentLoaded', function() {
             const input = document.querySelector('.form-control');
             if (input) input.focus();
