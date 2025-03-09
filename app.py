@@ -136,7 +136,8 @@ async def startup() -> None:
     """Initialize background services and resources."""
     logger.info("Starting application services")
 
-    # Ensure Redis connection with retries
+    # Ensure Redis connection with retries and initial delay
+    await asyncio.sleep(1)  # Give Redis time to start
     if not await ensure_redis_connection(max_retries=5, backoff_base=1.5):
         logger.error("Failed to connect to Redis after retries")
         raise SystemExit(1)
@@ -145,41 +146,44 @@ async def startup() -> None:
     stats = await get_pool_stats()
     logger.info(f"Redis pool stats before tasks: {stats}")
 
-    # Initialize default user
+    # Initialize default user (might call Redis, but should be safe now)
     await init_default_user()
+
+    # Explicitly fetch initial devices after Redis is confirmed stable
+    from device_manager import get_all_devices
+    try:
+        initial_devices = await get_all_devices()
+        logger.info(f"Initial device fetch retrieved {len(initial_devices)} devices")
+    except Exception as e:
+        logger.error(f"Failed initial device fetch: {e}", exc_info=True)
 
     # Start services if configured, with staggered delays
     if await is_system_configured():
         logger.info("System configured, launching background tasks")
 
-        # Start YoLink MQTT
         app.bg_tasks.append(asyncio.create_task(run_mqtt_client()))
         app.config['shutdown_yolink'] = shutdown_yolink_mqtt
         await asyncio.sleep(1)
         stats = await get_pool_stats()
         logger.debug(f"Redis pool stats after YoLink MQTT: {stats}")
 
-        # Start Monitor MQTT
         app.bg_tasks.append(asyncio.create_task(run_monitor_mqtt()))
         app.config['shutdown_monitor'] = shutdown_monitor_mqtt
         await asyncio.sleep(1)
         stats = await get_pool_stats()
         logger.debug(f"Redis pool stats after Monitor MQTT: {stats}")
 
-        # Start Modbus
         app.bg_tasks.append(asyncio.create_task(modbus_initialize()))
         app.config['shutdown_modbus'] = shutdown_modbus
         await asyncio.sleep(1)
         stats = await get_pool_stats()
         logger.info(f"Redis pool stats after all tasks started: {stats}")
-
     else:
         logger.warning("System not fully configured; skipping background tasks")
         app.config['shutdown_yolink'] = None
         app.config['shutdown_monitor'] = None
         app.config['shutdown_modbus'] = None
 
-    # Start scheduler
     scheduler.start()
     logger.info("Scheduler started")
 

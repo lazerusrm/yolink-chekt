@@ -1,5 +1,5 @@
 """
-Redis Connection Manager - Shared Redis Client Pool
+Redis Connection Manager - Shared Redis Client Pool (Enhanced)
 =============================================================
 
 Provides a centralized Redis connection manager with a shared connection pool,
@@ -17,22 +17,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Logging setup
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 # Global connection pool and client
 _pool: Optional[ConnectionPool] = None
 _redis_client: Optional[Redis] = None
 _lock = asyncio.Lock()
-
-# Configuration with environment variable fallbacks
-_config: Dict[str, Any] = {
-    "host": os.getenv("REDIS_HOST", "redis"),
-    "port": int(os.getenv("REDIS_PORT", 6379)),
-    "db": int(os.getenv("REDIS_DB", 0)),
-    "decode_responses": True,
-    "max_connections": int(os.getenv("REDIS_MAX_CONNECTIONS", 50))
-}
+_initializing = False  # Track initialization state
 
 
 async def get_redis() -> Redis:
@@ -45,7 +37,7 @@ async def get_redis() -> Redis:
     Raises:
         ConnectionError: If connection to Redis fails
     """
-    global _redis_client, _pool
+    global _redis_client, _pool, _initializing
 
     async with _lock:
         if _redis_client is None or not await is_client_alive(_redis_client):
@@ -59,16 +51,30 @@ async def get_redis() -> Redis:
                     max_connections=_config["max_connections"]
                 )
 
+            _initializing = True
             _redis_client = Redis(connection_pool=_pool)
             try:
+                logger.debug("Attempting Redis ping")
                 await _redis_client.ping()
                 logger.info(f"Connected to Redis at {_config['host']}:{_config['port']}, db={_config['db']}")
                 stats = await get_pool_stats()
                 logger.debug(f"Pool stats after connection: {stats}")
             except Exception as e:
-                logger.error(f"Failed to connect to Redis: {e}")
+                logger.error(f"Failed to connect to Redis: {e}", exc_info=True)
                 _redis_client = None
+                _initializing = False
                 raise ConnectionError(f"Redis connection failed: {e}")
+            finally:
+                _initializing = False
+        else:
+            logger.debug("Reusing existing Redis client")
+            stats = await get_pool_stats()
+            logger.debug(f"Pool stats before returning client: {stats}")
+
+        # Wait if still initializing
+        if _initializing:
+            logger.debug("Waiting for Redis initialization to complete")
+            await asyncio.sleep(0.1)  # Small delay to avoid race
 
     return _redis_client
 
@@ -193,13 +199,24 @@ async def get_pool_stats() -> Dict[str, int]:
     global _pool
     if _pool is None:
         return {"total": 0, "in_use": 0, "available": 0}
-    in_use = len(_pool._in_use_connections)  # Length of set
+    in_use = len(_pool._in_use_connections)
     total = _pool.max_connections
+    logger.debug(f"Pool stats calculation: total={total}, in_use={in_use}")
     return {
         "total": total,
         "in_use": in_use,
         "available": total - in_use
     }
+
+
+# Configuration with environment variable fallbacks (moved to bottom to avoid reference before assignment)
+_config: Dict[str, Any] = {
+    "host": os.getenv("REDIS_HOST", "redis"),
+    "port": int(os.getenv("REDIS_PORT", 6379)),
+    "db": int(os.getenv("REDIS_DB", 0)),
+    "decode_responses": True,
+    "max_connections": int(os.getenv("REDIS_MAX_CONNECTIONS", 50))
+}
 
 
 if __name__ == "__main__":
