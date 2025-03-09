@@ -129,8 +129,8 @@ async def init_default_user() -> None:
         if not keys:
             default_username = "admin"
             default_password = "admin123"
-            hashed_password = (await bcrypt.hashpw(default_password.encode('utf-8'))).decode('utf-8')
-            user_data = {"password": hashed_password, "force_password_change": True}
+            hashed_password = await bcrypt.generate_password_hash(default_password)
+            user_data = {"password": hashed_password.decode('utf-8'), "force_password_change": True}
             await save_user_data(default_username, user_data)
             logger.info("Created default admin user")
     except Exception as e:
@@ -267,15 +267,6 @@ async def shutdown() -> None:
 async def login():
     """
     Handle user login with password and optional TOTP authentication.
-
-    This route manages the authentication flow:
-    1. Validates username and password.
-    2. If TOTP is configured, prompts for TOTP code while preserving session state.
-    3. Redirects to the dashboard or TOTP setup upon success.
-
-    Returns:
-        - GET: Renders the login page.
-        - POST: Processes login, redirects to index or TOTP setup, or re-renders with errors.
     """
     if request.method == "POST":
         form = await request.form
@@ -295,15 +286,14 @@ async def login():
             return await render_template("login.html", totp_required=False)
 
         try:
-            password_match = await bcrypt.checkpw(password.encode('utf-8'), user_data["password"].encode('utf-8'))
+            # Use quart_bcrypt's check_password_hash
+            if not bcrypt.check_password_hash(user_data["password"], password):
+                logger.info(f"Failed login attempt for {username}: incorrect password")
+                await flash("Invalid credentials", "error")
+                return await render_template("login.html", totp_required=False)
         except Exception as e:
             logger.error(f"Error verifying password for {username}: {e}")
             await flash("Authentication error", "error")
-            return await render_template("login.html", totp_required=False)
-
-        if not password_match:
-            logger.info(f"Failed login attempt for {username}: incorrect password")
-            await flash("Invalid credentials", "error")
             return await render_template("login.html", totp_required=False)
 
         # Store username in session after password validation
@@ -328,7 +318,7 @@ async def login():
 
             # TOTP verified, finalize login
             login_user(User(username))
-            session.pop("pending_user", None)  # Clean up
+            session.pop("pending_user", None)
             logger.info(f"User {username} logged in successfully with TOTP")
             return redirect(url_for("index"))
 
@@ -367,14 +357,14 @@ async def change_password():
         new_password = form.get("new_password", "")
         confirm_password = form.get("confirm_password", "")
 
-        if not await bcrypt.checkpw(current_password.encode('utf-8'), user_data["password"].encode('utf-8')):
+        if not bcrypt.check_password_hash(user_data["password"], current_password):
             await flash("Current password is incorrect", "error")
         elif new_password != confirm_password:
             await flash("New passwords do not match", "error")
         elif len(new_password) < 8:
             await flash("Password must be at least 8 characters", "error")
         else:
-            user_data["password"] = (await bcrypt.hashpw(new_password.encode('utf-8'))).decode('utf-8')
+            user_data["password"] = (await bcrypt.generate_password_hash(new_password)).decode('utf-8')
             user_data["force_password_change"] = False
             await save_user_data(auth.current_user.auth_id, user_data)
             if "totp_secret" not in user_data:
@@ -552,7 +542,7 @@ async def create_user():
     if existing_user:
         await flash("Username already exists", "error")
     else:
-        hashed_password = (await bcrypt.hashpw(password.encode('utf-8'))).decode('utf-8')
+        hashed_password = (await bcrypt.generate_password_hash(password)).decode('utf-8')
         user_data = {"password": hashed_password, "force_password_change": True}
         await save_user_data(username, user_data)
         await flash("User created successfully", "success")
