@@ -136,6 +136,11 @@ async def init_default_user() -> None:
     except Exception as e:
         logger.error(f"Error creating default user: {e}")
 
+@app.route("/init_user_debug", methods=["GET"])
+async def debug_init_user():
+    await init_default_user()
+    return jsonify({"status": "init triggered"})
+
 # ----------------------- Utility Functions -----------------------
 
 async def check_mqtt_connection_active() -> Dict[str, Any]:
