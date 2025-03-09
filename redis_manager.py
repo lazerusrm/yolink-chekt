@@ -215,7 +215,7 @@ _config: Dict[str, Any] = {
     "port": int(os.getenv("REDIS_PORT", 6379)),
     "db": int(os.getenv("REDIS_DB", 0)),
     "decode_responses": True,
-    "max_connections": int(os.getenv("REDIS_MAX_CONNECTIONS", 50))
+    "max_connections": int(os.getenv("REDIS_MAX_CONNECTIONS", 200))
 }
 
 

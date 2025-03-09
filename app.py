@@ -136,20 +136,18 @@ async def startup() -> None:
     """Initialize background services and resources."""
     logger.info("Starting application services")
 
-    # Ensure Redis connection with retries and initial delay
-    await asyncio.sleep(1)  # Give Redis time to start
+    await asyncio.sleep(1)
     if not await ensure_redis_connection(max_retries=5, backoff_base=1.5):
         logger.error("Failed to connect to Redis after retries")
         raise SystemExit(1)
 
-    # Log initial pool stats
     stats = await get_pool_stats()
     logger.info(f"Redis pool stats before tasks: {stats}")
 
-    # Initialize default user (might call Redis, but should be safe now)
     await init_default_user()
 
-    # Explicitly fetch initial devices after Redis is confirmed stable
+    stats = await get_pool_stats()
+    logger.debug(f"Redis pool stats before get_all_devices: {stats}")
     from device_manager import get_all_devices
     try:
         initial_devices = await get_all_devices()
@@ -157,7 +155,6 @@ async def startup() -> None:
     except Exception as e:
         logger.error(f"Failed initial device fetch: {e}", exc_info=True)
 
-    # Start services if configured, with staggered delays
     if await is_system_configured():
         logger.info("System configured, launching background tasks")
 

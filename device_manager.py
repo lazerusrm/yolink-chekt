@@ -311,25 +311,34 @@ async def refresh_yolink_devices() -> bool:
 
 async def get_all_devices() -> List[Dict[str, Any]]:
     """
-    Retrieve all devices from Redis.
+    Retrieve all devices from Redis with retry logic.
 
     Returns:
         List[Dict[str, Any]]: List of device dictionaries
     """
-    try:
-        redis_client = await get_redis()
-        keys = await redis_client.keys("device:*")
-        if not keys:
-            logger.debug("No devices found in Redis")
-            return []
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            logger.debug("Fetching Redis client for get_all_devices")
+            redis_client = await get_redis()
+            logger.debug("Fetching device keys")
+            keys = await redis_client.keys("device:*")
+            logger.debug(f"Found {len(keys)} device keys")
+            if not keys:
+                logger.debug("No devices found in Redis")
+                return []
 
-        device_jsons = await asyncio.gather(*[redis_client.get(key) for key in keys])
-        devices = [json.loads(dj) for dj in device_jsons if dj]
-        logger.debug(f"Retrieved {len(devices)} devices from Redis")
-        return devices
-    except Exception as e:
-        logger.error(f"Error retrieving all devices: {e}")
-        return []
+            device_jsons = await asyncio.gather(*[redis_client.get(key) for key in keys])
+            devices = [json.loads(dj) for dj in device_jsons if dj]
+            logger.debug(f"Retrieved {len(devices)} devices from Redis")
+            return devices
+        except Exception as e:
+            logger.error(f"Error retrieving all devices (attempt {attempt+1}/{max_retries}): {e}", exc_info=True)
+            if attempt < max_retries - 1:
+                await asyncio.sleep(1)  # Delay before retry
+            else:
+                logger.error("All retries exhausted for get_all_devices")
+                return []
 
 
 async def get_device_data(device_id: str) -> Optional[Dict[str, Any]]:
