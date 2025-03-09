@@ -917,7 +917,7 @@ restart_containers() {
 
         # Force remove any remaining containers
         log_warning "Force removing containers..."
-        $DOCKER_COMPOSE_CMD down -v --remove-orphans || {
+        $DOCKER_COMPOSE_CMD down --remove-orphans || {
             log_warning "Failed to clean up containers. Continuing anyway..."
         }
     fi
@@ -1638,7 +1638,10 @@ track_progress "Starting Docker containers"
 restart_containers
 
 # Step 13: Copy self to app directory (if not already there)
-if [ "$0" != "$APP_DIR/install.sh" ]; then
+SCRIPT_PATH=$(realpath "$0" 2>/dev/null || readlink -f "$0" 2>/dev/null || echo "$0")
+TARGET_PATH=$(realpath "$APP_DIR/install.sh" 2>/dev/null || readlink -f "$APP_DIR/install.sh" 2>/dev/null || echo "$APP_DIR/install.sh")
+
+if [ "$SCRIPT_PATH" != "$TARGET_PATH" ]; then
     log_info "Copying installer script to $APP_DIR/install.sh..."
     cp "$0" "$APP_DIR/install.sh"
     chmod +x "$APP_DIR/install.sh"

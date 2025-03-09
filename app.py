@@ -266,18 +266,21 @@ async def shutdown() -> None:
 @app.route("/login", methods=["GET", "POST"])
 async def login():
     """
-    Handle user login with password and optional TOTP authentication.
+    Handle user login with a streamlined first-time workflow.
     """
+    logger.debug(f"Request method: {request.method}, Form data: {await request.form}")
     if request.method == "POST":
         form = await request.form
         username = form.get("username", "").strip()
         password = form.get("password", "")
         totp_code = form.get("totp_code", "").strip()
+        logger.debug(f"Username: {username}, Password: {'***' if password else ''}, TOTP: {totp_code}, Session: {session}")
 
-        # If totp_code is provided, use the pending_user from session
+        # Handle TOTP submission
         if totp_code and "pending_user" in session:
             username = session["pending_user"]
             user_data = await get_user_data(username)
+            logger.debug(f"TOTP step - User data: {user_data}")
             if not user_data:
                 await flash("Session expired or invalid user", "error")
                 session.pop("pending_user", None)
@@ -289,19 +292,19 @@ async def login():
                 await flash("Invalid TOTP code", "error")
                 return await render_template("login.html", totp_required=True, username=username)
 
-            # TOTP verified, finalize login
             login_user(User(username))
             session.pop("pending_user", None)
             logger.info(f"User {username} logged in successfully with TOTP")
             return redirect(url_for("index"))
 
-        # Initial login attempt with username/password
+        # Initial login with username/password
         if not username or not password:
             await flash("Username and password are required", "error")
             logger.debug("Login attempt failed: Missing username or password")
             return await render_template("login.html", totp_required=False)
 
         user_data = await get_user_data(username)
+        logger.debug(f"Initial login - User data for {username}: {user_data}")
         if not user_data:
             logger.info(f"Login attempt with non-existent username: {username}")
             await flash("Invalid credentials", "error")
@@ -317,29 +320,29 @@ async def login():
             await flash("Authentication error", "error")
             return await render_template("login.html", totp_required=False)
 
-        # Password verified, set pending_user and check TOTP
+        # Authentication successful, set session and determine next step
         session["pending_user"] = username
         logger.debug(f"Session set with pending_user: {username}")
 
         if user_data.get("force_password_change", False):
             login_user(User(username))
-            logger.info(f"User {username} logged in, redirecting to change password")
+            logger.info(f"First-time login for {username}, redirecting to change password")
+            await flash("Please change your default password", "warning")
             return redirect(url_for("change_password"))
 
-        if "totp_secret" in user_data:
-            logger.debug(f"TOTP required for {username}, prompting for code")
-            return await render_template("login.html", totp_required=True, username=username)
+        if "totp_secret" not in user_data:
+            login_user(User(username))
+            logger.info(f"User {username} logged in, no TOTP set, redirecting to setup")
+            return redirect(url_for("setup_totp"))
 
-        # No TOTP configured, proceed to setup
-        login_user(User(username))
-        session.pop("pending_user", None)
-        logger.info(f"User {username} logged in, redirecting to TOTP setup")
-        return redirect(url_for("setup_totp"))
+        logger.debug(f"TOTP required for {username}, prompting for code")
+        return await render_template("login.html", totp_required=True, username=username)
 
-    # Handle GET request
+    # GET request: Check for pending TOTP step
     pending_user = session.get("pending_user")
     if pending_user:
         user_data = await get_user_data(pending_user)
+        logger.debug(f"GET request - Pending user data: {user_data}")
         if user_data and "totp_secret" in user_data:
             logger.debug(f"Pending user {pending_user} found in session, showing TOTP prompt")
             return await render_template("login.html", totp_required=True, username=pending_user)
@@ -357,8 +360,9 @@ async def logout():
 @app.route("/change_password", methods=["GET", "POST"])
 @login_required
 async def change_password():
-    """Handle password change for the current user."""
+    """Handle password change and redirect to TOTP setup if needed."""
     user_data = await get_user_data(auth.current_user.auth_id)
+    logger.debug(f"Change password - User data: {user_data}")
     if request.method == "POST":
         form = await request.form
         current_password = form.get("current_password", "")
@@ -375,10 +379,11 @@ async def change_password():
             user_data["password"] = (await bcrypt.generate_password_hash(new_password)).decode('utf-8')
             user_data["force_password_change"] = False
             await save_user_data(auth.current_user.auth_id, user_data)
+            logger.info(f"User {auth.current_user.auth_id} changed password successfully")
             if "totp_secret" not in user_data:
+                await flash("Password changed, now set up two-factor authentication", "success")
                 return redirect(url_for("setup_totp"))
             await flash("Password changed successfully", "success")
-            logger.info(f"User {auth.current_user.auth_id} changed password successfully")
             return redirect(url_for("index"))
 
     return await render_template("change_password.html")
@@ -386,7 +391,7 @@ async def change_password():
 @app.route("/setup_totp", methods=["GET", "POST"])
 @login_required
 async def setup_totp():
-    """Set up TOTP two-factor authentication for the current user."""
+    """Set up TOTP and redirect to dashboard."""
     user_data = await get_user_data(auth.current_user.auth_id)
     if "totp_secret" in user_data:
         await flash("TOTP already set up", "info")
@@ -405,8 +410,8 @@ async def setup_totp():
             user_data["totp_secret"] = totp_secret
             await save_user_data(auth.current_user.auth_id, user_data)
             session.pop("totp_secret", None)
-            await flash("TOTP setup complete", "success")
             logger.info(f"User {auth.current_user.auth_id} completed TOTP setup")
+            await flash("TOTP setup complete, you’re all set!", "success")
             return redirect(url_for("index"))
         else:
             await flash("Invalid TOTP code", "error")
