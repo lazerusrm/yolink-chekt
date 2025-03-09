@@ -14,3 +14,4 @@ quart==0.20.0
 quart-auth==0.11.0
 quart-bcrypt
 aiomqtt>=1.0.0
+hypercorn>=0.17.3

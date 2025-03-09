@@ -207,7 +207,10 @@ async def login():
         totp_code = form.get("totp_code")
 
         user_data = await get_user_data(username)
-        password_match = await bcrypt.check_password_hash(user_data["password"], password) if user_data else False
+        if user_data:
+            password_match = await bcrypt.check_password_hash(user_data["password"], password)
+        else:
+            password_match = False
         if not user_data or not password_match:
             await flash("Invalid credentials", "error")
             return await render_template("login.html", totp_required=False)
