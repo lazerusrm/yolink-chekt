@@ -49,6 +49,8 @@ from websocket_handler import init_websocket  # Import WebSocket handler
 app = Quart(__name__, template_folder='templates')  # Explicitly set template folder
 app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY", "default-secret-key")
 app.config["SESSION_COOKIE_SECURE"] = os.getenv("ENV", "development") != "development"  # True in prod, False in dev
+app.config["SESSION_COOKIE_HTTPONLY"] = True  # Prevent JS access to cookies
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"  # CSRF protection
 if app.config["SECRET_KEY"] == "default-secret-key":
     logging.warning("Using default SECRET_KEY; set FLASK_SECRET_KEY in .env for security")
 
@@ -78,6 +80,16 @@ app.bg_tasks: List[asyncio.Task] = []
 
 # Initialize WebSocket functionality
 init_websocket(app)
+
+# ----------------------- Middleware -----------------------
+
+@app.before_request
+async def enforce_https():
+    """Redirect HTTP requests to HTTPS in production."""
+    if app.config["ENV"] != "development" and request.scheme != "https":
+        url = request.url.replace("http://", "https://", 1)
+        logger.debug(f"Redirecting HTTP request to HTTPS: {url}")
+        return redirect(url, code=301)
 
 # ----------------------- Authentication Helpers -----------------------
 
@@ -225,15 +237,27 @@ async def shutdown() -> None:
 
 @app.route("/login", methods=["GET", "POST"])
 async def login():
-    """Handle user login with password and optional TOTP authentication."""
+    """
+    Handle user login with password and optional TOTP authentication.
+
+    This route manages the authentication flow:
+    1. Validates username and password.
+    2. If TOTP is configured, prompts for TOTP code while preserving session state.
+    3. Redirects to the dashboard or TOTP setup upon success.
+
+    Returns:
+        - GET: Renders the login page.
+        - POST: Processes login, redirects to index or TOTP setup, or re-renders with errors.
+    """
     if request.method == "POST":
         form = await request.form
-        username = form.get("username", "")
+        username = form.get("username", "").strip()
         password = form.get("password", "")
-        totp_code = form.get("totp_code")
+        totp_code = form.get("totp_code", "").strip()
 
         if not username or not password:
             await flash("Username and password are required", "error")
+            logger.debug("Login attempt failed: Missing username or password")
             return await render_template("login.html", totp_required=False)
 
         user_data = await get_user_data(username)
@@ -243,7 +267,7 @@ async def login():
             return await render_template("login.html", totp_required=False)
 
         try:
-            password_match = bcrypt.check_password_hash(user_data["password"], password)
+            password_match = await bcrypt.checkpw(password.encode('utf-8'), user_data["password"].encode('utf-8'))
         except Exception as e:
             logger.error(f"Error verifying password for {username}: {e}")
             await flash("Authentication error", "error")
@@ -254,6 +278,10 @@ async def login():
             await flash("Invalid credentials", "error")
             return await render_template("login.html", totp_required=False)
 
+        # Store username in session after password validation
+        session["pending_user"] = username
+        logger.debug(f"Session set with pending_user: {username}")
+
         if user_data.get("force_password_change", False):
             login_user(User(username))
             logger.info(f"User {username} logged in, redirecting to change password")
@@ -261,21 +289,34 @@ async def login():
 
         if "totp_secret" in user_data:
             if not totp_code:
+                logger.debug(f"TOTP required for {username}, prompting for code")
                 return await render_template("login.html", totp_required=True, username=username)
+
             totp = pyotp.TOTP(user_data["totp_secret"])
             if not totp.verify(totp_code):
                 logger.info(f"Failed TOTP verification for {username}")
                 await flash("Invalid TOTP code", "error")
                 return await render_template("login.html", totp_required=True, username=username)
-        else:
+
+            # TOTP verified, finalize login
             login_user(User(username))
-            logger.info(f"User {username} logged in, redirecting to TOTP setup")
-            return redirect(url_for("setup_totp"))
+            session.pop("pending_user", None)  # Clean up
+            logger.info(f"User {username} logged in successfully with TOTP")
+            return redirect(url_for("index"))
 
+        # No TOTP configured, proceed to setup
         login_user(User(username))
-        logger.info(f"User {username} logged in successfully")
-        return redirect(url_for("index"))
+        session.pop("pending_user", None)
+        logger.info(f"User {username} logged in, redirecting to TOTP setup")
+        return redirect(url_for("setup_totp"))
 
+    # Handle GET request or initial page load
+    pending_user = session.get("pending_user")
+    if pending_user:
+        user_data = await get_user_data(pending_user)
+        if user_data and "totp_secret" in user_data:
+            logger.debug(f"Pending user {pending_user} found in session, showing TOTP prompt")
+            return await render_template("login.html", totp_required=True, username=pending_user)
     return await render_template("login.html", totp_required=False)
 
 @app.route("/logout")
@@ -298,7 +339,7 @@ async def change_password():
         new_password = form.get("new_password", "")
         confirm_password = form.get("confirm_password", "")
 
-        if not bcrypt.check_password_hash(user_data["password"], current_password):
+        if not await bcrypt.checkpw(current_password.encode('utf-8'), user_data["password"].encode('utf-8')):
             await flash("Current password is incorrect", "error")
         elif new_password != confirm_password:
             await flash("New passwords do not match", "error")
@@ -765,7 +806,7 @@ async def test_modbus():
     except Exception as e:
         results["tests"].append({"name": "Modbus Connection", "success": False, "message": f"Modbus connection error: {str(e)}"})
 
-    if any(test["success"] for test in results["tests"] if test["name"] == "Modbus Connection"):
+    if palate(test["success"] for test in results["tests"] if test["name"] == "Modbus Connection"):
         try:
             relay_result = await trigger_relay(1, True, 0.5)
             results["tests"].append({"name": "Relay Operation", "success": relay_result, "message": f"Relay trigger {'successful' if relay_result else 'failed'}"})

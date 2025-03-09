@@ -1,13 +1,34 @@
 const express = require('express');
 const http = require('http');
+const https = require('https'); // Added for HTTPS support
 const path = require('path');
 const bodyParser = require('body-parser');
 const { initWebSocketServer, broadcastSensorUpdate } = require('./ws-handler');
 const apiRoutes = require('./routes/api');
+// Load self-signed certificates
+const fs = require('fs');
 
-// Create Express app and HTTP server
+// Create Express app
 const app = express();
-const server = http.createServer(app);
+
+// Configure HTTPS agent to trust self-signed certificates
+const agent = new https.Agent({
+  rejectUnauthorized: false, // Warning: Only for development with self-signed certs
+});
+
+// Create HTTP server (will be upgraded to HTTPS if certs are provided)
+let server;
+if (fs.existsSync('/app/cert.pem') && fs.existsSync('/app/key.pem')) {
+  const options = {
+    cert: fs.readFileSync('/app/cert.pem'),
+    key: fs.readFileSync('/app/key.pem'),
+  };
+  server = https.createServer(options, app);
+  console.log('Running WebSocket proxy with HTTPS');
+} else {
+  server = http.createServer(app);
+  console.log('Running WebSocket proxy with HTTP (certificates not found)');
+}
 
 // Initialize WebSocket server
 const wsServer = initWebSocketServer(server);
@@ -32,7 +53,25 @@ app.get('/', (req, res) => {
   res.render('dashboard-ws');
 });
 
-// Sample data for development/testing
+// Fetch sensor data from yolink_chekt
+const API_URL = process.env.API_URL || 'https://yolink_chekt:5000/get_sensor_data';
+const FETCH_INTERVAL = parseInt(process.env.FETCH_INTERVAL) || 5000;
+
+async function fetchSensorData() {
+  try {
+    const response = await fetch(API_URL, { agent });
+    if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+    const data = await response.json();
+    broadcastSensorUpdate(data.sensors || []);
+  } catch (error) {
+    console.error('Error fetching sensor data:', error.message);
+  }
+}
+
+// Start periodic fetching
+setInterval(fetchSensorData, FETCH_INTERVAL);
+
+// Sample data for development/testing (unchanged)
 let sampleSensors = [
   {
     deviceId: "sensor1",
@@ -74,16 +113,11 @@ setTimeout(() => {
 // Simulate updates every 10 seconds for development
 if (process.env.NODE_ENV !== 'production') {
   setInterval(() => {
-    // Update a random sensor
     const index = Math.floor(Math.random() * sampleSensors.length);
     const sensor = sampleSensors[index];
-
-    // Randomly change state
     const states = ['normal', 'alarm', 'open', 'closed'];
     sensor.state = states[Math.floor(Math.random() * states.length)];
     sensor.last_seen = new Date().toISOString();
-
-    // Broadcast update
     broadcastSensorUpdate(sampleSensors);
     console.log(`Updated sensor: ${sensor.name} to state: ${sensor.state}`);
   }, 10000);

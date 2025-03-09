@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - YoLink to CHEKT</title>
+    <title>TOTP Verification - YoLink to CHEKT</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css" integrity="sha512-Kc323vGBEqzTmouAECnVceyQqyqdsSiqLQISBL29aUW4U/M7pSPA/gEUZQqv1cwx4OnYxTxve5UMg5GT6L4JJg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
     <style>
@@ -35,7 +35,7 @@
             background-attachment: fixed;
         }
 
-        .login-container {
+        .totp-container {
             background-color: var(--bg-card);
             padding: 2.5rem;
             border-radius: var(--card-border-radius);
@@ -48,12 +48,12 @@
             transition: transform 0.3s ease, box-shadow 0.3s ease;
         }
 
-        .login-container:hover {
+        .totp-container:hover {
             transform: translateY(-5px);
             box-shadow: 0 15px 35px rgba(0, 0, 0, 0.4);
         }
 
-        .login-container h1 {
+        .totp-container h1 {
             color: var(--text-primary);
             margin-bottom: 2rem;
             font-size: 2rem;
@@ -151,23 +151,20 @@
     </style>
 </head>
 <body>
-    <div class="login-container">
+    <div class="totp-container">
         <div class="logo-wrapper">
             <div class="logo">
-                <i class="fas fa-lock"></i>
+                <i class="fas fa-key"></i>
             </div>
         </div>
-        <h1>Login</h1>
-        <form method="POST" action="{{ url_for('login') }}">
+        <h1>Enter Authentication Code</h1>
+        <p style="text-align: center; color: var(--text-secondary);">Please enter the code from your authenticator app for {{ username }}</p>
+        <form method="POST" action="{{ url_for('totp') }}">
             <div class="form-group">
-                <label for="username">Username</label>
-                <input type="text" id="username" name="username" class="form-control" placeholder="Enter username" required autocomplete="username">
+                <label for="totp_code">TOTP Code</label>
+                <input type="text" id="totp_code" name="totp_code" class="form-control" placeholder="Enter 6-digit code" required autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" inputmode="numeric">
             </div>
-            <div class="form-group">
-                <label for="password">Password</label>
-                <input type="password" id="password" name="password" class="form-control" placeholder="Enter password" required autocomplete="current-password">
-            </div>
-            <button type="submit" class="btn btn-login">Login</button>
+            <button type="submit" class="btn btn-login">Verify</button>
         </form>
         {% with messages = get_flashed_messages() %}
             {% if messages %}
