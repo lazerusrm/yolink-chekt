@@ -189,23 +189,208 @@ async def close() -> None:
                 _pool = None
 
 
+I
+'ll analyze the codebase and provide insights and recommendations based on the requirements.txt versions. Looking at your YoLink to CHEKT integration system, I can see it'
+s
+a
+Python - based
+application
+that
+connects
+YoLink
+smart
+sensors
+to
+alarm
+systems
+using
+various
+protocols.
+Architecture
+Overview
+Your
+system
+connects
+several
+components:
+
+YoLink
+sensors
+via
+MQTT
+CHEKT
+alarm
+system
+integration
+Modbus
+relay
+support
+SIA
+protocol
+integration
+Redis
+for data storage
+    WebSocket
+    for real - time updates
+        A
+    web
+    dashboard
+    with authentication
+
+Version
+Analysis
+Looking
+at
+your
+requirements.txt:
+Copywerkzeug >= 3.0
+.3
+PyYAML >= 6.0
+aiohttp >= 3.8
+.5
+APScheduler >= 3.10
+.4
+pyotp >= 2.6
+.0
+qrcode[pil] >= 7.3
+pytz
+cryptography
+redis >= 5.0
+.3
+python - dotenv
+psutil
+pymodbus >= 3.8
+.6
+quart == 0.20
+.0
+quart - auth == 0.11
+.0
+quart - bcrypt >= 0.0
+.9
+aiomqtt >= 1.0
+.0
+hypercorn >= 0.17
+.3
+You
+'re using Quart 0.20.0, which is specifically pinned, along with modern versions of Redis (5.0.3+) and pymodbus (3.8.6+). This indicates a modern async-based architecture.
+Code
+Quality
+Analysis and Recommendations
+
+Redis
+Connection
+Management:
+You
+'ve created a centralized redis_manager.py which is excellent. This avoids connection pool fragmentation.
+Async
+Patterns:
+Your
+codebase
+makes
+good
+use
+of
+asyncio
+patterns
+with proper error handling and resource management.
+Security:
+You
+have
+TOTP
+2
+FA, secure
+password
+storage, and HTTPS
+support, which
+are
+all
+good
+security
+practices.
+MQTT
+Reliability:
+Your
+YoLink
+MQTT
+client
+has
+robust
+reconnection
+logic and error
+handling.
+Code
+Organization:
+The
+modular
+structure
+separating
+config, device
+management, mappings, etc. is well - thought - out.
+
+Specific
+Recommendations
+
+Streamlined
+Configuration
+Flow:
+The
+Docker
+setup
+for nginx, Redis, and other services looks good, but I notice some potential HTTPS handling issues.
+Redis
+Connection
+Pool
+Optimization:
+Your
+Redis
+connection
+pooling
+could
+be
+improved
+for better resource utilization:
+
+pythonCopy  # In redis_manager.py
+
+
 async def get_pool_stats() -> Dict[str, int]:
     """
-    Get current connection pool statistics for debugging.
-
-    Returns:
-        Dict[str, int]: Pool stats (total, in use, available)
+    Get current connection pool statistics with better accuracy.
     """
     global _pool
     if _pool is None:
         return {"total": 0, "in_use": 0, "available": 0}
+
+    # More accurate count of in-use connections
     in_use = len(_pool._in_use_connections)
     total = _pool.max_connections
-    logger.debug(f"Pool stats calculation: total={total}, in_use={in_use}")
+
     return {
         "total": total,
         "in_use": in_use,
-        "available": total - in_use
+        "available": total - in_use,
+        "usage_percent": round(in_use * 100 / total, 1) if total else 0
+    }
+
+    # Add monitoring of connection creation/closing
+    current_time = time.time()
+    if not hasattr(_pool, '_last_stats_time'):
+        _pool._last_stats_time = current_time
+        _pool._connections_created_since_last = 0
+        _pool._connections_closed_since_last = 0
+
+    # Reset counters periodically
+    if current_time - _pool._last_stats_time > 60:  # Reset every minute
+        _pool._connections_created_since_last = 0
+        _pool._connections_closed_since_last = 0
+        _pool._last_stats_time = current_time
+
+    return {
+        "total": total,
+        "in_use": in_use,
+        "available": total - in_use,
+        "created_last_minute": getattr(_pool, '_connections_created_since_last', 0),
+        "closed_last_minute": getattr(_pool, '_connections_closed_since_last', 0)
     }
 
 

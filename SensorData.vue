@@ -2,7 +2,8 @@
   <div class="sensor-data-container">
     <!-- Your existing sensor display code -->
     <div v-if="connectionError" class="connection-error">
-      <p><i class="fas fa-exclamation-triangle"></i> WebSocket connection error. Reconnecting...</p>
+      <p><i class="fas fa-exclamation-triangle"></i> Connection error: {{ errorMessage }}</p>
+      <button @click="refreshData" class="refresh-button">Refresh Now</button>
     </div>
   </div>
 </template>
@@ -12,133 +13,121 @@ export default {
   data() {
     return {
       sensors: [],
-      websocket: null,
       connectionError: false,
-      reconnectAttempts: 0,
-      maxReconnectAttempts: 10,
-      reconnectDelay: 5000
+      errorMessage: '',
+      lastUpdateTime: null,
+      pollingInterval: null,
+      isRefreshing: false
     };
   },
   mounted() {
     // Load initial sensor data
-    this.loadSensors();
+    this.refreshData();
 
-    // Set up real-time updates
-    this.setupWebSocket();
+    // Set up polling for updates
+    this.startPolling();
+
+    // Add window event listeners for visibility changes
+    document.addEventListener('visibilitychange', this.handleVisibilityChange);
   },
   beforeDestroy() {
-    // Clean up WebSocket connection
-    this.cleanupWebSocket();
+    // Clean up polling interval
+    this.stopPolling();
+
+    // Remove event listeners
+    document.removeEventListener('visibilitychange', this.handleVisibilityChange);
   },
   methods: {
-    // Load initial sensor data
-    async loadSensors() {
+    // Start polling for updates
+    startPolling() {
+      // Clear any existing interval
+      this.stopPolling();
+
+      // Set up new polling interval (every 5 seconds)
+      this.pollingInterval = setInterval(() => {
+        // Only refresh if page is visible
+        if (document.visibilityState === 'visible' && !this.isRefreshing) {
+          this.refreshData();
+        }
+      }, 5000); // 5 second polling interval
+
+      console.log('Started polling for sensor updates');
+    },
+
+    // Stop polling
+    stopPolling() {
+      if (this.pollingInterval) {
+        clearInterval(this.pollingInterval);
+        this.pollingInterval = null;
+        console.log('Stopped polling for sensor updates');
+      }
+    },
+
+    // Handle page visibility changes
+    handleVisibilityChange() {
+      if (document.visibilityState === 'visible') {
+        console.log('Page is now visible, refreshing data');
+        // Refresh immediately when page becomes visible
+        this.refreshData();
+
+        // Restart polling if needed
+        if (!this.pollingInterval) {
+          this.startPolling();
+        }
+      } else {
+        // Optionally stop polling when page is hidden to save resources
+        // this.stopPolling();
+      }
+    },
+
+    // Refresh sensor data
+    async refreshData() {
+      // Prevent multiple simultaneous refreshes
+      if (this.isRefreshing) return;
+
+      this.isRefreshing = true;
+
       try {
         const response = await fetch('/api/sensors');
-        const data = await response.json();
-        this.sensors = data.sensors;
-      } catch (error) {
-        console.error('Error loading sensors:', error);
-      }
-    },
 
-    // Set up WebSocket connection for real-time updates
-    setupWebSocket() {
-      // Clean up any existing connection
-      this.cleanupWebSocket();
-
-      // Determine websocket URL (use wss:// for HTTPS)
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}/ws`;
-
-      console.log(`Setting up ${protocol} connection to ${wsUrl}`);
-
-      try {
-        this.websocket = new WebSocket(wsUrl);
-
-        // Handle incoming messages
-        this.websocket.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            if (data.type === 'sensors-update') {
-              this.sensors = data.sensors;
-              this.connectionError = false;
-              this.reconnectAttempts = 0;
-
-              // Emit an event that the RTSP streamer will listen for
-              this.$emit('sensors-updated', this.sensors);
-            }
-          } catch (error) {
-            console.error('Error processing WebSocket message:', error);
-          }
-        };
-
-        // Handle connection open
-        this.websocket.onopen = () => {
-          console.log(`WebSocket connection established via ${protocol}`);
-          this.connectionError = false;
-          this.reconnectAttempts = 0;
-        };
-
-        // Handle errors
-        this.websocket.onerror = (error) => {
-          console.error('WebSocket error:', error);
-          this.connectionError = true;
-        };
-
-        // Handle connection close and attempt reconnection
-        this.websocket.onclose = (event) => {
-          console.log(`WebSocket connection closed (code: ${event.code}). Reconnecting...`);
-          this.connectionError = true;
-
-          // Only attempt reconnect if we haven't exceeded max attempts
-          if (this.reconnectAttempts < this.maxReconnectAttempts) {
-            this.reconnectAttempts++;
-            const delay = this.reconnectDelay * Math.min(this.reconnectAttempts, 5);
-            console.log(`Reconnect attempt ${this.reconnectAttempts} in ${delay/1000}s`);
-
-            setTimeout(() => {
-              this.setupWebSocket();
-            }, delay);
-          } else {
-            console.error(`Maximum reconnection attempts (${this.maxReconnectAttempts}) reached.`);
-          }
-        };
-      } catch (error) {
-        console.error('Error setting up WebSocket connection:', error);
-        this.connectionError = true;
-      }
-    },
-
-    // Clean up WebSocket connection
-    cleanupWebSocket() {
-      if (this.websocket) {
-        // Remove event listeners to prevent memory leaks
-        this.websocket.onmessage = null;
-        this.websocket.onopen = null;
-        this.websocket.onerror = null;
-        this.websocket.onclose = null;
-
-        // Close the connection if not already closed
-        if (this.websocket.readyState === WebSocket.OPEN ||
-            this.websocket.readyState === WebSocket.CONNECTING) {
-          this.websocket.close();
+        if (!response.ok) {
+          throw new Error(`Server returned ${response.status}: ${response.statusText}`);
         }
 
-        this.websocket = null;
+        const data = await response.json();
+
+        if (data && Array.isArray(data.sensors)) {
+          this.sensors = data.sensors;
+          this.lastUpdateTime = new Date();
+          this.connectionError = false;
+          this.errorMessage = '';
+
+          // Emit event for other components
+          this.$emit('sensors-updated', this.sensors);
+
+          console.log(`Loaded ${this.sensors.length} sensors at ${this.lastUpdateTime.toISOString()}`);
+        } else {
+          console.warn('Received invalid sensor data format:', data);
+        }
+      } catch (error) {
+        console.error('Error refreshing sensor data:', error);
+        this.connectionError = true;
+        this.errorMessage = error.message || 'Failed to load sensor data';
+      } finally {
+        this.isRefreshing = false;
       }
     },
 
-    // Update a sensor (example)
-    updateSensor(sensorId, data) {
-      // Update local data
-      const index = this.sensors.findIndex(s => s.id === sensorId);
-      if (index !== -1) {
-        this.sensors[index] = { ...this.sensors[index], ...data };
-      }
+    // Force an immediate refresh
+    async forceRefresh() {
+      // Stop polling temporarily
+      this.stopPolling();
 
-      // You would typically call an API here to update the server
-      // Then the server would broadcast via WebSocket to all clients
+      // Force refresh
+      await this.refreshData();
+
+      // Restart polling
+      this.startPolling();
     }
   }
 };
@@ -146,7 +135,7 @@ export default {
 
 <style scoped>
 .sensor-data-container {
-  /* Your styles here */
+  /* Your existing styles here */
 }
 
 .connection-error {
@@ -156,9 +145,24 @@ export default {
   border-radius: 4px;
   margin: 1rem 0;
   text-align: center;
+  border: 1px solid #ff3b30;
 }
 
 .connection-error i {
   margin-right: 0.5rem;
+}
+
+.refresh-button {
+  background-color: #007aff;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  margin-top: 0.5rem;
+  cursor: pointer;
+}
+
+.refresh-button:hover {
+  background-color: #0056b3;
 }
 </style>
