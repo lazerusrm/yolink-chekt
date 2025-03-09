@@ -1,3 +1,11 @@
+Modified app.py
+python
+
+Collapse
+
+Wrap
+
+Copy
 """
 Yolink to CHEKT Integration - Version 1.4 (Enhanced)
 ======================================================
@@ -41,9 +49,10 @@ from yolink_mqtt import run_mqtt_client, shutdown_yolink_mqtt, is_connected as y
 from monitor_mqtt import run_monitor_mqtt, shutdown_monitor_mqtt, is_connected as monitor_connected
 from modbus_relay import initialize as modbus_initialize, shutdown_modbus, ensure_connection as modbus_ensure_connection, trigger_relay, configure_proxy
 from redis_manager import get_redis, ensure_connection as ensure_redis_connection, close as close_redis
+from websocket_handler import init_websocket  # Import WebSocket handler
 
 # Initialize Quart app
-app = Quart(__name__)
+app = Quart(__name__, template_folder='templates')  # Explicitly set template folder
 app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY", "default-secret-key")
 if app.config["SECRET_KEY"] == "default-secret-key":
     logging.warning("Using default SECRET_KEY; set FLASK_SECRET_KEY in .env for security")
@@ -71,6 +80,9 @@ bcrypt = Bcrypt(app)
 auth = QuartAuth(app)
 scheduler = AsyncIOScheduler()
 app.bg_tasks = []
+
+# Initialize WebSocket functionality
+init_websocket(app)
 
 # ----------------------- Authentication Helpers -----------------------
 
@@ -726,4 +738,4 @@ async def server_error(error):
     return await render_template("error.html", error="Internal server error"), 500
 
 if __name__ == "__main__":
-    asyncio.run(app.run(host='0.0.0.0', port=int(os.getenv("API_PORT", 5000)))), debug=True)
+    asyncio.run(app.run(host='0.0.0.0', port=int(os.getenv("API_PORT", 5000)), debug=True))
