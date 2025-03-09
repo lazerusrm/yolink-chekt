@@ -124,40 +124,65 @@ async def trigger_alert(device_id: str, state: str, device_type: str) -> None:
     event_description = map_state_to_event(state, device_type)
     logger.debug(f"Device {device_id} event description: {event_description}")
 
-    # Process CHEKT if enabled and properly configured
-    if config.get("chekt", {}).get("enabled", True):
-        chekt_zone = mapping.get('chekt_zone', 'N/A')
-        if chekt_zone and chekt_zone.strip() and chekt_zone != 'N/A':
-            logger.info(f"Triggering CHEKT event in zone {chekt_zone} for device {device_id}")
-            await trigger_chekt_event(device_id, chekt_zone)
-        elif receiver_type == "CHEKT":
-            logger.warning(
-                f"Primary receiver is CHEKT but no valid CHEKT zone for device {device_id}. Mapping: {mapping}")
+    # Process alerts based on the configured primary receiver type
+    if receiver_type == "CHEKT":
+        # Process CHEKT if enabled and properly configured
+        if config.get("chekt", {}).get("enabled", True):
+            chekt_zone = mapping.get('chekt_zone', 'N/A')
+            if chekt_zone and chekt_zone.strip() and chekt_zone != 'N/A':
+                logger.info(f"Triggering CHEKT event in zone {chekt_zone} for device {device_id}")
+                await trigger_chekt_event(device_id, chekt_zone)
+            else:
+                logger.warning(
+                    f"Primary receiver is CHEKT but no valid CHEKT zone for device {device_id}. Mapping: {mapping}")
 
-    # Process SIA if enabled and properly configured
-    if config.get("sia", {}).get("enabled", False):
-        sia_zone = mapping.get('sia_zone', 'N/A')
-        sia_config = config.get('sia', {})
-        if sia_zone and sia_zone.strip() and sia_zone != 'N/A':
-            logger.info(f"Sending SIA event in zone {sia_zone} for device {device_id}")
-            await send_sia_message(device_id, event_description, sia_zone, sia_config)
-        elif receiver_type == "SIA":
-            logger.warning(f"Primary receiver is SIA but no valid SIA zone for device {device_id}. Mapping: {mapping}")
+    elif receiver_type == "SIA":
+        # Process SIA if enabled and properly configured
+        if config.get("sia", {}).get("enabled", False):
+            sia_zone = mapping.get('sia_zone', 'N/A')
+            sia_config = config.get('sia', {})
+            if sia_zone and sia_zone.strip() and sia_zone != 'N/A':
+                logger.info(f"Sending SIA event in zone {sia_zone} for device {device_id}")
+                await send_sia_message(device_id, event_description, sia_zone, sia_config)
+            else:
+                logger.warning(
+                    f"Primary receiver is SIA but no valid SIA zone for device {device_id}. Mapping: {mapping}")
 
-    # Process Modbus relay if enabled and properly configured
+    # ALWAYS process Modbus relays if enabled and mapped, regardless of primary receiver type
     if config.get("modbus", {}).get("enabled", False):
         relay_channel = mapping.get('relay_channel', 'N/A')
-        if relay_channel and relay_channel.strip() and relay_channel != 'N/A':
+        use_relay = mapping.get('use_relay', False)
+
+        # Check both relay_channel and use_relay flag
+        if relay_channel and relay_channel.strip() and relay_channel != 'N/A' and use_relay:
             try:
                 relay_channel = int(relay_channel)
-                logger.info(f"Triggering Modbus relay channel {relay_channel} for device {device_id}")
+                logger.info(
+                    f"Triggering Modbus relay channel {relay_channel} for device {device_id} (regardless of primary receiver)")
                 await trigger_modbus_relay(device_id, relay_channel, state)
             except ValueError:
                 logger.error(f"Invalid relay channel: {relay_channel}. Must be a number.")
         elif receiver_type == "MODBUS":
-            logger.warning(
-                f"Primary receiver is MODBUS but no valid relay channel for device {device_id}. Mapping: {mapping}")
+            if not use_relay:
+                logger.warning(f"Primary receiver is MODBUS but use_relay is not enabled for device {device_id}")
+            elif not relay_channel or relay_channel == 'N/A':
+                logger.warning(
+                    f"Primary receiver is MODBUS but no valid relay channel for device {device_id}. Mapping: {mapping}")
 
+    # Additionally, if primary is not CHEKT or SIA but those are enabled, send alerts to them as well
+    if receiver_type != "CHEKT" and config.get("chekt", {}).get("enabled", True):
+        chekt_zone = mapping.get('chekt_zone', 'N/A')
+        if chekt_zone and chekt_zone.strip() and chekt_zone != 'N/A':
+            logger.info(
+                f"Also triggering CHEKT event in zone {chekt_zone} for device {device_id} (additional receiver)")
+            await trigger_chekt_event(device_id, chekt_zone)
+
+    if receiver_type != "SIA" and config.get("sia", {}).get("enabled", False):
+        sia_zone = mapping.get('sia_zone', 'N/A')
+        sia_config = config.get('sia', {})
+        if sia_zone and sia_zone.strip() and sia_zone != 'N/A':
+            logger.info(f"Also sending SIA event in zone {sia_zone} for device {device_id} (additional receiver)")
+            await send_sia_message(device_id, event_description, sia_zone, sia_config)
 
 async def trigger_chekt_event(device_id: str, target_channel: str) -> None:
     """

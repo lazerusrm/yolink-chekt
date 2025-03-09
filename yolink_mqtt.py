@@ -184,18 +184,31 @@ async def process_message(payload: Dict[str, Any]) -> None:
         # Update state
         if "state" in data:
             device["state"] = data["state"]
+            logger.debug(f"Updated state for device {device_id}: {previous_state} -> {device['state']}")
 
-        # Update battery with mapping
+        # Improved battery handling
         if "battery" in data:
-            battery = data["battery"]
-            if isinstance(battery, int) and 0 <= battery <= 4:
-                device["battery"] = map_battery_value(battery)
-                logger.debug(f"Mapped battery for {device_id} from {battery} to {device['battery']}")
-            elif battery is None and device.get("type") in ["Hub", "Outlet", "Switch"]:
+            raw_battery = data["battery"]
+            logger.debug(f"Raw battery value for device {device_id}: {raw_battery}")
+
+            # Handle different device types and their battery representation
+            if isinstance(raw_battery, int) and 0 <= raw_battery <= 4:
+                # Standard YoLink battery level (0-4)
+                mapped_battery = map_battery_value(raw_battery)
+                device["battery"] = mapped_battery
+                logger.debug(f"Mapped battery value for device {device_id}: {raw_battery} -> {mapped_battery}%")
+            elif device.get("type") in ["Hub", "Outlet", "Switch"] and raw_battery is None:
+                # For mains-powered devices
                 device["battery"] = None
+                logger.debug(f"Device {device_id} is mains powered (battery=None)")
+            elif isinstance(raw_battery, int) or isinstance(raw_battery, float):
+                # Some devices might report actual percentage
+                device["battery"] = int(raw_battery)
+                logger.debug(f"Direct battery percentage for device {device_id}: {device['battery']}%")
             else:
-                device["battery"] = "unknown"
-                logger.debug(f"Battery for {device_id} set to 'unknown' due to invalid value: {battery}")
+                # Failed to parse battery level
+                logger.warning(f"Unknown battery format for device {device_id}: {raw_battery}")
+                device["battery"] = 'unknown'
 
         # Update signal
         if "signal" in data:
@@ -214,7 +227,9 @@ async def process_message(payload: Dict[str, Any]) -> None:
         device["last_seen"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         # Save updated device data
-        await save_device_data(device_id, device)
+        save_result = await save_device_data(device_id, device)
+        if not save_result:
+            logger.error(f"Failed to save device data for {device_id}")
 
         # Process alerts
         config = await load_config()
@@ -249,14 +264,10 @@ async def process_message(payload: Dict[str, Any]) -> None:
                 logger.debug(
                     f"Door prop alarm conditions not met for {device_id} (prev: {previous_state}, current: {device['state']}, alertType: {data.get('alertType')})")
         elif mapping and should_trigger_event(device["state"], previous_state):
-            if receiver_type == "CHEKT":
-                logger.info(
-                    f"Triggering CHEKT alert for device {device_id} with state {device['state']} (from {previous_state})")
-                from alerts import trigger_alert
-                await trigger_alert(device_id, device["state"], device.get("type", "unknown"))
-            elif receiver_type == "SIA":
-                # Add SIA async logic if implemented
-                pass
+            # Always trigger alerts if conditions are met
+            from alerts import trigger_alert
+            logger.info(f"Triggering alert for device {device_id} with state {device['state']} (from {previous_state})")
+            await trigger_alert(device_id, device["state"], device.get("type", "unknown"))
 
         # Publish update to Monitor MQTT
         from monitor_mqtt import publish_update
@@ -273,7 +284,8 @@ async def process_message(payload: Dict[str, Any]) -> None:
     except json.JSONDecodeError as e:
         logger.error(f"Invalid JSON in MQTT payload: {e}")
     except Exception as e:
-        logger.error(f"Error processing message for device {device_id}: {e}")
+        logger.error(f"Error processing message for device {device_id if 'device_id' in locals() else 'unknown'}: {e}")
+        logger.exception("Detailed error information:")
 
 
 async def run_mqtt_client() -> None:

@@ -800,6 +800,7 @@ async def check_modbus_status():
         logger.error(f"Error checking Modbus status: {e}")
         return jsonify({"status": "error", "message": f"Error checking Modbus status: {str(e)}"}), 500
 
+
 @app.route('/test_relay_channel', methods=['POST'])
 @login_required
 async def test_relay_channel():
@@ -816,8 +817,11 @@ async def test_relay_channel():
             return jsonify({"status": "error", "message": "Modbus relay is disabled"}), 400
         if not await modbus_ensure_connection():
             return jsonify({"status": "error", "message": "Cannot connect to Modbus relay"}), 500
-        success = await trigger_relay(channel, True, 1.0)
-        return jsonify({"status": "success" if success else "error", "message": f"Relay channel {channel} pulsed {'successfully' if success else 'failed'}"})
+
+        # Use is_test=True to ensure it always pulses off, regardless of follower mode
+        success = await trigger_relay(channel, True, 1.0, is_test=True)
+        return jsonify({"status": "success" if success else "error",
+                        "message": f"Relay channel {channel} pulsed {'successfully' if success else 'failed'}"})
     except Exception as e:
         logger.error(f"Error testing relay channel {channel}: {e}")
         return jsonify({"status": "error", "message": f"Error testing relay: {str(e)}"}), 500
@@ -864,7 +868,8 @@ async def test_modbus():
 
     if all(test["success"] for test in results["tests"] if test["name"] == "Modbus Connection"):
         try:
-            relay_result = await trigger_relay(1, True, 0.5)
+            # Use is_test=True to ensure relay turns off after test
+            relay_result = await trigger_relay(1, True, 0.5, is_test=True)
             results["tests"].append({"name": "Relay Operation", "success": relay_result, "message": f"Relay trigger {'successful' if relay_result else 'failed'}"})
         except Exception as e:
             results["tests"].append({"name": "Relay Operation", "success": False, "message": f"Relay test error: {str(e)}"})

@@ -192,7 +192,7 @@ async def initialize() -> bool:
         return False
 
 
-async def trigger_relay(channel: int, state: bool = True, pulse_seconds: float = None, follower_mode: bool = None) -> bool:
+async def trigger_relay(channel: int, state: bool = True, pulse_seconds: float = None, follower_mode: bool = None, is_test: bool = False) -> bool:
     """
     Trigger a relay channel asynchronously with optional pulsing.
 
@@ -201,6 +201,7 @@ async def trigger_relay(channel: int, state: bool = True, pulse_seconds: float =
         state (bool): Desired state - True for ON, False for OFF
         pulse_seconds (float, optional): Pulse duration in seconds
         follower_mode (bool, optional): Override follower mode setting from config
+        is_test (bool, optional): Whether this is a test trigger (always pulses)
 
     Returns:
         bool: True if successful, False otherwise
@@ -250,7 +251,9 @@ async def trigger_relay(channel: int, state: bool = True, pulse_seconds: float =
         except Exception as e:
             logger.error(f"Failed to store relay state for channel {channel}: {e}")
 
-        if state and not is_follower_mode and pulse_duration:
+        # For tests, always pulse if state is true, regardless of follower mode
+        if state and ((not is_follower_mode and pulse_duration) or is_test):
+            logger.debug(f"Creating pulse_off task for channel {channel} with duration {pulse_duration}s")
             asyncio.create_task(pulse_off(channel, pulse_duration))
 
         return True
@@ -273,6 +276,7 @@ async def pulse_off(channel: int, delay: float) -> None:
         delay (float): Delay in seconds before turning off
     """
     try:
+        logger.debug(f"Pulse off scheduled for channel {channel} in {delay} seconds")
         await asyncio.sleep(delay)
         result = await trigger_relay(channel, False)
         if result:
@@ -333,7 +337,8 @@ async def test_channels(channel_count: int = None) -> Dict[str, Any]:
     for channel in range(1, channel_count + 1):
         logger.info(f"Testing relay channel {channel}")
         try:
-            result = await trigger_relay(channel, True, 0.2)
+            # Always pass is_test=True for test functionality
+            result = await trigger_relay(channel, True, 0.2, is_test=True)
             results.append({
                 "channel": channel,
                 "success": result,
