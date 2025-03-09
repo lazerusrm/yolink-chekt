@@ -29,6 +29,7 @@ services:
       - FLASK_ENV=production
       - LOG_DIR=/app/logs
       - QUART_DEBUG=true
+      - DISABLE_HTTPS=true  # Add this to use HTTP when behind nginx
     depends_on:
       - redis
       - modbus-proxy
@@ -72,7 +73,7 @@ services:
     restart: unless-stopped
     environment:
       - PORT=3000
-      - API_URL=https://yolink_chekt:5000/get_sensor_data  # Updated to HTTPS
+      - API_URL=http://yolink_chekt:5000/get_sensor_data  # Changed to HTTP
       - FETCH_INTERVAL=5000
     ports:
       - "3010:3000"
