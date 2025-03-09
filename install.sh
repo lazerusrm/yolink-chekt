@@ -314,14 +314,20 @@ generate_ssl_certificates() {
     local cert_dir="$2"
     local cert_file="${cert_dir}/cert.pem"
     local key_file="${cert_dir}/key.pem"
-
-    # Ensure we have a clean IP (just the address, no log messages)
-    if [[ ! "$host_ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-        echo "IP contains invalid characters, cleaning it up"
-        host_ip=$(get_clean_ip)
-    fi
+    local error_output="/tmp/openssl_error_$$.txt"
 
     log_info "Generating SSL certificates..."
+
+    # Extract ONLY the IP address if it contains other text
+    # This will find and extract only the pattern that looks like an IP address
+    clean_ip=$(echo "$host_ip" | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+
+    if [ -z "$clean_ip" ]; then
+        log_warning "Could not extract a valid IP address from '$host_ip', using fallback method"
+        clean_ip=$(get_clean_ip)
+    fi
+
+    log_info "Using clean IP for certificate: $clean_ip"
 
     # Create certificate directory if it doesn't exist
     mkdir -p "$cert_dir" 2>/dev/null
@@ -332,9 +338,7 @@ generate_ssl_certificates() {
     ssl_config=$(mktemp)
     verify_success "Failed to create temporary file for OpenSSL configuration" true
 
-    log_info "Creating OpenSSL configuration..."
-
-    # Write configuration to file with proper error handling
+    # Explicitly write the clean configuration - avoid using variables in the heredoc
     cat > "$ssl_config" << EOF
 [req]
 distinguished_name = req_distinguished_name
@@ -352,20 +356,10 @@ subjectAltName = @alt_names
 [alt_names]
 DNS.1 = localhost
 IP.1 = 127.0.0.1
-IP.2 = $host_ip
+IP.2 = $clean_ip
 EOF
 
-    verify_success "Failed to write OpenSSL configuration file" true
-
-    # Verify the config file was created correctly
-    if [ ! -s "$ssl_config" ]; then
-        handle_error "OpenSSL configuration file is empty" false
-        log_warning "Falling back to basic certificate generation without SAN..."
-        generate_basic_certificate "$cert_file" "$key_file"
-        return 0
-    fi
-
-    # Display config for debugging if in debug mode
+    # Debug: show the exact content of the config file
     if [ "$DEBUG_MODE" = "true" ]; then
         log_info "OpenSSL config file contents:"
         cat "$ssl_config"
@@ -378,7 +372,7 @@ EOF
         -config "$ssl_config" 2>"$error_output"
 
     if [ $? -eq 0 ]; then
-        log_success "SSL certificates generated successfully with IP $host_ip in SAN field"
+        log_success "SSL certificates generated successfully with IP $clean_ip in SAN field"
         # Verify the certificate (optional)
         if [ "$DEBUG_MODE" = "true" ]; then
             log_info "Certificate SAN field verification:"
@@ -1646,6 +1640,25 @@ if command -v crontab >/dev/null 2>&1; then
 else
     log_warning "Cron not available; manual updates will be required."
 fi
+
+# Get a clean IP for the summary display
+CLEAN_IP=$(get_clean_ip)
+if [[ ! "$CLEAN_IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    # If for some reason get_clean_ip fails, try reading from the saved file
+    CLEAN_IP=$(cat "$APP_DIR/current_ip.txt" 2>/dev/null | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | tail -1)
+fi
+
+# Print summary
+echo -e "\n\n======================================================================"
+echo "YoLink CHEKT integration $([ "$OPERATION_MODE" = "install" ] && echo "installation" || echo "update") completed with $([ $ERRORS_ENCOUNTERED -eq 0 ] && echo "no errors" || echo "$ERRORS_ENCOUNTERED errors")."
+echo "IP address monitoring is active and will check for changes every 5 minutes."
+echo "Access the system at: https://$CLEAN_IP"  # Use the clean IP here
+echo "Default login credentials: username=admin, password=admin123"
+if [ $ERRORS_ENCOUNTERED -gt 0 ]; then
+    echo -e "\nWarning: Some errors were encountered during the process."
+    echo "Please check the log file for details: $LOG_FILE"
+fi
+echo "======================================================================\n"
 
 # Print summary
 echo -e "\n\n======================================================================"
