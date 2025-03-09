@@ -11,6 +11,7 @@ services:
     environment:
       - FLASK_ENV=production
       - LOG_DIR=/app/logs
+      - QUART_DEBUG=true
     depends_on:
       - redis
       - modbus-proxy

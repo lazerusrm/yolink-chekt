@@ -208,7 +208,10 @@ async def login():
 
         user_data = await get_user_data(username)
         if user_data:
-            password_match = await bcrypt.check_password_hash(user_data["password"], password)
+            logger.debug(f"check_password_hash type: {type(bcrypt.check_password_hash)}")
+            result = bcrypt.check_password_hash(user_data["password"], password)
+            logger.debug(f"result type: {type(result)}")
+            password_match = await result
         else:
             password_match = False
         if not user_data or not password_match:
@@ -723,4 +726,4 @@ async def server_error(error):
     return await render_template("error.html", error="Internal server error"), 500
 
 if __name__ == "__main__":
-    asyncio.run(app.run(host='0.0.0.0', port=int(os.getenv("API_PORT", 5000))))
+    asyncio.run(app.run(host='0.0.0.0', port=int(os.getenv("API_PORT", 5000)))), debug=True)
