@@ -656,7 +656,6 @@ async def set_door_prop_alarm():
     return jsonify({"status": "success"})
 
 @app.route("/get_sensor_data")
-@login_required
 async def get_sensor_data():
     """Return sensor data for all devices."""
     devices = await get_all_devices()
