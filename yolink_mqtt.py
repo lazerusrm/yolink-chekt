@@ -57,8 +57,7 @@ async def get_device_data(device_id: str) -> Optional[Dict[str, Any]]:
         Optional[Dict[str, Any]]: Device data or None if not found
     """
     from device_manager import get_device_data as get_device_impl
-    redis_client = await get_redis()
-    return await get_device_impl(redis_client, device_id)
+    return await get_device_impl(device_id)  # Only device_id, no redis_client
 
 
 async def save_device_data(device_id: str, data: Dict[str, Any]) -> None:
@@ -82,7 +81,6 @@ async def get_access_token() -> Optional[str]:
         Optional[str]: Access token or None if unavailable
     """
     config = await load_config()
-
     from device_manager import get_access_token as token_impl
     return await token_impl(config)
 

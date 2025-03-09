@@ -13,9 +13,6 @@ from typing import Dict, Any, List, Set, Optional
 import aiohttp
 from quart import Quart, websocket
 
-# Import the Redis manager
-from redis_manager import get_redis
-
 # Logging setup
 logger = logging.getLogger(__name__)
 
@@ -140,10 +137,9 @@ async def broadcast_loop(interval: int) -> None:
     """
     while True:
         try:
-            # Get all devices from Redis
+            # Get all devices
             from device_manager import get_all_devices
-            redis_client = await get_redis()
-            devices = await get_all_devices(redis_client)
+            devices = await get_all_devices()  # No redis_client argument
 
             # Broadcast update if there are devices and WebSocket connections
             if devices and active_connections:
@@ -160,7 +156,6 @@ async def broadcast_loop(interval: int) -> None:
         await asyncio.sleep(interval)
 
 
-# Sample implementation for app.py integration
 def init_websocket(app: Quart) -> None:
     """
     Initialize WebSocket functionality for the application.

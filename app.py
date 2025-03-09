@@ -46,6 +46,7 @@ from websocket_handler import init_websocket  # Import WebSocket handler
 # Initialize Quart app
 app = Quart(__name__, template_folder='templates')  # Explicitly set template folder
 app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY", "default-secret-key")
+app.config["SESSION_COOKIE_SECURE"] = os.getenv("ENV", "development") == "development"  # False in dev, True in prod
 if app.config["SECRET_KEY"] == "default-secret-key":
     logging.warning("Using default SECRET_KEY; set FLASK_SECRET_KEY in .env for security")
 
