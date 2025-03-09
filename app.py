@@ -368,7 +368,7 @@ async def logout():
 @login_required
 async def change_password():
     """Handle password change and redirect to TOTP setup if needed."""
-    user_data = await get_user_data(auth.current_user.auth_id)
+    user_data = await get_user_data(current_user.auth_id)  # Changed from auth.current_user.auth_id
     logger.debug(f"Change password - User data: {user_data}")
     if request.method == "POST":
         form = await request.form
@@ -383,10 +383,10 @@ async def change_password():
         elif len(new_password) < 8:
             await flash("Password must be at least 8 characters", "error")
         else:
-            user_data["password"] = bcrypt.generate_password_hash(new_password).decode('utf-8')  # Removed await
+            user_data["password"] = bcrypt.generate_password_hash(new_password).decode('utf-8')
             user_data["force_password_change"] = False
-            await save_user_data(auth.current_user.auth_id, user_data)
-            logger.info(f"User {auth.current_user.auth_id} changed password successfully")
+            await save_user_data(current_user.auth_id, user_data)  # Changed from auth.current_user.auth_id
+            logger.info(f"User {current_user.auth_id} changed password successfully")  # Changed from auth.current_user.auth_id
             if "totp_secret" not in user_data:
                 await flash("Password changed, now set up two-factor authentication", "success")
                 return redirect(url_for("setup_totp"))
@@ -400,7 +400,7 @@ async def change_password():
 @login_required
 async def setup_totp():
     """Set up TOTP and redirect to dashboard."""
-    user_data = await get_user_data(auth.current_user.auth_id)
+    user_data = await get_user_data(current_user.auth_id)  # Changed from auth.current_user.auth_id
     if "totp_secret" in user_data:
         await flash("TOTP already set up", "info")
         return redirect(url_for("index"))
@@ -416,9 +416,9 @@ async def setup_totp():
         totp = pyotp.TOTP(totp_secret)
         if totp.verify(totp_code):
             user_data["totp_secret"] = totp_secret
-            await save_user_data(auth.current_user.auth_id, user_data)
+            await save_user_data(current_user.auth_id, user_data)  # Changed from auth.current_user.auth_id
             session.pop("totp_secret", None)
-            logger.info(f"User {auth.current_user.auth_id} completed TOTP setup")
+            logger.info(f"User {current_user.auth_id} completed TOTP setup")  # Changed from auth.current_user.auth_id
             await flash("TOTP setup complete, you’re all set!", "success")
             return redirect(url_for("index"))
         else:
@@ -426,7 +426,7 @@ async def setup_totp():
 
     totp_secret = pyotp.random_base32()
     session["totp_secret"] = totp_secret
-    totp_uri = pyotp.TOTP(totp_secret).provisioning_uri(auth.current_user.auth_id, issuer_name="YoLink-CHEKT")
+    totp_uri = pyotp.TOTP(totp_secret).provisioning_uri(current_user.auth_id, issuer_name="YoLink-CHEKT")  # Changed from auth.current_user.auth_id
     img = qrcode.make(totp_uri)
     buffered = io.BytesIO()
     img.save(buffered, format="PNG")
@@ -439,7 +439,7 @@ async def setup_totp():
 @login_required
 async def index():
     """Render the main dashboard page."""
-    user_data = await get_user_data(auth.current_user.auth_id)
+    user_data = await get_user_data(current_user.auth_id)  # Changed from auth.current_user.auth_id
     if user_data.get("force_password_change", False):
         await flash("Please change your default password.", "warning")
         return redirect(url_for("change_password"))
