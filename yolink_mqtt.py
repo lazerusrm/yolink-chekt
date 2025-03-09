@@ -12,10 +12,12 @@ import logging
 from typing import Dict, Any, Optional
 from aiomqtt import Client, MqttError
 from datetime import datetime
-import aiohttp
+import copy
 
 # Import Redis manager
 from redis_manager import get_redis
+# Import important modules
+from mappings import get_mapping
 
 # Logging setup
 from logging.handlers import RotatingFileHandler
@@ -60,16 +62,23 @@ async def get_device_data(device_id: str) -> Optional[Dict[str, Any]]:
     return await get_device_impl(device_id)  # Only device_id, no redis_client
 
 
-async def save_device_data(device_id: str, data: Dict[str, Any]) -> None:
+async def save_device_data(device_id: str, data: Dict[str, Any]) -> bool:
     """
-    Save device data to Redis.
+    Save device data to Redis with proper error handling.
 
     Args:
         device_id (str): Device ID
         data (Dict[str, Any]): Device data to save
+
+    Returns:
+        bool: True if successful, False otherwise
     """
-    from device_manager import save_device_data as save_device_impl
-    await save_device_impl(device_id, data)  # Only two arguments
+    try:
+        from device_manager import save_device_data as save_device_impl
+        return await save_device_impl(device_id, data)
+    except Exception as e:
+        logger.error(f"Error in save_device_data wrapper for {device_id}: {e}")
+        return False
 
 
 async def get_access_token() -> Optional[str]:
@@ -279,21 +288,26 @@ async def process_message(payload):
                 return
 
             # Import alerts module for event triggering
-            from alerts import trigger_alert
+            try:
+                from alerts import trigger_alert
 
-            # Map state to a generic device type for alert processing
-            if device.get("type") == "DoorSensor":
-                device_type = "door_contact"
-            elif device.get("type") == "MotionSensor":
-                device_type = "motion"
-            elif device.get("type") == "LeakSensor":
-                device_type = "leak_sensor"
-            else:
-                device_type = "generic"
+                # Map state to a generic device type for alert processing
+                if device.get("type") == "DoorSensor":
+                    device_type = "door_contact"
+                elif device.get("type") == "MotionSensor":
+                    device_type = "motion"
+                elif device.get("type") == "LeakSensor":
+                    device_type = "leak_sensor"
+                else:
+                    device_type = "generic"
 
-            # Process the device event/alarm
-            logger.info(f"Triggering alert for device {device_id} with state {state}")
-            await trigger_alert(device_id, state, device_type)
+                # Process the device event/alarm
+                logger.info(f"Triggering alert for device {device_id} with state {state}")
+                await trigger_alert(device_id, state, device_type)
+            except ImportError as e:
+                logger.error(f"Error importing alerts module: {e}")
+            except Exception as e:
+                logger.error(f"Error triggering alert for device {device_id}: {e}")
 
         # Publish update to monitor system
         try:

@@ -9,6 +9,7 @@ Redis storage, and MQTT state updates for the Yolink to CHEKT integration.
 import asyncio
 import json
 import logging
+import copy
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
 import aiohttp
@@ -401,7 +402,18 @@ async def save_device_data(device_id: str, data: Dict[str, Any]) -> bool:
             except (TypeError, ValueError) as json_error:
                 logger.error(f"JSON serialization error for device {device_id}: {json_error}")
                 logger.debug(f"Problematic data: {device_data}")
-                return False
+
+                # Fall back to sanitized version
+                sanitized_data = {}
+                for k, v in device_data.items():
+                    try:
+                        json.dumps({k: v})  # Test if this key-value pair can be serialized
+                        sanitized_data[k] = v
+                    except (TypeError, ValueError):
+                        sanitized_data[k] = str(v)  # Convert to string as fallback
+
+                json_data = json.dumps(sanitized_data)
+                logger.debug(f"Using sanitized data for device {device_id}")
 
             # Set the data in Redis
             await redis_client.set(f"device:{device_id}", json_data)
