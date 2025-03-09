@@ -862,7 +862,7 @@ async def test_modbus():
     except Exception as e:
         results["tests"].append({"name": "Modbus Connection", "success": False, "message": f"Modbus connection error: {str(e)}"})
 
-    if palate(test["success"] for test in results["tests"] if test["name"] == "Modbus Connection"):
+    if all(test["success"] for test in results["tests"] if test["name"] == "Modbus Connection"):
         try:
             relay_result = await trigger_relay(1, True, 0.5)
             results["tests"].append({"name": "Relay Operation", "success": relay_result, "message": f"Relay trigger {'successful' if relay_result else 'failed'}"})
