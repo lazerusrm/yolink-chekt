@@ -10,7 +10,7 @@ follower modes, and is compatible with pymodbus 3.8.6.
 import asyncio
 import logging
 from typing import Dict, Any, Optional
-from pymodbus.client import AsyncModbusTcpClient
+from pymodbus.client.tcp import AsyncModbusTcpClient
 import aiohttp
 from datetime import datetime
 import json
@@ -93,7 +93,6 @@ async def configure_proxy(target_ip: str, target_port: int, retry_count: int = 3
                     response_text = await response.text()
                     logger.warning(f"Proxy configuration failed (attempt {attempt+1}/{retry_count}): "
                                    f"Status {response.status} - {response_text}")
-
                     if attempt < retry_count - 1:
                         wait_time = min(10, 0.5 * (2 ** attempt)) * (0.9 + 0.2 * (hash(datetime.now().microsecond) % 10) / 10)
                         logger.debug(f"Retrying in {wait_time:.2f}s")
@@ -102,7 +101,6 @@ async def configure_proxy(target_ip: str, target_port: int, retry_count: int = 3
             logger.error(f"Error configuring Modbus proxy (attempt {attempt+1}/{retry_count}): {e}")
             if attempt < retry_count - 1:
                 await asyncio.sleep(1.5 * (attempt + 1))
-
     return False
 
 
@@ -118,6 +116,7 @@ async def ensure_connection(max_retries: int = 3) -> bool:
     """
     local_config = await load_config()
     config["modbus"] = local_config.get("modbus", {})
+    unit_id = config["modbus"].get("unit_id", 1)
 
     if not config["modbus"].get("enabled", False):
         logger.info("Modbus relay is disabled in configuration")
@@ -125,54 +124,46 @@ async def ensure_connection(max_retries: int = 3) -> bool:
 
     modbus_client = await get_client()
 
-    # First check if already connected
     if modbus_client.connected:
         try:
-            # Test the connection with a simple read
-            result = await modbus_client.read_coils(0, 1, slave=config["modbus"].get("unit_id", 1))
-            if not hasattr(result, 'isError') or not result.isError():
+            result = await modbus_client.read_coils(0, 1, slave=unit_id)
+            if result and hasattr(result, "isError") and not result.isError():
                 logger.debug("Modbus connection is healthy")
                 return True
             logger.warning("Modbus connection test failed, will reset")
         except Exception as e:
             logger.warning(f"Error testing Modbus connection: {e}")
-
-        # If we get here, the connection test failed, so force a reset
         return await reset_connection()
 
-    # Connection not established, try to connect
     for attempt in range(max_retries):
         try:
             await modbus_client.connect()
             if modbus_client.connected:
                 logger.info("Connected to Modbus proxy at modbus-proxy:1502")
-                redis_client = await get_redis()
-                await redis_client.set("modbus_last_connected", datetime.now().isoformat())
-                await redis_client.set("modbus_connection_status", "connected")
+                try:
+                    redis_client = await get_redis()
+                    await redis_client.set("modbus_last_connected", datetime.now().isoformat())
+                    await redis_client.set("modbus_connection_status", "connected")
+                except Exception as e:
+                    logger.error(f"Failed to update Redis: {e}")
                 return True
             else:
-                logger.error(
-                    f"Failed to establish socket connection to Modbus proxy (attempt {attempt + 1}/{max_retries})")
+                logger.error(f"Failed to connect (attempt {attempt + 1}/{max_retries})")
                 if attempt < max_retries - 1:
                     wait_time = min(10, 1 * (2 ** attempt))
                     logger.debug(f"Retrying in {wait_time:.1f}s")
                     await asyncio.sleep(wait_time)
         except Exception as e:
-            logger.error(f"Connection to Modbus proxy failed (attempt {attempt + 1}/{max_retries}): {e}")
+            logger.error(f"Connection failed (attempt {attempt + 1}/{max_retries}): {e}")
             if attempt < max_retries - 1:
                 await asyncio.sleep(1.5 * (attempt + 1))
 
-    # All attempts failed
     try:
         redis_client = await get_redis()
         await redis_client.set("modbus_connection_status", "disconnected")
     except Exception as e:
-        logger.error(f"Failed to update Redis connection status: {e}")
-
+        logger.error(f"Failed to update Redis status: {e}")
     return False
-
-
-# Also enhance the trigger_relay function to handle connection recovery:
 
 
 async def initialize() -> bool:
@@ -190,9 +181,8 @@ async def initialize() -> bool:
             logger.info("Modbus relay disabled, skipping initialization")
             return False
 
-        # Get Redis client once and reuse
         redis_client = await get_redis()
-        await redis_client.ping()  # Test connection
+        await redis_client.ping()
         stats = await get_pool_stats()
         logger.debug(f"Redis pool stats at Modbus init: {stats}")
 
@@ -201,18 +191,14 @@ async def initialize() -> bool:
             logger.error("Modbus IP not configured")
             return False
 
-        # Configure the proxy and ensure connection
         if await configure_proxy(modbus_config["ip"], modbus_config["port"]):
-            connection_result = await ensure_connection()
-            if connection_result:
-                logger.info(f"Modbus relay initialized successfully to {modbus_config['ip']}:{modbus_config['port']}")
+            if await ensure_connection():
+                logger.info(f"Modbus relay initialized to {modbus_config['ip']}:{modbus_config['port']}")
                 return True
-            else:
-                logger.error("Failed to connect to Modbus proxy after configuration")
-                return False
-        else:
-            logger.error("Failed to configure Modbus proxy")
+            logger.error("Failed to connect to Modbus proxy after configuration")
             return False
+        logger.error("Failed to configure Modbus proxy")
+        return False
     except Exception as e:
         logger.exception(f"Failed to initialize Modbus relay: {e}")
         return False
@@ -233,26 +219,23 @@ async def trigger_relay(channel: int, state: bool = True, pulse_seconds: float =
     Returns:
         bool: True if successful, False otherwise
     """
-    # First try with current connection
     if not await ensure_connection():
         logger.error("No active connection to Modbus relay")
-        # Force a full reset as a recovery attempt
         if not await reset_connection():
             return False
 
     local_config = await load_config()
     modbus_config = local_config.get("modbus", {})
-    max_channels = modbus_config.get("max_channels", 8)
     unit_id = modbus_config.get("unit_id", 1)
+    max_channels = modbus_config.get("max_channels", 16)
+    is_follower_mode = follower_mode if follower_mode is not None else modbus_config.get("follower_mode", False)
+    pulse_duration = pulse_seconds if pulse_seconds is not None else modbus_config.get("pulse_seconds", 1.0)
 
     if not 1 <= channel <= max_channels:
         logger.error(f"Invalid channel {channel}. Must be between 1 and {max_channels}")
         return False
 
-    is_follower_mode = follower_mode if follower_mode is not None else modbus_config.get("follower_mode", False)
-    pulse_duration = pulse_seconds if pulse_seconds is not None else modbus_config.get("pulse_seconds", 1.0)
     coil_address = channel - 1
-
     modbus_client = await get_client()
 
     try:
@@ -262,28 +245,24 @@ async def trigger_relay(channel: int, state: bool = True, pulse_seconds: float =
                 logger.error("Failed to connect to Modbus proxy")
                 return False
 
-        # Track attempt count for write operation
-        for write_attempt in range(3):  # Try up to 3 times
+        for attempt in range(3):
             try:
                 result = await modbus_client.write_coil(coil_address, state, slave=unit_id)
-                if hasattr(result, 'isError') and result.isError():
-                    logger.error(f"Failed to set relay channel {channel} (attempt {write_attempt + 1}/3): {result}")
-                    if write_attempt < 2:  # Don't sleep on the last attempt
+                if hasattr(result, "isError") and result.isError():
+                    logger.error(f"Failed to set relay channel {channel} (attempt {attempt + 1}/3): {result}")
+                    if attempt < 2:
                         await asyncio.sleep(0.5)
-                        # Try to reset the connection on subsequent attempts
-                        if write_attempt > 0:
+                        if attempt > 0:
                             await reset_connection()
-                    continue  # Continue to next attempt
-                else:
-                    # Success - break out of retry loop
-                    break
+                    continue
+                break
             except Exception as e:
-                logger.error(f"Error setting relay in attempt {write_attempt + 1}/3: {e}")
-                if write_attempt < 2:
+                logger.error(f"Error setting relay (attempt {attempt + 1}/3): {e}")
+                if attempt < 2:
                     await asyncio.sleep(0.5)
                     await reset_connection()
         else:
-            # If we get here, all write attempts failed
+            logger.error(f"All attempts to set relay channel {channel} failed")
             return False
 
         logger.info(f"Set relay channel {channel} to {'ON' if state else 'OFF'}")
@@ -300,18 +279,15 @@ async def trigger_relay(channel: int, state: bool = True, pulse_seconds: float =
         except Exception as e:
             logger.error(f"Failed to store relay state for channel {channel}: {e}")
 
-        # For tests, always pulse if state is true, regardless of follower mode
         if state and ((not is_follower_mode and pulse_duration) or is_test):
-            logger.debug(f"Creating pulse_off task for channel {channel} with duration {pulse_duration}s")
-            # Use a dedicated task with error handling
+            logger.debug(f"Creating pulse_off task for channel {channel} with {pulse_duration}s")
             pulse_task = asyncio.create_task(pulse_off(channel, pulse_duration))
 
-            # Add error handling for the task
             def handle_pulse_error(task):
                 try:
                     task.result()
                 except asyncio.CancelledError:
-                    logger.debug(f"Pulse task for channel {channel} was cancelled")
+                    logger.debug(f"Pulse task for channel {channel} cancelled")
                 except Exception as e:
                     logger.error(f"Pulse task for channel {channel} failed: {e}")
 
@@ -323,8 +299,8 @@ async def trigger_relay(channel: int, state: bool = True, pulse_seconds: float =
         try:
             await modbus_client.close()
             logger.info("Closed Modbus connection due to error")
-        except:
-            pass
+        except Exception as e:
+            logger.error(f"Error closing connection: {e}")
         return False
 
 
@@ -383,7 +359,7 @@ async def test_channels(channel_count: int = None) -> Dict[str, Any]:
         }
 
     if channel_count is None:
-        channel_count = modbus_config.get("max_channels", 8)
+        channel_count = modbus_config.get("max_channels", 16)
 
     if not await initialize():
         return {
@@ -398,7 +374,6 @@ async def test_channels(channel_count: int = None) -> Dict[str, Any]:
     for channel in range(1, channel_count + 1):
         logger.info(f"Testing relay channel {channel}")
         try:
-            # Always pass is_test=True for test functionality
             result = await trigger_relay(channel, True, 0.2, is_test=True)
             results.append({
                 "channel": channel,
@@ -423,7 +398,7 @@ async def test_channels(channel_count: int = None) -> Dict[str, Any]:
     }
 
 
-async def reset_connection():
+async def reset_connection() -> bool:
     """
     Force reset the Modbus client connection to fix stale connections.
 
@@ -433,37 +408,35 @@ async def reset_connection():
     global client
     logger.info("Forcibly resetting Modbus client connection")
 
-    try:
-        if client and client.connected:
-            await client.close()
-            logger.debug("Closed existing Modbus connection")
-    except Exception as e:
-        logger.error(f"Error closing existing connection: {e}")
+    if client is not None:
+        try:
+            if client.connected:
+                await client.close()
+                logger.debug("Closed existing Modbus connection")
+        except Exception as e:
+            logger.error(f"Error closing existing connection: {e}")
 
-    # Fully recreate the client
     try:
         client = AsyncModbusTcpClient("modbus-proxy", port=1502, timeout=1)
         await client.connect()
-
         if client.connected:
             logger.info("Successfully reset and reconnected Modbus client")
-
-            # Update Redis state
             try:
                 redis_client = await get_redis()
                 await redis_client.set("modbus_last_connected", datetime.now().isoformat())
                 await redis_client.set("modbus_connection_status", "connected")
             except Exception as e:
-                logger.error(f"Failed to update Redis after connection reset: {e}")
-
+                logger.error(f"Failed to update Redis after reset: {e}")
             return True
         else:
             logger.error("Failed to reconnect after reset")
+            client = None
             return False
     except Exception as e:
         logger.error(f"Error resetting Modbus connection: {e}")
         client = None
         return False
+
 
 async def main():
     """
@@ -494,7 +467,6 @@ async def main():
         logger.info("Running test on all channels")
         results = await test_channels(8)
         logger.info(f"Test results: {json.dumps(results, indent=2)}")
-
     except Exception as e:
         logger.exception(f"Main execution failed: {e}")
     finally:
