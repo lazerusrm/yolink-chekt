@@ -76,25 +76,40 @@ def compute_password_digest(nonce: str, created: str, password: str) -> str:
     """
     Compute the password digest according to WS-Security UsernameToken Profile.
 
+    The ONVIF implementation follows the standard:
+    PasswordDigest = Base64(SHA1(Nonce + Created + Password))
+
     Args:
-        nonce: Base64 encoded nonce
+        nonce: Nonce value (already decoded from Base64 if from SOAP message)
         created: Timestamp string
         password: Clear text password
 
     Returns:
-        Base64 encoded password digest
+        str: Base64 encoded password digest
     """
-    nonce_bytes = base64.b64decode(nonce)
+    # Ensure nonce is in bytes
+    if isinstance(nonce, str):
+        nonce_bytes = nonce.encode('utf-8')
+    else:
+        nonce_bytes = nonce
+
+    # Concatenate: nonce + created + password
     digest_input = nonce_bytes + created.encode('utf-8') + password.encode('utf-8')
-    password_digest = base64.b64encode(hashlib.sha1(digest_input).digest()).decode('utf-8')
+
+    # Apply SHA1 hash
+    hashed = hashlib.sha1(digest_input).digest()
+
+    # Encode as Base64
+    password_digest = base64.b64encode(hashed).decode('utf-8')
+
     return password_digest
 
 
 def compute_digest_auth(username: str, password: str, realm: str, nonce: str, uri: str,
-                       method: str, qop: Optional[str] = None,
-                       cnonce: Optional[str] = None, nc: Optional[str] = None) -> str:
+                        method: str, qop: Optional[str] = None,
+                        cnonce: Optional[str] = None, nc: Optional[str] = None) -> str:
     """
-    Compute HTTP Digest authentication response.
+    Compute HTTP Digest authentication response according to RFC 2617.
 
     Args:
         username: Username
@@ -108,14 +123,24 @@ def compute_digest_auth(username: str, password: str, realm: str, nonce: str, ur
         nc: Nonce count (required if qop is provided)
 
     Returns:
-        Digest auth response string
+        str: Digest auth response string
     """
+    # Calculate HA1 = MD5(username:realm:password)
     ha1 = hashlib.md5(f"{username}:{realm}:{password}".encode()).hexdigest()
+
+    # Calculate HA2 = MD5(method:uri)
     ha2 = hashlib.md5(f"{method}:{uri}".encode()).hexdigest()
 
-    if qop and cnonce and nc:
+    # Calculate the response based on whether qop is present
+    if qop:
+        # Both cnonce and nc are required when qop is specified
+        if not cnonce or not nc:
+            raise ValueError("cnonce and nc are required when qop is specified")
+
+        # For qop=auth or qop=auth-int: response = MD5(HA1:nonce:nc:cnonce:qop:HA2)
         response = hashlib.md5(f"{ha1}:{nonce}:{nc}:{cnonce}:{qop}:{ha2}".encode()).hexdigest()
     else:
+        # For legacy implementation without qop: response = MD5(HA1:nonce:HA2)
         response = hashlib.md5(f"{ha1}:{nonce}:{ha2}".encode()).hexdigest()
 
     return response
@@ -577,6 +602,7 @@ class OnvifRequestHandler(http.server.BaseHTTPRequestHandler):
     def _check_authentication(self, soap_request: str) -> bool:
         """
         Enhanced authentication handler with support for Basic and Digest auth.
+        Improved with better RFC compliance and security practices.
 
         Args:
             soap_request: The SOAP request XML
@@ -591,38 +617,69 @@ class OnvifRequestHandler(http.server.BaseHTTPRequestHandler):
 
         # Log current settings for diagnostics
         logger.debug(f"ONVIF Auth Settings - Required: {self.service.authentication_required}, "
-                    f"Username: {self.service.username}, Digest Auth: {self.service.digest_auth_enabled}")
+                     f"Username: {self.service.username}, Digest Auth: {self.service.digest_auth_enabled}")
 
-        # CHECK 1: Basic Authentication in header
+        # CHECK 1: HTTP Authentication Headers (Basic or Digest)
         auth_header = self.headers.get('Authorization')
         if auth_header:
-            if self.service.digest_auth_enabled and auth_header.startswith('Digest '):
-                # Parse digest auth header
+            # Case-insensitive check for auth types
+            if self.service.digest_auth_enabled and auth_header.lower().startswith('digest '):
                 try:
-                    # Extract digest auth parameters
-                    auth_parts = re.findall(r'(\w+)=(?:"([^"]+)"|([^,]+))', auth_header)
-                    auth_params = {k: v[0] or v[1] for k, v, _ in auth_parts}
+                    # Parse digest auth parameters more safely
+                    auth_dict = {}
+                    parts = auth_header[7:].split(',')  # Remove 'Digest ' prefix
 
-                    # Verify username
-                    if auth_params.get('username') != self.service.username:
-                        logger.warning(f"Digest auth username mismatch: '{auth_params.get('username')}'")
+                    for part in parts:
+                        if '=' not in part:
+                            continue
+
+                        key, value = part.strip().split('=', 1)
+                        key = key.strip()
+                        value = value.strip()
+
+                        # Remove quotes if present
+                        if value.startswith('"') and value.endswith('"'):
+                            value = value[1:-1]
+
+                        auth_dict[key] = value
+
+                    # Verify required parameters according to RFC 2617
+                    required_params = ['username', 'realm', 'nonce', 'uri', 'response']
+                    if 'qop' in auth_dict:
+                        # When qop is specified, cnonce and nc are required
+                        required_params.extend(['cnonce', 'nc'])
+
+                    missing_params = [param for param in required_params if param not in auth_dict]
+                    if missing_params:
+                        logger.warning(f"Digest auth missing required parameters: {missing_params}")
                         return False
 
-                    # Compute expected response
+                    # Verify username (log only first two chars for security)
+                    if auth_dict.get('username') != self.service.username:
+                        logger.warning(f"Digest auth username mismatch: '{auth_dict.get('username')[:2]}***'")
+                        return False
+
+                    # Verify realm if auth_realm is defined
+                    if hasattr(self, 'auth_realm') and self.auth_realm and auth_dict.get('realm') != self.auth_realm:
+                        logger.warning(
+                            f"Digest auth realm mismatch: expected '{self.auth_realm}', got '{auth_dict.get('realm')}'")
+                        return False
+
+                    # Compute expected response according to RFC 2617
                     expected_response = compute_digest_auth(
                         username=self.service.username,
                         password=self.service.password,
-                        realm=auth_params.get('realm', self.auth_realm),
-                        nonce=auth_params.get('nonce', ''),
-                        uri=auth_params.get('uri', self.path),
+                        realm=auth_dict.get('realm', 'ONVIF'),
+                        nonce=auth_dict.get('nonce', ''),
+                        uri=auth_dict.get('uri', self.path),
                         method='POST',
-                        qop=auth_params.get('qop'),
-                        cnonce=auth_params.get('cnonce'),
-                        nc=auth_params.get('nc')
+                        qop=auth_dict.get('qop'),
+                        cnonce=auth_dict.get('cnonce'),
+                        nc=auth_dict.get('nc')
                     )
 
                     # Compare with client response
-                    if auth_params.get('response') == expected_response:
+                    if auth_dict.get('response') == expected_response:
                         logger.debug("Digest authentication successful")
                         return True
                     else:
@@ -630,55 +687,178 @@ class OnvifRequestHandler(http.server.BaseHTTPRequestHandler):
                 except Exception as e:
                     logger.warning(f"Error parsing digest auth: {e}")
 
-            elif auth_header.startswith('Basic '):
+            elif auth_header.lower().startswith('basic '):
                 try:
-                    auth_decoded = base64.b64decode(auth_header[6:]).decode('utf-8')
+                    # Handle Basic authentication
+                    auth_encoded = auth_header[6:].strip()  # Remove 'Basic ' prefix
+                    if not auth_encoded:
+                        logger.warning("Empty Basic auth credentials")
+                        return False
+
+                    auth_decoded = base64.b64decode(auth_encoded).decode('utf-8')
+                    if ':' not in auth_decoded:
+                        logger.warning("Invalid Basic auth format (no username:password delimiter)")
+                        return False
+
                     username, password = auth_decoded.split(':', 1)
-                    logger.debug(f"Basic auth attempt with username: {username}")
+                    # Log only first two chars of username for security
+                    logger.debug(f"Basic auth attempt with username: {username[:2]}***")
 
                     # Compare credentials
                     if username == self.service.username and password == self.service.password:
                         logger.debug("Basic auth successful")
                         return True
                     else:
-                        logger.warning(f"Basic auth failed: Username mismatch or invalid password")
+                        logger.warning("Basic auth failed: Username mismatch or invalid password")
                 except Exception as e:
                     logger.warning(f"Error parsing Basic auth: {e}")
 
         # CHECK 2: WS-Security UsernameToken in SOAP body
+        if soap_request and "<Security>" in soap_request and "<UsernameToken>" in soap_request:
+            try:
+                # Try to parse with XML parser for better reliability
+                try:
+                    from xml.etree import ElementTree as ET
+                    namespaces = {
+                        'soap': 'http://www.w3.org/2003/05/soap-envelope',
+                        'wsse': 'http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd',
+                        'wsu': 'http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd'
+                    }
+
+                    # Register namespaces
+                    for prefix, uri in namespaces.items():
+                        ET.register_namespace(prefix, uri)
+
+                    root = ET.fromstring(soap_request)
+
+                    # Find Security element
+                    security = root.find(
+                        './/{http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd}Security')
+                    if security is not None:
+                        username_token = security.find(
+                            './/{http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd}UsernameToken')
+                        if username_token is not None:
+                            username_elem = username_token.find(
+                                './/{http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd}Username')
+                            password_elem = username_token.find(
+                                './/{http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd}Password')
+
+                            if username_elem is not None and username_elem.text:
+                                soap_username = username_elem.text
+
+                                # Check username
+                                if soap_username != self.service.username:
+                                    logger.warning(f"WS-Security username mismatch: '{soap_username[:2]}***'")
+                                    return False
+
+                                # Check for plain text password
+                                if password_elem is not None and password_elem.text:
+                                    # Check if it's a plaintext password or PasswordDigest
+                                    password_type = password_elem.get('Type', '')
+                                    if 'PasswordDigest' in password_type:
+                                        # Handle password digest
+                                        nonce_elem = username_token.find(
+                                            './/{http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd}Nonce')
+                                        created_elem = username_token.find(
+                                            './/{http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd}Created')
+
+                                        if nonce_elem is not None and created_elem is not None:
+                                            # Decode base64 nonce as per ONVIF spec
+                                            try:
+                                                nonce = base64.b64decode(nonce_elem.text).decode('utf-8')
+                                                created = created_elem.text
+                                                password_digest = password_elem.text
+
+                                                # Compute expected digest
+                                                expected_digest = compute_password_digest(nonce, created,
+                                                                                          self.service.password)
+
+                                                if password_digest == expected_digest:
+                                                    logger.debug("WS-Security password digest match")
+                                                    return True
+                                                else:
+                                                    logger.warning("WS-Security password digest mismatch")
+                                            except Exception as e:
+                                                logger.warning(f"Error processing WS-Security nonce/digest: {e}")
+                                    else:
+                                        # Plain text password
+                                        if password_elem.text == self.service.password:
+                                            logger.debug("WS-Security plain password match")
+                                            return True
+                                        else:
+                                            logger.warning("WS-Security plain password mismatch")
+                except ImportError:
+                    logger.warning("XML parser not available, falling back to regex")
+                    # Fall back to regex parsing if XML parser not available
+                    self._check_auth_with_regex(soap_request)
+                except Exception as e:
+                    logger.warning(f"Error parsing with XML: {e}, falling back to regex")
+                    # Fall back to regex parsing if XML parsing failed
+                    self._check_auth_with_regex(soap_request)
+
+            except Exception as e:
+                logger.warning(f"Error checking WS-Security auth: {e}")
+
+        # FALLBACK: If all checks fail but debug mode is enabled with appropriate safeguards
+        if hasattr(self.service, 'debug_auth_disabled') and self.service.debug_auth_disabled:
+            # Additional safeguard: check for explicit environment variable
+            if os.environ.get('ONVIF_DEBUG_MODE') == 'true':
+                logger.warning("⚠️ SECURITY WARNING: Authentication bypassed due to debug mode! ⚠️")
+                logger.warning("⚠️ This should NEVER be enabled in production! ⚠️")
+                return True
+            else:
+                logger.warning("Debug auth disabled, but ONVIF_DEBUG_MODE environment variable not set to 'true'")
+
+        # Authentication failed
+        logger.warning("Authentication failed - all methods tried")
+        return False
+
+    def _check_auth_with_regex(self, soap_request: str) -> bool:
+        """
+        Fallback method to check WS-Security authentication using regex.
+        Used when XML parsing fails or is unavailable.
+
+        Args:
+            soap_request: The SOAP request XML
+
+        Returns:
+            bool: True if authentication is valid, False otherwise
+        """
         try:
-            if "<Security>" in soap_request and "<UsernameToken>" in soap_request:
-                # Extract username
-                username_match = re.search(r'<Username[^>]*>(.*?)</Username>', soap_request)
-                if not username_match:
-                    logger.warning("No Username element found in UsernameToken")
-                    return False
+            # Extract username
+            username_match = re.search(r'<(?:wsse:|)Username[^>]*>(.*?)</(?:wsse:|)Username>', soap_request)
+            if not username_match:
+                logger.warning("No Username element found in UsernameToken")
+                return False
 
-                soap_username = username_match.group(1)
+            soap_username = username_match.group(1)
 
-                # Check username
-                if soap_username != self.service.username:
-                    logger.warning(f"WS-Security username mismatch: '{soap_username}'")
-                    return False
+            # Check username
+            if soap_username != self.service.username:
+                logger.warning(f"WS-Security username mismatch: '{soap_username[:2]}***'")
+                return False
 
-                # Check if password is provided as clear text
-                password_match = re.search(r'<Password[^>]*>(.*?)</Password>', soap_request)
-                if password_match:
-                    soap_password = password_match.group(1)
+            # Check if password is provided as clear text
+            password_match = re.search(r'<(?:wsse:|)Password[^>]*>(.*?)</(?:wsse:|)Password>', soap_request)
+            if password_match:
+                soap_password = password_match.group(1)
 
-                    # For simple text password
-                    if soap_password == self.service.password:
-                        logger.debug("WS-Security password match")
-                        return True
+                # For simple text password
+                if soap_password == self.service.password:
+                    logger.debug("WS-Security password match")
+                    return True
 
-                # Check for digest authentication
-                nonce_match = re.search(r'<Nonce[^>]*>(.*?)</Nonce>', soap_request)
-                created_match = re.search(r'<Created[^>]*>(.*?)</Created>', soap_request)
-                password_digest_match = re.search(r'<Password[^>]*Type="[^"]*#PasswordDigest"[^>]*>(.*?)</Password>',
-                                               soap_request)
+            # Check for digest authentication
+            nonce_match = re.search(r'<(?:wsse:|)Nonce[^>]*>(.*?)</(?:wsse:|)Nonce>', soap_request)
+            created_match = re.search(r'<(?:wsu:|)Created[^>]*>(.*?)</(?:wsu:|)Created>', soap_request)
+            password_digest_match = re.search(
+                r'<(?:wsse:|)Password[^>]*Type="[^"]*#PasswordDigest"[^>]*>(.*?)</(?:wsse:|)Password>',
+                soap_request)
 
-                if nonce_match and created_match and password_digest_match:
-                    nonce = nonce_match.group(1)
+            if nonce_match and created_match and password_digest_match:
+                try:
+                    # Decode Base64 nonce as per ONVIF spec
+                    nonce = base64.b64decode(nonce_match.group(1)).decode('utf-8')
                     created = created_match.group(1)
                     password_digest = password_digest_match.group(1)
 
@@ -690,12 +870,13 @@ class OnvifRequestHandler(http.server.BaseHTTPRequestHandler):
                         return True
                     else:
                         logger.warning("WS-Security password digest mismatch")
-        except Exception as e:
-            logger.warning(f"Error checking WS-Security auth: {e}")
+                except Exception as e:
+                    logger.warning(f"Error processing WS-Security digest: {e}")
 
-        # Authentication failed
-        logger.warning("Authentication failed - all methods tried")
-        return False
+            return False
+        except Exception as e:
+            logger.warning(f"Error in regex auth check: {e}")
+            return False
 
     def log_message(self, format, *args):
         """Override to use our logger instead of stderr."""
