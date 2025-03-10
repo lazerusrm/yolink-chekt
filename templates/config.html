@@ -224,9 +224,50 @@
             color: var(--text-primary);
         }
 
+        /* Fix for dropdown styling */
         select.form-control option {
             background-color: var(--bg-elevated);
-            color: var(--text-primary);
+            color: white;
+            padding: 10px;
+        }
+
+        /* Override browser default styling for select dropdowns */
+        @-moz-document url-prefix() {
+            select.form-control {
+                color: white;
+                background-color: var(--bg-elevated);
+            }
+            select.form-control option {
+                background-color: var(--bg-card);
+            }
+        }
+
+        /* Webkit browsers (Chrome, Safari) */
+        select.form-control::-webkit-listbox {
+            background-color: var(--bg-card);
+            color: white;
+        }
+
+        /* Custom styling for the receiver type dropdown specifically */
+        #receiver_type {
+            font-weight: 500;
+            color: white;
+            background-color: var(--bg-elevated);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            height: auto;
+            padding: 0.75rem 2.5rem 0.75rem 1rem;
+            white-space: normal;
+            text-overflow: clip;
+            overflow: visible;
+            min-height: 45px;
+        }
+
+        /* Improve contrast for dropdown items */
+        select.form-control option:hover,
+        select.form-control option:checked,
+        select.form-control option:focus {
+            background-color: var(--accent-primary);
+            color: white;
         }
 
         .btn {
