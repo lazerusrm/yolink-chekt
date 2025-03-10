@@ -236,19 +236,6 @@ async def trigger_chekt_event(device_id: str, target_channel: str) -> None:
 
 
 async def trigger_modbus_relay(device_id: str, relay_channel: int, state: str) -> bool:
-    """
-    Trigger a Modbus relay channel based on device state.
-
-    Handles both pulse mode and follower mode as per configuration.
-
-    Args:
-        device_id (str): Device identifier
-        relay_channel (int): Relay channel number
-        state (str): Device state (open, closed, alert)
-
-    Returns:
-        bool: Success status
-    """
     config = await load_config()
     modbus_config = config.get('modbus', {})
 
@@ -256,7 +243,6 @@ async def trigger_modbus_relay(device_id: str, relay_channel: int, state: str) -
         logger.info(f"Modbus relay is disabled in configuration. Not triggering relay for device {device_id}")
         return False
 
-    # Import here to avoid circular imports
     from modbus_relay import trigger_relay
 
     follower_mode = modbus_config.get('follower_mode', False)
@@ -264,28 +250,25 @@ async def trigger_modbus_relay(device_id: str, relay_channel: int, state: str) -
 
     if follower_mode:
         activate = state in ['open', 'alert']
-        logger.info(
-            f"Follower mode: Setting relay channel {relay_channel} to {'ON' if activate else 'OFF'} for device {device_id} with state {state}")
-        success = await trigger_relay(relay_channel, activate)
+        logger.info(f"Follower mode: Setting relay channel {relay_channel} to {'ON' if activate else 'OFF'} for device {device_id} with state {state}")
+        success = await trigger_relay(relay_channel, activate, follower_mode=True)  # Explicitly set follower_mode
+        if success:
+            logger.debug(f"Successfully set relay channel {relay_channel} to {'ON' if activate else 'OFF'}")
+        else:
+            logger.error(f"Failed to set relay channel {relay_channel} for device {device_id}")
     else:
         if state in ['open', 'alert']:
             activate = True
-        elif state == 'closed':
+        elif state in ['closed', 'normal']:
             activate = False
         else:
-            logger.info(f"Unknown state: {state}. Defaulting to activating relay.")
-            activate = True
-
+            logger.warning(f"Unknown state '{state}' for device {device_id}, defaulting to no action")
+            return True
         if activate:
-            logger.info(
-                f"Pulse mode: Triggering relay channel {relay_channel} for device {device_id} with state {state}")
+            logger.info(f"Pulse mode: Triggering relay channel {relay_channel} for device {device_id} with state {state}")
             success = await trigger_relay(relay_channel, True, pulse_seconds)
-            if success:
-                logger.info(f"Successfully triggered relay channel {relay_channel} for device {device_id}")
-            else:
-                logger.error(f"Failed to trigger relay channel {relay_channel} for device {device_id}")
         else:
-            logger.info(f"Pulse mode: Not triggering relay for state: {state}")
+            logger.info(f"Pulse mode: No action for state {state} on channel {relay_channel}")
             success = True
 
     return success
