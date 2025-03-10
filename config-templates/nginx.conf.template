@@ -1,6 +1,6 @@
 server {
     listen 80;
-    server_name localhost $HOST_IP;
+    server_name localhost SERVER_IP_PLACEHOLDER;
 
     # ONVIF endpoints - MUST proxy directly without redirect
     location ~ ^/onvif/ {
@@ -54,7 +54,7 @@ server {
 
 server {
     listen 443 ssl;
-    server_name localhost $HOST_IP;
+    server_name localhost SERVER_IP_PLACEHOLDER;
 
     ssl_certificate /etc/nginx/certs/cert.pem;
     ssl_certificate_key /etc/nginx/certs/key.pem;
@@ -62,7 +62,7 @@ server {
     # SSL configuration
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_prefer_server_ciphers on;
-    ssl_ciphers 'ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305';
+    ssl_ciphers 'SSL_CIPHERS_PLACEHOLDER';
     ssl_session_cache shared:SSL:10m;
     ssl_session_timeout 10m;
 
@@ -92,7 +92,7 @@ server {
 
     # RTSP API
     location /rtsp-api/ {
-        proxy_pass http://yolink-rtsp-streamer:8080/;
+        proxy_pass http://yolink-rtsp-streamer:RTSP_HTTP_PORT_PLACEHOLDER/;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

@@ -2,7 +2,7 @@
 
 # YoLink CHEKT Integration - Unified Robust Installation and Update Script
 # This script handles both first-time installation and updates with zero manual edits required
-VERSION="1.2.2"
+VERSION="1.3.0"
 
 # Ensure the script is run with bash
 if [ -z "$BASH_VERSION" ]; then
@@ -19,6 +19,7 @@ fi
 # Define variables with defaults
 REPO_URL="${REPO_URL:-https://github.com/lazerusrm/yolink-chekt/archive/refs/heads/main.zip}"
 APP_DIR="${APP_DIR:-/opt/yolink-chekt}"
+CONFIG_TEMPLATES_DIR="$APP_DIR/config-templates"
 LOG_FILE="/var/log/yolink-installer.log"
 OPERATION_MODE="auto"
 RTSP_HTTP_PORT=8080  # Use an alternative port for RTSP HTTP service to avoid conflict with nginx
@@ -398,11 +399,12 @@ EOF
 # CONFIGURATION GENERATION
 #===================================
 
-# Function to generate nginx.conf - FIXED to use clean IP
+# Function to generate nginx.conf from template
 generate_nginx_conf() {
     local host_ip="$1"
     local nginx_conf="$APP_DIR/nginx.conf"
     local rtsp_http_port="${2:-8080}"
+    local template_file="$CONFIG_TEMPLATES_DIR/nginx.conf.template"
 
     log_info "Generating nginx.conf with IP $host_ip..."
 
@@ -423,20 +425,23 @@ generate_nginx_conf() {
         verify_success "Failed to backup existing nginx.conf" false
     fi
 
-    # Generate the nginx configuration with clean IP
-    cat > "$nginx_conf" << EOF
+    # Check if template file exists
+    if [ ! -f "$template_file" ]; then
+        log_warning "Template file $template_file not found. Using fallback method."
+        # Generate the nginx configuration with clean IP using embedded template
+        cat > "$nginx_conf" << EOF
 server {
     listen 80;
-    server_name localhost $HOST_IP;
+    server_name localhost $clean_ip;
 
     # ONVIF endpoints - MUST proxy directly without redirect
     location ~ ^/onvif/ {
         proxy_pass http://yolink-rtsp-streamer:8000;
         proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
 
         # Important: Disable buffering for SOAP responses
         proxy_buffering off;
@@ -448,40 +453,40 @@ server {
     }
 
     # WSDL and other ONVIF discovery endpoints
-    location ~ \.(wsdl|xsd)$ {
+    location ~ \\.(wsdl|xsd)$ {
         proxy_pass http://yolink-rtsp-streamer:8000;
         proxy_http_version 1.1;
-        proxy_set_header Host $host;
+        proxy_set_header Host \$host;
     }
 
     # Support for common ONVIF endpoint variations
     location = /device_service {
         proxy_pass http://yolink-rtsp-streamer:8000/onvif/device_service;
         proxy_http_version 1.1;
-        proxy_set_header Host $host;
+        proxy_set_header Host \$host;
     }
 
     location = /media_service {
         proxy_pass http://yolink-rtsp-streamer:8000/onvif/media_service;
         proxy_http_version 1.1;
-        proxy_set_header Host $host;
+        proxy_set_header Host \$host;
     }
 
     location = /events_service {
         proxy_pass http://yolink-rtsp-streamer:8000/onvif/events_service;
         proxy_http_version 1.1;
-        proxy_set_header Host $host;
+        proxy_set_header Host \$host;
     }
 
     # Redirect all other HTTP to HTTPS
     location / {
-        return 301 https://$host$request_uri;
+        return 301 https://\$host\$request_uri;
     }
 }
 
 server {
     listen 443 ssl;
-    server_name localhost $HOST_IP;
+    server_name localhost $clean_ip;
 
     ssl_certificate /etc/nginx/certs/cert.pem;
     ssl_certificate_key /etc/nginx/certs/key.pem;
@@ -497,21 +502,21 @@ server {
     location ~ ^/onvif/ {
         proxy_pass http://yolink-rtsp-streamer:8000;
         proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
     }
 
     # Main application proxy
     location / {
         proxy_pass http://yolink_chekt:5000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header X-Forwarded-Host $host;
-        proxy_set_header X-Forwarded-Server $host;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Host \$host;
+        proxy_set_header X-Forwarded-Server \$host;
         proxy_connect_timeout 120s;
         proxy_send_timeout 120s;
         proxy_read_timeout 120s;
@@ -519,27 +524,38 @@ server {
 
     # RTSP API
     location /rtsp-api/ {
-        proxy_pass http://yolink-rtsp-streamer:8080/;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://yolink-rtsp-streamer:$rtsp_http_port/;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
     }
 
     access_log /var/log/nginx/access.log combined;
     error_log /var/log/nginx/error.log warn;
 }
 EOF
+    else
+        # Generate the nginx configuration from template
+        cp "$template_file" "$nginx_conf"
+        # Replace placeholder variables with actual values
+        sed -i "s|SERVER_IP_PLACEHOLDER|$clean_ip|g" "$nginx_conf"
+        sed -i "s|RTSP_HTTP_PORT_PLACEHOLDER|$rtsp_http_port|g" "$nginx_conf"
+        sed -i "s|SSL_CIPHERS_PLACEHOLDER|ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305|g" "$nginx_conf"
+        # Fix $ variables in the template to avoid shell expansion
+        sed -i 's|\$|\\$|g' "$nginx_conf"
+    fi
 
     verify_success "Failed to generate nginx.conf" true
     log_success "nginx.conf generated successfully with server_name: localhost $clean_ip"
 }
 
-# Function to generate or update docker-compose.yml
+# Function to generate or update docker-compose.yml from template
 generate_docker_compose() {
     local host_ip="$1"
     local rtsp_http_port="${2:-8080}"
     local docker_compose_file="$APP_DIR/docker-compose.yml"
+    local template_file="$CONFIG_TEMPLATES_DIR/docker-compose.yml.template"
 
     log_info "Generating docker-compose.yml with IP $host_ip..."
 
@@ -560,8 +576,11 @@ generate_docker_compose() {
         verify_success "Failed to backup existing docker-compose.yml" false
     fi
 
-    # Generate the docker-compose.yml file with clean IP
-    cat > "$docker_compose_file" << EOD
+    # Check if template file exists
+    if [ ! -f "$template_file" ]; then
+        log_warning "Template file $template_file not found. Using fallback method."
+        # Generate the docker-compose.yml file with clean IP using embedded template
+        cat > "$docker_compose_file" << EOD
 version: '3'
 
 services:
@@ -693,6 +712,13 @@ networks:
 volumes:
   redis-data:
 EOD
+    else
+        # Generate the docker-compose.yml from template
+        cp "$template_file" "$docker_compose_file"
+        # Replace placeholder variables with actual values
+        sed -i "s|SERVER_IP_PLACEHOLDER|$clean_ip|g" "$docker_compose_file"
+        sed -i "s|RTSP_HTTP_PORT_PLACEHOLDER|$rtsp_http_port|g" "$docker_compose_file"
+    fi
 
     # Remove any potential control characters from the file
     if command -v dos2unix >/dev/null 2>&1; then
@@ -1008,10 +1034,17 @@ restart_containers() {
 # IP MONITORING SETUP
 #===================================
 
-# Create IP monitor script - FIXED to use clean IP
+# Create IP monitor script from template
 create_ip_monitor_script() {
     log_info "Creating IP monitor script..."
-    cat > "$APP_DIR/monitor-ip.sh" << 'EOT'
+    local template_file="$CONFIG_TEMPLATES_DIR/monitor-ip.sh.template"
+    local output_file="$APP_DIR/monitor-ip.sh"
+
+    # Check if template file exists
+    if [ ! -f "$template_file" ]; then
+        log_warning "Template file $template_file not found. Using fallback method."
+        # Use embedded template
+        cat > "$output_file" << 'EOT'
 #!/bin/bash
 
 # IP Monitor for YoLink CHEKT Integration
@@ -1106,236 +1139,82 @@ check_ip_changed() {
     fi
 }
 
-# Function to generate nginx.conf - FIXED to use clean IP and properly escape nginx variables
-generate_nginx_conf() {
-    local host_ip="$1"
-    local nginx_conf="$APP_DIR/nginx.conf"
-    local rtsp_http_port="${2:-8080}"
+# Function to generate SSL certificates with proper Subject Alternative Name (SAN)
+generate_ssl_certificates() {
+    local host_ip=$1
+    local cert_dir=$2
+    local cert_file="${cert_dir}/cert.pem"
+    local key_file="${cert_dir}/key.pem"
 
-    log_info "Generating nginx.conf with IP $host_ip..."
+    mkdir -p "$cert_dir"
 
-    # Ensure we have a clean IP with no logging output
-    local clean_ip
-    clean_ip=$(echo "$host_ip" | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+    # Create a temporary OpenSSL configuration file
+    local ssl_config=$(mktemp)
+    cat > "$ssl_config" << EOF
+[req]
+distinguished_name = req_distinguished_name
+req_extensions = v3_req
+prompt = no
 
-    if [ -z "$clean_ip" ]; then
-        log_warning "Could not extract a valid IP address, using fallback method"
-        clean_ip=$(get_clean_ip)
-    fi
+[req_distinguished_name]
+CN = YoLink CHEKT Integration
 
-    log_info "Using clean IP for nginx.conf: $clean_ip"
+[v3_req]
+keyUsage = keyEncipherment, dataEncipherment
+extendedKeyUsage = serverAuth
+subjectAltName = @alt_names
 
-    # Backup existing file if it exists
-    if [ -f "$nginx_conf" ]; then
-        cp "$nginx_conf" "${nginx_conf}.bak.$(date +%Y%m%d%H%M%S)" 2>/dev/null
-        verify_success "Failed to backup existing nginx.conf" false
-    fi
-
-    # Generate the nginx configuration with clean IP - using single quotes for the heredoc to prevent variable expansion
-    cat > "$nginx_conf" << 'EOF'
-server {
-    listen 80;
-    server_name localhost SERVER_IP_PLACEHOLDER;
-
-    # ONVIF endpoints - direct proxy, no redirect
-    location ~ ^/onvif/ {
-        proxy_pass http://yolink-rtsp-streamer:8000;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-
-        # Disable buffering for immediate response
-        proxy_buffering off;
-    }
-
-    # Common ONVIF shorthand endpoints
-    location = /device_service {
-        proxy_pass http://yolink-rtsp-streamer:8000/onvif/device_service;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-    }
-
-    location = /media_service {
-        proxy_pass http://yolink-rtsp-streamer:8000/onvif/media_service;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-    }
-
-    # Redirect all other HTTP to HTTPS
-    location / {
-        return 301 https://$host$request_uri;
-    }
-}
-
-server {
-    listen 443 ssl;
-    server_name localhost SERVER_IP_PLACEHOLDER;
-
-    ssl_certificate /etc/nginx/certs/cert.pem;
-    ssl_certificate_key /etc/nginx/certs/key.pem;
-
-    # Improved SSL configuration
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_prefer_server_ciphers on;
-    ssl_ciphers 'ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305';
-
-    # Add SSL session cache for better performance
-    ssl_session_cache shared:SSL:10m;
-    ssl_session_timeout 10m;
-
-    # Main application
-    location / {
-        proxy_pass http://yolink_chekt:5000;
-
-        # Standard proxy headers
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-
-        # Additional headers to help with redirection
-        proxy_set_header X-Forwarded-Host $host;
-        proxy_set_header X-Forwarded-Server $host;
-
-        # Websocket support
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-
-        # Timeouts
-        proxy_connect_timeout 60s;
-        proxy_send_timeout 60s;
-        proxy_read_timeout 60s;
-    }
-
-    # Proxy RTSP HTTP API requests
-    location /rtsp/ {
-        proxy_pass http://yolink-rtsp-streamer:RTSP_HTTP_PORT_PLACEHOLDER/;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
+[alt_names]
+DNS.1 = localhost
+IP.1 = 127.0.0.1
+IP.2 = $host_ip
 EOF
 
-    # Replace placeholder with actual values
-    sed -i "s/SERVER_IP_PLACEHOLDER/$clean_ip/g" "$nginx_conf"
-    sed -i "s/RTSP_HTTP_PORT_PLACEHOLDER/$rtsp_http_port/g" "$nginx_conf"
+    echo "Generating SSL certificates with IP $host_ip in SAN field..."
+    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+        -keyout "$key_file" -out "$cert_file" \
+        -config "$ssl_config" 2>/tmp/openssl_error
 
-    verify_success "Failed to generate nginx.conf" true
-    log_success "nginx.conf generated successfully with server_name: localhost $clean_ip"
-}
-
-# Create IP monitor script - FIXED to properly handle nginx variables
-create_ip_monitor_script() {
-    log_info "Creating IP monitor script..."
-    cat > "$APP_DIR/monitor-ip.sh" << 'EOT'
-#!/bin/bash
-
-# IP Monitor for YoLink CHEKT Integration
-# This script monitors for IP address changes and updates configurations accordingly
-
-# Exit on any error
-set -e
-
-APP_DIR="/opt/yolink-chekt"
-LOG_FILE="/var/log/yolink-ip-monitor.log"
-CURRENT_IP_FILE="$APP_DIR/current_ip.txt"
-DOCKER_COMPOSE_FILE="$APP_DIR/docker-compose.yml"
-LOCK_FILE="/tmp/yolink-ip-monitor.lock"
-MAX_LOCK_AGE=300  # 5 minutes in seconds
-RTSP_HTTP_PORT=8080  # Use the same port as in the main script
-
-# Create log directory if it doesn't exist
-mkdir -p "$(dirname "$LOG_FILE")"
-
-# Redirect output to log file with timestamps
-exec > >(tee -a >(while read line; do echo "[$(date '+%Y-%m-%d %H:%M:%S')] $line"; done >> "$LOG_FILE")) 2>&1
-
-# Check for root privileges
-if [ "$EUID" -ne 0 ]; then
-    echo "Error: This script must be run as root."
-    exit 1
-fi
-
-# Check and handle stale lock files
-if [ -f "$LOCK_FILE" ]; then
-    lock_time=$(stat -c %Y "$LOCK_FILE" 2>/dev/null || echo 0)
-    current_time=$(date +%s)
-    if [ $((current_time - lock_time)) -gt $MAX_LOCK_AGE ]; then
-        echo "Removing stale lock file (older than $MAX_LOCK_AGE seconds)"
-        rm -f "$LOCK_FILE"
+    if [ $? -eq 0 ]; then
+        echo "SSL certificates generated successfully with IP $host_ip in SAN field."
+        # Verify the certificate
+        echo "Certificate SAN field verification:"
+        openssl x509 -in "$cert_file" -text -noout | grep -A1 "Subject Alternative Name"
     else
-        echo "Another instance is already running (lock file exists)."
-        exit 0
-    fi
-fi
-
-# Create lock file
-touch "$LOCK_FILE"
-
-# Clean up lock file on exit
-trap 'rm -f "$LOCK_FILE"; echo "Lock file removed."' EXIT
-
-# Function to get the IP address without any logging
-get_clean_ip() {
-    # Try multiple methods to get IP
-    local host_ip=""
-
-    # Method 1: Using ip route
-    if command -v ip >/dev/null 2>&1; then
-        host_ip=$(ip route get 8.8.8.8 2>/dev/null | grep -o 'src [0-9.]*' | awk '{print $2}')
+        echo "Failed to generate SSL certificates with SAN. Error:"
+        cat /tmp/openssl_error
+        echo "Falling back to basic certificates..."
+        openssl req -x509 -newkey rsa:2048 -keyout "$key_file" \
+            -out "$cert_file" -days 365 -nodes \
+            -subj "/C=US/ST=State/L=City/O=YoLink/CN=localhost"
     fi
 
-    # Method 2: Using hostname
-    if [ -z "$host_ip" ] && command -v hostname >/dev/null 2>&1; then
-        host_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
-    fi
-
-    # Method 3: Using ifconfig
-    if [ -z "$host_ip" ] && command -v ifconfig >/dev/null 2>&1; then
-        host_ip=$(ifconfig | grep -Eo 'inet (addr:)?([0-9]*\.){3}[0-9]*' | grep -Eo '([0-9]*\.){3}[0-9]*' | grep -v '127.0.0.1' | head -n 1)
-    fi
-
-    # Validate IP format
-    if [[ ! "$host_ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-        echo "Error: Could not detect a valid IP address."
-        exit 1
-    fi
-
-    echo "$host_ip"
+    chmod 600 "$key_file" "$cert_file"
+    rm -f "$ssl_config" /tmp/openssl_error 2>/dev/null || true
 }
 
-# Function to check if IP has changed
-check_ip_changed() {
-    local current_ip=$(get_clean_ip)
-    local stored_ip=""
-
-    if [ -f "$CURRENT_IP_FILE" ]; then
-        stored_ip=$(cat "$CURRENT_IP_FILE")
-    fi
-
-    if [ "$current_ip" != "$stored_ip" ]; then
-        echo "IP address changed from $stored_ip to $current_ip"
-        return 0  # IP has changed
-    else
-        echo "IP address unchanged: $current_ip"
-        return 1  # IP has not changed
-    fi
-}
-
-# Function to generate nginx.conf with the current IP - using a different approach to avoid variable issues
+# Function to generate nginx.conf with the current IP
 generate_nginx_conf() {
     local host_ip=$1
     local nginx_conf="$APP_DIR/nginx.conf"
     local rtsp_http_port=8080
+    local template_file="$APP_DIR/config-templates/nginx.conf.template"
 
     echo "Generating nginx.conf with IP $host_ip..."
 
-    # Create nginx.conf with placeholders for the IP address
-    cat > "$nginx_conf" << 'EOF'
+    # Check if template file exists
+    if [ -f "$template_file" ]; then
+        # Use the template file
+        cp "$template_file" "$nginx_conf"
+        # Replace placeholder variables with actual values
+        sed -i "s|SERVER_IP_PLACEHOLDER|$host_ip|g" "$nginx_conf"
+        sed -i "s|RTSP_HTTP_PORT_PLACEHOLDER|$rtsp_http_port|g" "$nginx_conf"
+        sed -i "s|SSL_CIPHERS_PLACEHOLDER|ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305|g" "$nginx_conf"
+        # Fix $ variables in the template to avoid shell expansion
+        sed -i 's|\$|\\$|g' "$nginx_conf"
+    else
+        # Create nginx.conf with placeholders for the IP address
+        cat > "$nginx_conf" << 'EOF'
 server {
     listen 80;
     server_name localhost SERVER_IP_PLACEHOLDER;
@@ -1396,64 +1275,11 @@ server {
 }
 EOF
 
-    # Replace the placeholder with the actual IP address
-    sed -i "s/SERVER_IP_PLACEHOLDER/$host_ip/g" "$nginx_conf"
-
-    echo "nginx.conf generated successfully."
-}
-
-# Generate SSL certificates with proper Subject Alternative Name (SAN)
-generate_ssl_certificates() {
-    local host_ip=$1
-    local cert_dir=$2
-    local cert_file="${cert_dir}/cert.pem"
-    local key_file="${cert_dir}/key.pem"
-
-    mkdir -p "$cert_dir"
-
-    # Create a temporary OpenSSL configuration file
-    local ssl_config=$(mktemp)
-    cat > "$ssl_config" << EOF
-[req]
-distinguished_name = req_distinguished_name
-req_extensions = v3_req
-prompt = no
-
-[req_distinguished_name]
-CN = YoLink CHEKT Integration
-
-[v3_req]
-keyUsage = keyEncipherment, dataEncipherment
-extendedKeyUsage = serverAuth
-subjectAltName = @alt_names
-
-[alt_names]
-DNS.1 = localhost
-IP.1 = 127.0.0.1
-IP.2 = $host_ip
-EOF
-
-    echo "Generating SSL certificates with IP $host_ip in SAN field..."
-    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-        -keyout "$key_file" -out "$cert_file" \
-        -config "$ssl_config" 2>/tmp/openssl_error
-
-    if [ $? -eq 0 ]; then
-        echo "SSL certificates generated successfully with IP $host_ip in SAN field."
-        # Verify the certificate
-        echo "Certificate SAN field verification:"
-        openssl x509 -in "$cert_file" -text -noout | grep -A1 "Subject Alternative Name"
-    else
-        echo "Failed to generate SSL certificates with SAN. Error:"
-        cat /tmp/openssl_error
-        echo "Falling back to basic certificates..."
-        openssl req -x509 -newkey rsa:2048 -keyout "$key_file" \
-            -out "$cert_file" -days 365 -nodes \
-            -subj "/C=US/ST=State/L=City/O=YoLink/CN=localhost"
+        # Replace the placeholder with the actual IP address
+        sed -i "s/SERVER_IP_PLACEHOLDER/$host_ip/g" "$nginx_conf"
     fi
 
-    chmod 600 "$key_file" "$cert_file"
-    rm -f "$ssl_config" /tmp/openssl_error 2>/dev/null || true
+    echo "nginx.conf generated successfully."
 }
 
 # Update docker-compose.yml with host IP
@@ -1461,6 +1287,7 @@ update_docker_compose_ip() {
     local host_ip=$1
     local docker_compose_file="$APP_DIR/docker-compose.yml"
     local rtsp_http_port=8080
+    local template_file="$APP_DIR/config-templates/docker-compose.yml.template"
 
     echo "Creating new docker-compose.yml with IP $host_ip..."
 
@@ -1469,8 +1296,16 @@ update_docker_compose_ip() {
         echo "Warning: Failed to create backup of docker-compose.yml"
     }
 
-    # Generate a new docker-compose.yml file with clean IP address (no logs)
-    cat > "$docker_compose_file" << EOF
+    # Check if template file exists
+    if [ -f "$template_file" ]; then
+        # Use the template file
+        cp "$template_file" "$docker_compose_file"
+        # Replace placeholder variables with actual values
+        sed -i "s|SERVER_IP_PLACEHOLDER|$host_ip|g" "$docker_compose_file"
+        sed -i "s|RTSP_HTTP_PORT_PLACEHOLDER|$rtsp_http_port|g" "$docker_compose_file"
+    else
+        # Generate a new docker-compose.yml file with clean IP address (no logs)
+        cat > "$docker_compose_file" << EOF
 version: '3'
 
 services:
@@ -1602,6 +1437,7 @@ networks:
 volumes:
   redis-data:
 EOF
+    fi
 
     # Remove any carriage returns that might cause issues
     tr -d '\r' < "$docker_compose_file" > "${docker_compose_file}.clean" && \
@@ -1683,9 +1519,15 @@ main() {
 # Run the main function
 main
 EOT
+    else
+        # Use the template file
+        cp "$template_file" "$output_file"
+        # Replace placeholder variables with actual values
+        sed -i "s|APP_DIR_PLACEHOLDER|$APP_DIR|g" "$output_file"
+    fi
 
-    chmod +x "$APP_DIR/monitor-ip.sh"
-    log_success "Created IP monitor script at $APP_DIR/monitor-ip.sh"
+    chmod +x "$output_file"
+    log_success "Created IP monitor script at $output_file"
 }
 
 # Set up systemd service for IP monitoring
@@ -1805,7 +1647,7 @@ if [ "$OPERATION_MODE" = "install" ]; then
 
     # Create application directory
     log_info "Creating application directory at $APP_DIR..."
-    mkdir -p "$APP_DIR" "$APP_DIR/logs" "$APP_DIR/templates" "$APP_DIR/certs"
+    mkdir -p "$APP_DIR" "$APP_DIR/logs" "$APP_DIR/templates" "$APP_DIR/certs" "$APP_DIR/config-templates"
     verify_success "Failed to create application directories" true
 
     # Create initial .env file if it doesn't exist
@@ -1876,6 +1718,13 @@ if [ "$OPERATION_MODE" = "update" ]; then
     # Backup existing .env file
     backup_file "$APP_DIR/.env" "$APP_DIR/.env.bak"
 
+    # Backup config templates directory
+    if [ -d "$APP_DIR/config-templates" ]; then
+        log_info "Backing up config-templates directory"
+        rm -rf "$APP_DIR/config-templates.bak"
+        cp -r "$APP_DIR/config-templates" "$APP_DIR/config-templates.bak" || log_warning "Failed to backup config-templates"
+    fi
+
     # Backup rtsp-streamer directory
     if [ -d "$APP_DIR/rtsp-streamer" ]; then
         log_info "Backing up rtsp-streamer directory"
@@ -1888,6 +1737,14 @@ fi
 track_progress "Updating application files"
 log_info "Syncing updated files..."
 rsync -a --exclude='.env' --exclude='docker-compose.yml' --exclude='nginx.conf' --exclude='monitor-ip.sh' --exclude='current_ip.txt' "$TEMP_DIR/yolink-chekt-main/" "$APP_DIR/" || handle_error "Failed to sync updated files" true
+
+# Check if config-templates directory exists in the extracted repo and move if it doesn't exist locally
+if [ -d "$TEMP_DIR/yolink-chekt-main/config-templates" ] && [ ! -d "$APP_DIR/config-templates" ]; then
+    log_info "Creating config-templates directory from repository..."
+    mkdir -p "$APP_DIR/config-templates"
+    cp -r "$TEMP_DIR/yolink-chekt-main/config-templates/"* "$APP_DIR/config-templates/" || log_warning "Failed to copy config templates"
+fi
+
 rm -rf "$TEMP_DIR/yolink-chekt-main" "$APP_DIR/repo.zip"
 
 # Step 8: For updates, restore files that shouldn't be overwritten
@@ -1911,7 +1768,7 @@ fi
 # Step 9: Clean up temporary files
 log_info "Cleaning up..."
 rm -rf "$TEMP_DIR"
-rm -f "$APP_DIR/rtsp-streamer.bak" /tmp/curl_error_* /tmp/openssl_* 2>/dev/null || true
+rm -f "$APP_DIR/rtsp-streamer.bak" "$APP_DIR/config-templates.bak" /tmp/curl_error_* /tmp/openssl_* 2>/dev/null || true
 
 # Step 10: Set permissions
 log_info "Setting permissions..."

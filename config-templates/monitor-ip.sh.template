@@ -1,0 +1,347 @@
+#!/bin/bash
+
+# IP Monitor for YoLink CHEKT Integration
+# This script monitors for IP address changes and updates configurations accordingly
+
+# Exit on any error
+set -e
+
+APP_DIR="APP_DIR_PLACEHOLDER"
+LOG_FILE="/var/log/yolink-ip-monitor.log"
+CURRENT_IP_FILE="$APP_DIR/current_ip.txt"
+DOCKER_COMPOSE_FILE="$APP_DIR/docker-compose.yml"
+CONFIG_TEMPLATES_DIR="$APP_DIR/config-templates"
+LOCK_FILE="/tmp/yolink-ip-monitor.lock"
+MAX_LOCK_AGE=300  # 5 minutes in seconds
+RTSP_HTTP_PORT=8080  # Use the same port as in the main script
+
+# Create log directory if it doesn't exist
+mkdir -p "$(dirname "$LOG_FILE")"
+
+# Redirect output to log file with timestamps
+exec > >(tee -a >(while read line; do echo "[$(date '+%Y-%m-%d %H:%M:%S')] $line"; done >> "$LOG_FILE")) 2>&1
+
+# Check for root privileges
+if [ "$EUID" -ne 0 ]; then
+    echo "Error: This script must be run as root."
+    exit 1
+fi
+
+# Check and handle stale lock files
+if [ -f "$LOCK_FILE" ]; then
+    lock_time=$(stat -c %Y "$LOCK_FILE" 2>/dev/null || echo 0)
+    current_time=$(date +%s)
+    if [ $((current_time - lock_time)) -gt $MAX_LOCK_AGE ]; then
+        echo "Removing stale lock file (older than $MAX_LOCK_AGE seconds)"
+        rm -f "$LOCK_FILE"
+    else
+        echo "Another instance is already running (lock file exists)."
+        exit 0
+    fi
+fi
+
+# Create lock file
+touch "$LOCK_FILE"
+
+# Clean up lock file on exit
+trap 'rm -f "$LOCK_FILE"; echo "Lock file removed."' EXIT
+
+# Function to get the IP address without any logging
+get_clean_ip() {
+    # Try multiple methods to get IP
+    local host_ip=""
+
+    # Method 1: Using ip route
+    if command -v ip >/dev/null 2>&1; then
+        host_ip=$(ip route get 8.8.8.8 2>/dev/null | grep -o 'src [0-9.]*' | awk '{print $2}')
+    fi
+
+    # Method 2: Using hostname
+    if [ -z "$host_ip" ] && command -v hostname >/dev/null 2>&1; then
+        host_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+    fi
+
+    # Method 3: Using ifconfig
+    if [ -z "$host_ip" ] && command -v ifconfig >/dev/null 2>&1; then
+        host_ip=$(ifconfig | grep -Eo 'inet (addr:)?([0-9]*\.){3}[0-9]*' | grep -Eo '([0-9]*\.){3}[0-9]*' | grep -v '127.0.0.1' | head -n 1)
+    fi
+
+    # Validate IP format
+    if [[ ! "$host_ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        echo "Error: Could not detect a valid IP address."
+        exit 1
+    fi
+
+    echo "$host_ip"
+}
+
+# Function to check if IP has changed
+check_ip_changed() {
+    local current_ip=$(get_clean_ip)
+    local stored_ip=""
+
+    if [ -f "$CURRENT_IP_FILE" ]; then
+        stored_ip=$(cat "$CURRENT_IP_FILE")
+    fi
+
+    if [ "$current_ip" != "$stored_ip" ]; then
+        echo "IP address changed from $stored_ip to $current_ip"
+        return 0  # IP has changed
+    else
+        echo "IP address unchanged: $current_ip"
+        return 1  # IP has not changed
+    fi
+}
+
+# Function to generate SSL certificates with proper Subject Alternative Name (SAN)
+generate_ssl_certificates() {
+    local host_ip=$1
+    local cert_dir=$2
+    local cert_file="${cert_dir}/cert.pem"
+    local key_file="${cert_dir}/key.pem"
+
+    mkdir -p "$cert_dir"
+
+    # Create a temporary OpenSSL configuration file
+    local ssl_config=$(mktemp)
+    cat > "$ssl_config" << EOF
+[req]
+distinguished_name = req_distinguished_name
+req_extensions = v3_req
+prompt = no
+
+[req_distinguished_name]
+CN = YoLink CHEKT Integration
+
+[v3_req]
+keyUsage = keyEncipherment, dataEncipherment
+extendedKeyUsage = serverAuth
+subjectAltName = @alt_names
+
+[alt_names]
+DNS.1 = localhost
+IP.1 = 127.0.0.1
+IP.2 = $host_ip
+EOF
+
+    echo "Generating SSL certificates with IP $host_ip in SAN field..."
+    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+        -keyout "$key_file" -out "$cert_file" \
+        -config "$ssl_config" 2>/tmp/openssl_error
+
+    if [ $? -eq 0 ]; then
+        echo "SSL certificates generated successfully with IP $host_ip in SAN field."
+        # Verify the certificate
+        echo "Certificate SAN field verification:"
+        openssl x509 -in "$cert_file" -text -noout | grep -A1 "Subject Alternative Name"
+    else
+        echo "Failed to generate SSL certificates with SAN. Error:"
+        cat /tmp/openssl_error
+        echo "Falling back to basic certificates..."
+        openssl req -x509 -newkey rsa:2048 -keyout "$key_file" \
+            -out "$cert_file" -days 365 -nodes \
+            -subj "/C=US/ST=State/L=City/O=YoLink/CN=localhost"
+    fi
+
+    chmod 600 "$key_file" "$cert_file"
+    rm -f "$ssl_config" /tmp/openssl_error 2>/dev/null || true
+}
+
+# Function to generate nginx.conf from template
+generate_nginx_conf() {
+    local host_ip=$1
+    local nginx_conf="$APP_DIR/nginx.conf"
+    local template_file="$CONFIG_TEMPLATES_DIR/nginx.conf.template"
+
+    echo "Generating nginx.conf with IP $host_ip..."
+
+    # Check if template file exists
+    if [ -f "$template_file" ]; then
+        # Use the template file
+        cp "$template_file" "$nginx_conf"
+        # Replace placeholder variables with actual values
+        sed -i "s|SERVER_IP_PLACEHOLDER|$host_ip|g" "$nginx_conf"
+        sed -i "s|RTSP_HTTP_PORT_PLACEHOLDER|$RTSP_HTTP_PORT|g" "$nginx_conf"
+        sed -i "s|SSL_CIPHERS_PLACEHOLDER|ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305|g" "$nginx_conf"
+        # Fix $ variables in the template to avoid shell expansion
+        sed -i 's|\$|\\$|g' "$nginx_conf"
+    else
+        echo "Error: Nginx template file not found at $template_file"
+        echo "Creating basic nginx.conf..."
+
+        # Create a basic nginx.conf file
+        cat > "$nginx_conf" << EOF
+server {
+    listen 80;
+    server_name localhost $host_ip;
+
+    # Redirect all traffic to HTTPS
+    location / {
+        return 301 https://\$host\$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    server_name localhost $host_ip;
+
+    ssl_certificate /etc/nginx/certs/cert.pem;
+    ssl_certificate_key /etc/nginx/certs/key.pem;
+
+    # Main application proxy
+    location / {
+        proxy_pass http://yolink_chekt:5000;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+    }
+
+    # RTSP API
+    location /rtsp-api/ {
+        proxy_pass http://yolink-rtsp-streamer:$RTSP_HTTP_PORT/;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+    }
+}
+EOF
+    fi
+
+    echo "nginx.conf generated successfully."
+}
+
+# Function to generate docker-compose.yml from template
+generate_docker_compose() {
+    local host_ip=$1
+    local docker_compose_file="$APP_DIR/docker-compose.yml"
+    local template_file="$CONFIG_TEMPLATES_DIR/docker-compose.yml.template"
+
+    echo "Generating docker-compose.yml with IP $host_ip..."
+
+    # Check if template file exists
+    if [ -f "$template_file" ]; then
+        # Use the template file
+        cp "$template_file" "$docker_compose_file"
+        # Replace placeholder variables with actual values
+        sed -i "s|SERVER_IP_PLACEHOLDER|$host_ip|g" "$docker_compose_file"
+        sed -i "s|RTSP_HTTP_PORT_PLACEHOLDER|$RTSP_HTTP_PORT|g" "$docker_compose_file"
+    else
+        echo "Error: Docker compose template file not found at $template_file"
+        echo "Using fallback method to generate docker-compose.yml..."
+
+        # Create a basic docker-compose.yml file
+        cat > "$docker_compose_file" << EOF
+version: '3'
+
+services:
+  nginx:
+    image: nginx:latest
+    ports:
+      - "443:443"
+      - "80:80"
+    volumes:
+      - ./certs:/etc/nginx/certs
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - yolink_chekt
+    restart: unless-stopped
+    networks:
+      - yolink-network
+
+  yolink_chekt:
+    build: .
+    expose:
+      - "5000"
+    volumes:
+      - ./certs:/app/certs
+      - .:/app
+      - ./logs:/app/logs
+    environment:
+      - FLASK_ENV=production
+      - LOG_DIR=/app/logs
+      - DISABLE_HTTPS=true
+    restart: unless-stopped
+    networks:
+      - yolink-network
+
+  rtsp-streamer:
+    build:
+      context: ./rtsp-streamer
+      dockerfile: Dockerfile
+    container_name: yolink-rtsp-streamer
+    restart: unless-stopped
+    environment:
+      - ANNOUNCE_IP=$host_ip
+      - RTSP_API_PORT=$RTSP_HTTP_PORT
+    ports:
+      - "554:554"
+      - "$RTSP_HTTP_PORT:$RTSP_HTTP_PORT"
+    networks:
+      - yolink-network
+
+networks:
+  yolink-network:
+    driver: bridge
+EOF
+    fi
+
+    # Remove any carriage returns
+    tr -d '\r' < "$docker_compose_file" > "${docker_compose_file}.clean" && \
+    mv "${docker_compose_file}.clean" "$docker_compose_file"
+
+    echo "docker-compose.yml generated successfully."
+}
+
+# Function to restart containers
+restart_containers() {
+    echo "Restarting containers to apply changes..."
+
+    # Determine which Docker Compose command to use
+    if docker compose version >/dev/null 2>&1; then
+        DOCKER_COMPOSE_CMD="docker compose"
+    elif docker-compose --version >/dev/null 2>&1; then
+        DOCKER_COMPOSE_CMD="docker-compose"
+    else
+        echo "Error: No Docker Compose command available."
+        exit 1
+    fi
+
+    cd "$APP_DIR" || { echo "Cannot access $APP_DIR"; exit 1; }
+
+    # Don't rebuild, just restart with the new config
+    $DOCKER_COMPOSE_CMD down || { echo "Error: Failed to stop Docker containers"; exit 1; }
+    $DOCKER_COMPOSE_CMD up -d || { echo "Error: Failed to start Docker containers"; exit 1; }
+
+    echo "Containers restarted successfully"
+}
+
+# Main function
+main() {
+    echo "Starting IP monitor check..."
+
+    if ! check_ip_changed; then
+        echo "No IP change detected. Exiting."
+        exit 0
+    fi
+
+    # Get the new IP
+    HOST_IP=$(get_clean_ip)
+
+    # Store the new IP
+    echo "$HOST_IP" > "$CURRENT_IP_FILE"
+
+    # Update SSL certificates
+    generate_ssl_certificates "$HOST_IP" "$APP_DIR/certs"
+
+    # Update nginx.conf
+    generate_nginx_conf "$HOST_IP"
+
+    # Update docker-compose.yml
+    generate_docker_compose "$HOST_IP"
+
+    # Restart containers
+    restart_containers
+
+    echo "IP monitor check completed successfully."
+}
+
+# Run the main function
+main
