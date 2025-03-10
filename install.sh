@@ -1106,24 +1106,46 @@ check_ip_changed() {
     fi
 }
 
-# Function to generate nginx.conf with the current IP
+# Function to generate nginx.conf - FIXED to use clean IP and properly escape nginx variables
 generate_nginx_conf() {
-    local host_ip=$1
+    local host_ip="$1"
     local nginx_conf="$APP_DIR/nginx.conf"
-    local rtsp_http_port=8080
+    local rtsp_http_port="${2:-8080}"
 
-    echo "Generating nginx.conf with IP $host_ip..."
-    cat > "$nginx_conf" << EOF
+    log_info "Generating nginx.conf with IP $host_ip..."
+
+    # Ensure we have a clean IP with no logging output
+    local clean_ip
+    clean_ip=$(echo "$host_ip" | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+
+    if [ -z "$clean_ip" ]; then
+        log_warning "Could not extract a valid IP address, using fallback method"
+        clean_ip=$(get_clean_ip)
+    fi
+
+    log_info "Using clean IP for nginx.conf: $clean_ip"
+
+    # Backup existing file if it exists
+    if [ -f "$nginx_conf" ]; then
+        cp "$nginx_conf" "${nginx_conf}.bak.$(date +%Y%m%d%H%M%S)" 2>/dev/null
+        verify_success "Failed to backup existing nginx.conf" false
+    fi
+
+    # Generate the nginx configuration with clean IP - using single quotes for the heredoc to prevent variable expansion
+    cat > "$nginx_conf" << 'EOF'
 server {
     listen 80;
-    server_name localhost $host_ip;
+    server_name localhost SERVER_IP_PLACEHOLDER;
 
     # ONVIF endpoints - direct proxy, no redirect
     location ~ ^/onvif/ {
         proxy_pass http://yolink-rtsp-streamer:8000;
         proxy_http_version 1.1;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+        # Disable buffering for immediate response
         proxy_buffering off;
     }
 
@@ -1131,24 +1153,224 @@ server {
     location = /device_service {
         proxy_pass http://yolink-rtsp-streamer:8000/onvif/device_service;
         proxy_http_version 1.1;
-        proxy_set_header Host \$host;
+        proxy_set_header Host $host;
     }
 
     location = /media_service {
         proxy_pass http://yolink-rtsp-streamer:8000/onvif/media_service;
         proxy_http_version 1.1;
-        proxy_set_header Host \$host;
+        proxy_set_header Host $host;
     }
 
     # Redirect all other HTTP to HTTPS
     location / {
-        return 301 https://\$host\$request_uri;
+        return 301 https://$host$request_uri;
     }
 }
 
 server {
     listen 443 ssl;
-    server_name localhost $host_ip;
+    server_name localhost SERVER_IP_PLACEHOLDER;
+
+    ssl_certificate /etc/nginx/certs/cert.pem;
+    ssl_certificate_key /etc/nginx/certs/key.pem;
+
+    # Improved SSL configuration
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers on;
+    ssl_ciphers 'ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305';
+
+    # Add SSL session cache for better performance
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+
+    # Main application
+    location / {
+        proxy_pass http://yolink_chekt:5000;
+
+        # Standard proxy headers
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Additional headers to help with redirection
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Server $host;
+
+        # Websocket support
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+
+        # Timeouts
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
+
+    # Proxy RTSP HTTP API requests
+    location /rtsp/ {
+        proxy_pass http://yolink-rtsp-streamer:RTSP_HTTP_PORT_PLACEHOLDER/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+EOF
+
+    # Replace placeholder with actual values
+    sed -i "s/SERVER_IP_PLACEHOLDER/$clean_ip/g" "$nginx_conf"
+    sed -i "s/RTSP_HTTP_PORT_PLACEHOLDER/$rtsp_http_port/g" "$nginx_conf"
+
+    verify_success "Failed to generate nginx.conf" true
+    log_success "nginx.conf generated successfully with server_name: localhost $clean_ip"
+}
+
+# Create IP monitor script - FIXED to properly handle nginx variables
+create_ip_monitor_script() {
+    log_info "Creating IP monitor script..."
+    cat > "$APP_DIR/monitor-ip.sh" << 'EOT'
+#!/bin/bash
+
+# IP Monitor for YoLink CHEKT Integration
+# This script monitors for IP address changes and updates configurations accordingly
+
+# Exit on any error
+set -e
+
+APP_DIR="/opt/yolink-chekt"
+LOG_FILE="/var/log/yolink-ip-monitor.log"
+CURRENT_IP_FILE="$APP_DIR/current_ip.txt"
+DOCKER_COMPOSE_FILE="$APP_DIR/docker-compose.yml"
+LOCK_FILE="/tmp/yolink-ip-monitor.lock"
+MAX_LOCK_AGE=300  # 5 minutes in seconds
+RTSP_HTTP_PORT=8080  # Use the same port as in the main script
+
+# Create log directory if it doesn't exist
+mkdir -p "$(dirname "$LOG_FILE")"
+
+# Redirect output to log file with timestamps
+exec > >(tee -a >(while read line; do echo "[$(date '+%Y-%m-%d %H:%M:%S')] $line"; done >> "$LOG_FILE")) 2>&1
+
+# Check for root privileges
+if [ "$EUID" -ne 0 ]; then
+    echo "Error: This script must be run as root."
+    exit 1
+fi
+
+# Check and handle stale lock files
+if [ -f "$LOCK_FILE" ]; then
+    lock_time=$(stat -c %Y "$LOCK_FILE" 2>/dev/null || echo 0)
+    current_time=$(date +%s)
+    if [ $((current_time - lock_time)) -gt $MAX_LOCK_AGE ]; then
+        echo "Removing stale lock file (older than $MAX_LOCK_AGE seconds)"
+        rm -f "$LOCK_FILE"
+    else
+        echo "Another instance is already running (lock file exists)."
+        exit 0
+    fi
+fi
+
+# Create lock file
+touch "$LOCK_FILE"
+
+# Clean up lock file on exit
+trap 'rm -f "$LOCK_FILE"; echo "Lock file removed."' EXIT
+
+# Function to get the IP address without any logging
+get_clean_ip() {
+    # Try multiple methods to get IP
+    local host_ip=""
+
+    # Method 1: Using ip route
+    if command -v ip >/dev/null 2>&1; then
+        host_ip=$(ip route get 8.8.8.8 2>/dev/null | grep -o 'src [0-9.]*' | awk '{print $2}')
+    fi
+
+    # Method 2: Using hostname
+    if [ -z "$host_ip" ] && command -v hostname >/dev/null 2>&1; then
+        host_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+    fi
+
+    # Method 3: Using ifconfig
+    if [ -z "$host_ip" ] && command -v ifconfig >/dev/null 2>&1; then
+        host_ip=$(ifconfig | grep -Eo 'inet (addr:)?([0-9]*\.){3}[0-9]*' | grep -Eo '([0-9]*\.){3}[0-9]*' | grep -v '127.0.0.1' | head -n 1)
+    fi
+
+    # Validate IP format
+    if [[ ! "$host_ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        echo "Error: Could not detect a valid IP address."
+        exit 1
+    fi
+
+    echo "$host_ip"
+}
+
+# Function to check if IP has changed
+check_ip_changed() {
+    local current_ip=$(get_clean_ip)
+    local stored_ip=""
+
+    if [ -f "$CURRENT_IP_FILE" ]; then
+        stored_ip=$(cat "$CURRENT_IP_FILE")
+    fi
+
+    if [ "$current_ip" != "$stored_ip" ]; then
+        echo "IP address changed from $stored_ip to $current_ip"
+        return 0  # IP has changed
+    else
+        echo "IP address unchanged: $current_ip"
+        return 1  # IP has not changed
+    fi
+}
+
+# Function to generate nginx.conf with the current IP - using a different approach to avoid variable issues
+generate_nginx_conf() {
+    local host_ip=$1
+    local nginx_conf="$APP_DIR/nginx.conf"
+    local rtsp_http_port=8080
+
+    echo "Generating nginx.conf with IP $host_ip..."
+
+    # Create nginx.conf with placeholders for the IP address
+    cat > "$nginx_conf" << 'EOF'
+server {
+    listen 80;
+    server_name localhost SERVER_IP_PLACEHOLDER;
+
+    # ONVIF endpoints - direct proxy, no redirect
+    location ~ ^/onvif/ {
+        proxy_pass http://yolink-rtsp-streamer:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_buffering off;
+    }
+
+    # Common ONVIF shorthand endpoints
+    location = /device_service {
+        proxy_pass http://yolink-rtsp-streamer:8000/onvif/device_service;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+    }
+
+    location = /media_service {
+        proxy_pass http://yolink-rtsp-streamer:8000/onvif/media_service;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+    }
+
+    # Redirect all other HTTP to HTTPS
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    server_name localhost SERVER_IP_PLACEHOLDER;
     ssl_certificate /etc/nginx/certs/cert.pem;
     ssl_certificate_key /etc/nginx/certs/key.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
@@ -1159,20 +1381,23 @@ server {
 
     location / {
         proxy_pass http://yolink_chekt:5000;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
 
     location /rtsp/ {
         proxy_pass http://yolink-rtsp-streamer:8080/;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     }
 }
 EOF
+
+    # Replace the placeholder with the actual IP address
+    sed -i "s/SERVER_IP_PLACEHOLDER/$host_ip/g" "$nginx_conf"
 
     echo "nginx.conf generated successfully."
 }
