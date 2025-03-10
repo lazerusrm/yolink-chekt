@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard - YoLink Integration</title>
+    <title>ICS Sensor Dashboard</title>
     <!-- Bootstrap CSS -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
     <!-- Font Awesome CSS -->
@@ -82,13 +82,13 @@
         }
 
         h1 {
-            font-size: 2rem;
-            margin-bottom: 2rem;
+            font-size: 1.8rem;
+            margin-bottom: 1.5rem;
         }
 
         h2 {
-            font-size: 1.5rem;
-            margin-bottom: 1.5rem;
+            font-size: 1.3rem;
+            margin-bottom: 1rem;
             display: flex;
             align-items: center;
         }
@@ -98,337 +98,284 @@
             color: var(--accent-primary);
         }
 
-        /* Status and sensor cards */
-        .status, .sensor-data {
-            background-color: var(--bg-card);
-            padding: 2rem;
-            border-radius: var(--card-border-radius);
-            margin-bottom: 2rem;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
-            border: 1px solid rgba(255, 255, 255, 0.05);
+        /* Status indicators */
+        .status-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
         }
 
-        .status-item {
+        .status-indicator {
             display: flex;
             align-items: center;
-            padding: 1rem;
-            background-color: var(--bg-elevated);
-            border-radius: var(--input-border-radius);
-            margin-bottom: 1rem;
-            transition: all 0.3s ease;
-            border-left: 4px solid transparent;
+            padding: 0.75rem 1rem;
+            border-radius: var(--card-border-radius);
+            background-color: var(--bg-card);
+            flex: 1;
+            min-width: 220px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
         }
 
-        .status-item img {
+        .status-icon {
+            display: flex;
+            justify-content: center;
+            align-items: center;
             width: 24px;
             height: 24px;
-            margin-right: 1rem;
-            transition: all 0.3s ease;
+            margin-right: 12px;
+            border-radius: 50%;
+            background-color: var(--success-color);
+            color: var(--bg-card);
         }
 
-        .sensor-grid {
+        .status-icon.error {
+            background-color: var(--error-color);
+        }
+
+        .status-icon i {
+            font-size: 12px;
+        }
+
+        .status-text {
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+
+        .last-update {
+            display: flex;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .update-button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background-color: var(--accent-primary);
+            color: white;
+            border: none;
+            border-radius: var(--input-border-radius);
+            padding: 0.6rem 1.2rem;
+            font-weight: 600;
+            font-size: 0.95rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .update-button:hover {
+            background-color: #0069d9;
+            transform: translateY(-2px);
+        }
+
+        .update-button:focus {
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.3);
+        }
+
+        .update-button i {
+            margin-right: 8px;
+        }
+
+        .spinner {
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-top: 3px solid var(--accent-primary);
+            border-radius: 50%;
+            width: 16px;
+            height: 16px;
+            display: inline-block;
+            margin-left: 10px;
+            vertical-align: middle;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Sensor cards */
+        .sensor-card-container {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
             gap: 1.5rem;
         }
 
-        .sensor {
-            background-color: var(--bg-elevated);
-            padding: 1.5rem;
+        .sensor-card {
+            background-color: var(--bg-card);
             border-radius: var(--card-border-radius);
-            transition: transform var(--transition-speed), box-shadow var(--transition-speed), border var(--transition-speed);
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            padding: 1.5rem;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
             position: relative;
-            overflow: hidden;
-            border: 1px solid rgba(255, 255, 255, 0.05);
+            transition: transform var(--transition-speed), box-shadow var(--transition-speed);
         }
 
-        .sensor:hover {
+        .sensor-card:hover {
             transform: translateY(-5px);
-            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.25);
         }
 
-        .sensor-name {
-            font-size: 1.25rem;
-            font-weight: 700;
-            color: var(--accent-primary);
+        .sensor-card.alarm {
+            border-left: 4px solid var(--error-color);
+        }
+
+        .sensor-card.warning {
+            border-left: 4px solid var(--warning-color);
+        }
+
+        .sensor-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
             margin-bottom: 1rem;
             padding-bottom: 0.75rem;
             border-bottom: 1px solid rgba(255, 255, 255, 0.1);
         }
 
-        .sensor-data-item {
-            margin: 0.75rem 0;
+        .sensor-title {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--accent-primary);
+            margin: 0;
+        }
+
+        .sensor-badge {
+            font-size: 0.7rem;
+            font-weight: 600;
+            background-color: rgba(0, 122, 255, 0.2);
+            color: var(--accent-primary);
+            padding: 0.2rem 0.5rem;
+            border-radius: 20px;
+        }
+
+        .sensor-detail {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            font-size: 0.95rem;
-        }
-
-        .sensor-data-item:last-child {
-            margin-bottom: 0;
-        }
-
-        /* Status indicators */
-        .battery-icon {
-            margin-right: 0.5rem;
-            font-size: 1rem;
-            width: 20px;
-            text-align: center;
-        }
-
-        .battery-icon.fa-battery-empty { color: var(--error-color); }
-        .battery-icon.fa-battery-quarter { color: var(--warning-color); }
-        .battery-icon.fa-battery-half { color: var(--warning-color); }
-        .battery-icon.fa-battery-three-quarters { color: var(--success-color); }
-        .battery-icon.fa-battery-full { color: var(--success-color); }
-
-        .hidden {
-            display: none !important;
-        }
-
-        /* Zone editing and input */
-        .chekt-zone, .relay-channel, .door-prop-toggle {
-            color: var(--accent-primary);
-            font-weight: 600;
-            cursor: pointer;
-            display: block;
-            margin-top: 1rem;
-            padding: 0.5rem;
-            background-color: rgba(0, 122, 255, 0.1);
-            border-radius: var(--input-border-radius);
-            transition: all 0.2s ease;
-        }
-
-        .chekt-zone:hover, .relay-channel:hover, .door-prop-toggle:hover {
-            background-color: rgba(0, 122, 255, 0.2);
-        }
-
-        .chekt-zone-input, .relay-channel-input {
-            width: 80px;
-            text-align: center;
-            font-size: 1rem;
-            font-weight: 600;
-            color: var(--accent-primary);
-            background-color: rgba(0, 122, 255, 0.1);
-            border: none;
-            border-bottom: 2px solid var(--accent-primary);
-            margin-top: 1rem;
-            padding: 0.5rem;
-            border-radius: var(--input-border-radius);
-        }
-
-        .chekt-zone-input:focus, .relay-channel-input:focus {
-            outline: none;
-            background-color: rgba(0, 122, 255, 0.2);
-        }
-
-        .door-prop-input {
-            width: auto;
-            margin: 0 0.5rem;
-        }
-
-        /* Status indicators */
-        .save-confirmation {
-            position: absolute;
-            bottom: 10px;
-            right: 10px;
-            color: var(--success-color);
+            padding: 0.6rem 0;
             font-size: 0.9rem;
-            font-weight: 600;
-            background-color: rgba(52, 199, 89, 0.1);
-            padding: 0.3rem 0.75rem;
-            border-radius: 50px;
-            display: none;
-            animation: fadeInOut 2s ease;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
         }
 
-        @keyframes fadeInOut {
-            0% { opacity: 0; }
-            20% { opacity: 1; }
-            80% { opacity: 1; }
-            100% { opacity: 0; }
+        .sensor-detail:last-child {
+            border-bottom: none;
         }
 
-        /* Alarm and warning states */
-        .sensor.alarm {
-            border: 2px solid var(--error-color);
-            box-shadow: 0 0 15px rgba(255, 59, 48, 0.3);
+        .sensor-detail-label {
+            display: flex;
+            align-items: center;
+            color: var(--text-secondary);
         }
 
-        .sensor.warning {
-            border: 2px solid var(--warning-color);
+        .sensor-detail-label i {
+            margin-right: 8px;
+            width: 16px;
+            text-align: center;
         }
 
-        .sensor-data-item.alarm {
-            color: var(--error-color);
-            background-color: rgba(255, 59, 48, 0.1);
-            padding: 0.5rem;
-            border-radius: var(--input-border-radius);
-            font-weight: 600;
+        .sensor-detail-value {
+            font-weight: 500;
         }
 
-        .sensor-data-item.warning {
+        .warning-value {
             color: var(--warning-color);
-            background-color: rgba(255, 149, 0, 0.1);
-            padding: 0.5rem;
-            border-radius: var(--input-border-radius);
-            font-weight: 600;
         }
 
-        /* Spinner and animation */
-        .spinner {
-            border: 4px solid rgba(255, 255, 255, 0.3);
-            border-top: 4px solid var(--accent-primary);
-            border-radius: 50%;
-            width: 24px;
-            height: 24px;
-            display: inline-block;
-            margin-left: 10px;
-            vertical-align: middle;
-            animation-duration: 5s;
-            animation-timing-function: linear;
-            animation-iteration-count: infinite;
-            animation-name: slow-spin;
-        }
-
-        @keyframes slow-spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        .fast-spin {
-            animation-name: fast-spin;
-            animation-duration: 1s;
-        }
-
-        @keyframes fast-spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        /* Debug section */
-        #debug-toggle {
-            color: var(--text-secondary);
-            text-decoration: underline;
-            cursor: pointer;
-            display: inline-block;
-            margin-top: 1rem;
-            font-size: 0.9rem;
-            opacity: 0.7;
-            transition: all 0.2s ease;
-        }
-
-        #debug-toggle:hover {
-            opacity: 1;
-        }
-
-        #debug-info {
-            background-color: var(--bg-card);
-            padding: 1.5rem;
-            border-radius: var(--card-border-radius);
-            margin-top: 1.5rem;
-            display: none;
-            border: 1px solid rgba(255, 255, 255, 0.05);
-            font-family: "SF Mono", "Menlo", "Monaco", "Courier New", monospace;
-            font-size: 0.85rem;
-            overflow-x: auto;
-        }
-
-        #debug-info h3 {
-            margin-bottom: 1rem;
-            color: var(--text-primary);
-            font-size: 1.25rem;
-            font-weight: 600;
-        }
-
-        #debug-content {
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            color: var(--accent-secondary);
-        }
-
-        /* Buttons */
-        .btn {
-            font-weight: 600;
-            padding: 0.75rem 1.5rem;
-            border-radius: var(--input-border-radius);
-            transition: all 0.3s ease;
-        }
-
-        .btn-secondary {
-            background-color: var(--bg-elevated);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            color: var(--text-primary);
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        }
-
-        .btn-secondary:hover {
-            background-color: var(--bg-elevated);
-            transform: translateY(-2px);
-            box-shadow: 0 6px 10px rgba(0, 0, 0, 0.2);
-        }
-
-        /* Alert styling */
-        .alert-danger {
-            background-color: rgba(255, 59, 48, 0.1);
+        .error-value {
             color: var(--error-color);
-            border: 1px solid rgba(255, 59, 48, 0.2);
-            border-left: 4px solid var(--error-color);
         }
 
-        /* Section dividers */
-        .settings-divider {
-            height: 1px;
-            background-color: rgba(255, 255, 255, 0.1);
-            margin: 0.5rem 0;
-        }
-
-        /* Responsive adjustments */
-        @media (max-width: 768px) {
-            .sensor-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .status, .sensor-data {
-                padding: 1.5rem;
-            }
-        }
-
-        /* Integration section */
-        .integration-settings {
-            margin-top: 1rem;
-            padding: 0.75rem;
-            background-color: rgba(255, 255, 255, 0.05);
+        .integration-section {
+            padding: 1rem;
+            background-color: rgba(255, 255, 255, 0.03);
             border-radius: var(--input-border-radius);
+            margin-top: 1rem;
+            margin-bottom: 0.5rem;
         }
 
-        .integration-settings-header {
-            font-size: 0.9rem;
+        .integration-title {
+            font-size: 0.8rem;
             color: var(--text-secondary);
-            font-weight: 600;
-            margin-bottom: 0.5rem;
+            margin-bottom: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
 
         .integration-row {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-top: 0.5rem;
+            margin-bottom: 0.75rem;
         }
 
         .integration-label {
-            font-size: 0.9rem;
-        }
-
-        /* Last refresh indicator */
-        .last-refresh {
             font-size: 0.85rem;
             color: var(--text-secondary);
-            margin-left: 1rem;
         }
 
-        /* Error toast notification */
+        .integration-value {
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: var(--accent-primary);
+            background-color: rgba(0, 122, 255, 0.1);
+            padding: 0.3rem 0.6rem;
+            border-radius: var(--input-border-radius);
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+
+        .integration-value:hover {
+            background-color: rgba(0, 122, 255, 0.2);
+        }
+
+        .door-prop-toggle {
+            display: flex;
+            align-items: center;
+            margin-top: 0.75rem;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .door-prop-toggle i {
+            margin-right: 8px;
+            color: var(--accent-primary);
+        }
+
+        .door-prop-input {
+            margin-left: auto;
+            height: 18px;
+            width: 36px;
+        }
+
+        .door-prop-note {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            margin-top: 0.3rem;
+            margin-left: 1.5rem;
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            .status-container {
+                flex-direction: column;
+            }
+
+            .status-indicator {
+                width: 100%;
+            }
+
+            .sensor-card-container {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        /* Toast notifications */
         .toast-container {
             position: fixed;
             top: 20px;
@@ -478,35 +425,46 @@
             margin-left: 0.5rem;
         }
 
-        .toast-header .close:hover {
-            opacity: 1;
-        }
-
-        /* Device type badges */
-        .device-type-badge {
+        .save-confirmation {
             position: absolute;
-            top: 1rem;
-            right: 1rem;
-            background-color: rgba(0, 122, 255, 0.2);
-            color: var(--accent-primary);
-            font-size: 0.8rem;
+            bottom: 10px;
+            right: 10px;
+            color: var(--success-color);
+            font-size: 0.9rem;
             font-weight: 600;
-            padding: 0.3rem 0.6rem;
-            border-radius: 20px;
+            background-color: rgba(52, 199, 89, 0.1);
+            padding: 0.3rem 0.75rem;
+            border-radius: 50px;
+            display: none;
+            animation: fadeInOut 2s ease;
         }
 
-        /* Loading skeleton animation */
-        @keyframes skeletonPulse {
+        @keyframes fadeInOut {
+            0% { opacity: 0; }
+            20% { opacity: 1; }
+            80% { opacity: 1; }
+            100% { opacity: 0; }
+        }
+
+        /* Skeleton loading */
+        .skeleton {
+            background-color: var(--bg-elevated);
+            border-radius: var(--input-border-radius);
+            margin: 0.5rem 0;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
             0% { opacity: 0.6; }
             50% { opacity: 0.8; }
             100% { opacity: 0.6; }
         }
 
-        .skeleton {
+        .skeleton-card {
             background-color: var(--bg-card);
-            border-radius: var(--input-border-radius);
-            margin: 0.5rem 0;
-            animation: skeletonPulse 1.5s ease-in-out infinite;
+            border-radius: var(--card-border-radius);
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
         }
 
         .skeleton-title {
@@ -519,11 +477,32 @@
             margin-top: 0.5rem;
         }
 
-        .skeleton-card {
+        /* Debug styling */
+        #debug-toggle {
+            color: var(--text-secondary);
+            text-decoration: underline;
+            cursor: pointer;
+            display: inline-block;
+            margin-top: 1rem;
+            font-size: 0.9rem;
+            opacity: 0.7;
+            transition: all 0.2s ease;
+        }
+
+        #debug-toggle:hover {
+            opacity: 1;
+        }
+
+        #debug-info {
+            background-color: var(--bg-card);
             padding: 1.5rem;
-            background-color: var(--bg-elevated);
             border-radius: var(--card-border-radius);
-            margin-bottom: 1.5rem;
+            margin-top: 1.5rem;
+            display: none;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            font-family: "SF Mono", "Menlo", "Monaco", "Courier New", monospace;
+            font-size: 0.85rem;
+            overflow-x: auto;
         }
     </style>
 </head>
@@ -531,7 +510,7 @@
     <!-- Navigation Bar -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
         <div class="container">
-            <a class="navbar-brand" href="#">YoLink Integration</a>
+            <a class="navbar-brand" href="#">ICS Sensor Dashboard</a>
             <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
                 <span class="navbar-toggler-icon"></span>
             </button>
@@ -555,64 +534,79 @@
     <div class="toast-container" id="toast-container"></div>
 
     <div class="container">
-        <h1>YoLink Integration Dashboard</h1>
+        <h1>ICS Sensor Dashboard</h1>
 
-        <!-- Status Section -->
-        <div class="status">
-            <h2>
-                <i class="fas fa-heart-pulse"></i> System Status
-                <span id="loading-spinner" class="spinner"></span>
-                <span class="last-refresh" id="last-refresh"></span>
-            </h2>
-            <div id="yolink-mqtt-status" class="status-item mb-2">
-                <img src="" alt="YoLink MQTT Status" id="yolink-mqtt-icon" class="hidden">
-                <span id="yolink-mqtt-message">Checking YoLink MQTT connection...</span>
-            </div>
-            <div id="monitor-mqtt-status" class="status-item mb-2">
-                <img src="" alt="Monitor MQTT Status" id="monitor-mqtt-icon" class="hidden">
-                <span id="monitor-mqtt-message">Checking Monitor MQTT connection...</span>
-            </div>
-            <div id="receiver-status" class="status-item mb-2">
-                <img src="" alt="Receiver Status" id="receiver-icon" class="hidden">
-                <span id="receiver-message">Checking Receiver status...</span>
-            </div>
-            <div id="modbus-status" class="status-item mb-2">
-                <img src="" alt="Modbus Relay Status" id="modbus-icon" class="hidden">
-                <span id="modbus-message">Checking Modbus Relay status...</span>
-            </div>
-            <div class="text-center mt-4">
-                <button id="update-devices" class="btn btn-secondary">
-                    <i class="fas fa-sync-alt"></i> Update YoLink Devices
-                </button>
-                <span id="refresh-spinner" class="spinner hidden"></span>
-                <span id="refresh-message" style="color: var(--warning-color); margin-left: 10px;"></span>
+        <!-- Streamlined System Status Section -->
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h2 class="mb-0"><i class="fas fa-heart-pulse"></i> System Status</h2>
+            <div class="last-update">
+                <span id="last-refresh">Last updated: checking...</span>
+                <span id="loading-spinner" class="spinner ml-2"></span>
             </div>
         </div>
 
+        <!-- Status Indicators in a Flex Layout -->
+        <div class="status-container">
+            <div class="status-indicator">
+                <div class="status-icon" id="yolink-status-icon">
+                    <i class="fas fa-check"></i>
+                </div>
+                <div class="status-text" id="yolink-mqtt-message">YoLink MQTT connection is active.</div>
+            </div>
+
+            <div class="status-indicator">
+                <div class="status-icon" id="monitor-status-icon">
+                    <i class="fas fa-check"></i>
+                </div>
+                <div class="status-text" id="monitor-mqtt-message">Monitor MQTT connection is active.</div>
+            </div>
+
+            <div class="status-indicator">
+                <div class="status-icon" id="receiver-status-icon">
+                    <i class="fas fa-check"></i>
+                </div>
+                <div class="status-text" id="receiver-message">MODBUS Receiver Connected</div>
+            </div>
+
+            <div class="status-indicator">
+                <div class="status-icon" id="modbus-status-icon">
+                    <i class="fas fa-check"></i>
+                </div>
+                <div class="status-text" id="modbus-message">Modbus Relay Connected</div>
+            </div>
+        </div>
+
+        <div class="text-center mb-4">
+            <button id="update-devices" class="update-button">
+                <i class="fas fa-sync-alt"></i> Update YoLink Devices
+            </button>
+            <span id="refresh-spinner" class="spinner hidden"></span>
+            <span id="refresh-message" style="color: var(--warning-color); margin-left: 10px;"></span>
+        </div>
+
         <!-- Sensor Data Section -->
-        <div class="sensor-data">
-            <h2><i class="fas fa-microchip"></i> Sensor Data</h2>
-            <div id="sensor-list-error" class="alert alert-danger hidden">Error loading sensor data. Please check the console for details.</div>
-            <div class="sensor-grid" id="sensor-list">
-                <!-- Skeleton loading placeholders -->
-                <div class="skeleton-card">
-                    <div class="skeleton skeleton-title"></div>
-                    <div class="skeleton skeleton-text" style="width: 90%"></div>
-                    <div class="skeleton skeleton-text" style="width: 80%"></div>
-                    <div class="skeleton skeleton-text" style="width: 70%"></div>
-                </div>
-                <div class="skeleton-card">
-                    <div class="skeleton skeleton-title"></div>
-                    <div class="skeleton skeleton-text" style="width: 85%"></div>
-                    <div class="skeleton skeleton-text" style="width: 75%"></div>
-                    <div class="skeleton skeleton-text" style="width: 65%"></div>
-                </div>
-                <div class="skeleton-card">
-                    <div class="skeleton skeleton-title"></div>
-                    <div class="skeleton skeleton-text" style="width: 95%"></div>
-                    <div class="skeleton skeleton-text" style="width: 85%"></div>
-                    <div class="skeleton skeleton-text" style="width: 75%"></div>
-                </div>
+        <h2 class="mt-4"><i class="fas fa-microchip"></i> Sensor Data</h2>
+        <div id="sensor-list-error" class="alert alert-danger hidden">Error loading sensor data. Please check the console for details.</div>
+
+        <div class="sensor-card-container" id="sensor-list">
+            <!-- Skeleton loading placeholders -->
+            <div class="skeleton-card">
+                <div class="skeleton skeleton-title"></div>
+                <div class="skeleton skeleton-text" style="width: 90%"></div>
+                <div class="skeleton skeleton-text" style="width: 80%"></div>
+                <div class="skeleton skeleton-text" style="width: 70%"></div>
+            </div>
+            <div class="skeleton-card">
+                <div class="skeleton skeleton-title"></div>
+                <div class="skeleton skeleton-text" style="width: 85%"></div>
+                <div class="skeleton skeleton-text" style="width: 75%"></div>
+                <div class="skeleton skeleton-text" style="width: 65%"></div>
+            </div>
+            <div class="skeleton-card">
+                <div class="skeleton skeleton-title"></div>
+                <div class="skeleton skeleton-text" style="width: 95%"></div>
+                <div class="skeleton skeleton-text" style="width: 85%"></div>
+                <div class="skeleton skeleton-text" style="width: 75%"></div>
             </div>
         </div>
 
@@ -631,9 +625,9 @@
     <script>
     $(document).ready(function() {
         // Constants
-        const UPDATE_INTERVAL = 15000; // 15 seconds
-        const STATUS_CHECK_INTERVAL = 10000; // 10 seconds
-        const REFRESH_INFO_INTERVAL = 30000; // 30 seconds
+        const UPDATE_INTERVAL = 15000; // changed from 15 seconds
+        const STATUS_CHECK_INTERVAL = 10000; // 10 seconds (changed from 10 seconds)
+        const REFRESH_INFO_INTERVAL = 60000; // 1 minute (changed from 30 seconds)
         const RETRY_DELAY = 5000; // 5 seconds
         const MAX_RETRIES = 3;
 
@@ -747,29 +741,21 @@
             return moment(timestamp * 1000).fromNow();
         }
 
-        // Toggle spinner speed
-        function toggleSpinnerSpeed(fast) {
-            if (fast) {
-                $('#loading-spinner').addClass('fast-spin');
-            } else {
-                $('#loading-spinner').removeClass('fast-spin');
-            }
-        }
-
         // Update status UI
-        function updateStatus(elementId, iconId, message, success) {
-            const icon = success
-                ? 'https://img.icons8.com/color/48/000000/checkmark.png'
-                : 'https://img.icons8.com/color/48/000000/cancel.png';
-            $('#' + iconId).attr('src', icon).removeClass('hidden');
-            $('#' + elementId).text(message);
+        function updateStatus(elementId, statusIconId, message, success) {
+            $(`#${elementId}`).text(message);
 
-            // Add color indication to status item
-            const statusItem = $('#' + elementId).parent();
+            // Update the status icon
+            const statusIcon = $(`#${statusIconId}`);
+            statusIcon.removeClass('error');
+            statusIcon.find('i').removeClass('fa-times').removeClass('fa-check');
+
             if (success) {
-                statusItem.css('border-left-color', 'var(--success-color)');
+                statusIcon.addClass('success');
+                statusIcon.find('i').addClass('fa-check');
             } else {
-                statusItem.css('border-left-color', 'var(--error-color)');
+                statusIcon.addClass('error');
+                statusIcon.find('i').addClass('fa-times');
             }
         }
 
@@ -813,16 +799,47 @@
         async function checkAllStatuses() {
             try {
                 const response = await fetchWithRetry('/check_all_statuses');
-                updateStatus('yolink-mqtt-message', 'yolink-mqtt-icon', response.yolink.message, response.yolink.status === "success");
-                updateStatus('monitor-mqtt-message', 'monitor-mqtt-icon', response.monitor.message, response.monitor.status === "success");
-                updateStatus('receiver-message', 'receiver-icon', response.receiver.message, response.receiver.status === "success");
-                updateStatus('modbus-message', 'modbus-icon', response.modbus.message, response.modbus.status === "success");
+
+                // Update YoLink MQTT status
+                updateStatus(
+                    'yolink-mqtt-message',
+                    'yolink-status-icon',
+                    response.yolink.message,
+                    response.yolink.status === "success"
+                );
+
+                // Update Monitor MQTT status
+                updateStatus(
+                    'monitor-mqtt-message',
+                    'monitor-status-icon',
+                    response.monitor.message,
+                    response.monitor.status === "success"
+                );
+
+                // Update Receiver status
+                updateStatus(
+                    'receiver-message',
+                    'receiver-status-icon',
+                    response.receiver.message,
+                    response.receiver.status === "success"
+                );
+
+                // Update Modbus status
+                updateStatus(
+                    'modbus-message',
+                    'modbus-status-icon',
+                    response.modbus.message,
+                    response.modbus.status === "success"
+                );
             } catch (error) {
                 debugLog("Failed to check statuses", { error: error.message });
-                updateStatus('yolink-mqtt-message', 'yolink-mqtt-icon', 'Failed to check YoLink MQTT', false);
-                updateStatus('monitor-mqtt-message', 'monitor-mqtt-icon', 'Failed to check Monitor MQTT', false);
-                updateStatus('receiver-message', 'receiver-icon', 'Failed to check Receiver', false);
-                updateStatus('modbus-message', 'modbus-icon', 'Failed to check Modbus relay', false);
+
+                // Update all statuses to error
+                updateStatus('yolink-mqtt-message', 'yolink-status-icon', 'Failed to check YoLink MQTT', false);
+                updateStatus('monitor-mqtt-message', 'monitor-status-icon', 'Failed to check Monitor MQTT', false);
+                updateStatus('receiver-message', 'receiver-status-icon', 'Failed to check Receiver', false);
+                updateStatus('modbus-message', 'modbus-status-icon', 'Failed to check Modbus relay', false);
+
                 showToast("Connection Error", "Failed to check system status. Will retry automatically.");
             }
         }
@@ -842,11 +859,11 @@
                         $('#last-refresh').text("No previous updates");
                     }
                 } else {
-                    $('#last-refresh').text("");
+                    $('#last-refresh').text("Last update status unknown");
                 }
             } catch (error) {
                 debugLog("Failed to check last refresh time", { error: error.message });
-                $('#last-refresh').text("");
+                $('#last-refresh').text("Failed to check update status");
             }
         }
 
@@ -955,21 +972,9 @@
             return `${deviceAlarm} ${additionalClass}`.trim();
         }
 
-        // Get icon by sensor type
-        function getSensorTypeIcon(type) {
-            const deviceType = deviceTypes[type] || deviceTypes.default;
-            return deviceType.icon;
-        }
-
-        // Get badge label for sensor type
-        function getSensorTypeLabel(type) {
-            const deviceType = deviceTypes[type] || deviceTypes.default;
-            return deviceType.label;
-        }
-
         // Fetch and update sensor data
         async function updateSensorData() {
-            toggleSpinnerSpeed(true);
+            $('#loading-spinner').show();
             $('#sensor-list-error').addClass('hidden');
 
             try {
@@ -987,13 +992,13 @@
 
                 // Render the sensors
                 renderSensors(sensorData, uptimeData.uptime_seconds || 0);
-                toggleSpinnerSpeed(false);
+                $('#loading-spinner').hide();
 
             } catch (error) {
                 debugLog("Failed to get sensor data", { error: error.message });
-                $('#sensor-list').html('<div class="sensor alarm"><p class="sensor-name">Error loading sensor data</p><p>Please try again or check logs.</p></div>');
+                $('#sensor-list').html('<div class="sensor-card alarm"><div class="sensor-header"><h3 class="sensor-title">Error loading sensor data</h3></div><p>Please try again or check logs.</p></div>');
                 $('#sensor-list-error').removeClass('hidden');
-                toggleSpinnerSpeed(false);
+                $('#loading-spinner').hide();
                 showToast("Data Error", "Failed to load sensor data. Will retry automatically.");
             }
         }
@@ -1045,12 +1050,12 @@
 
             if (!sensorData || !sensorData.devices || !Array.isArray(sensorData.devices)) {
                 debugLog("Invalid sensor data format", sensorData);
-                sensorList.html('<div class="sensor"><p class="sensor-name">Invalid sensor data format</p></div>');
+                sensorList.html('<div class="sensor-card"><div class="sensor-header"><h3 class="sensor-title">Invalid sensor data format</h3></div></div>');
                 return;
             }
 
             if (sensorData.devices.length === 0) {
-                sensorList.html('<div class="sensor"><p class="sensor-name">No sensors found</p><p>Try refreshing your devices using the button above.</p></div>');
+                sensorList.html('<div class="sensor-card"><div class="sensor-header"><h3 class="sensor-title">No sensors found</h3></div><p>Try refreshing your devices using the button above.</p></div>');
                 return;
             }
 
@@ -1068,12 +1073,12 @@
                         const relayChannel = (sensor.relay_channel && sensor.relay_channel !== 'N/A') ? sensor.relay_channel : 'No Relay';
                         const batteryInfo = getBatteryInfo(sensor.battery, sensor.type);
                         const signalQuality = getSignalQuality(sensor.signal);
-                        const typeIcon = getSensorTypeIcon(sensor.type);
-                        const typeLabel = getSensorTypeLabel(sensor.type);
+                        const typeIcon = deviceTypes[sensor.type]?.icon || deviceTypes.default.icon;
+                        const typeLabel = deviceTypes[sensor.type]?.label || deviceTypes.default.label;
 
-                        const signalHighlight = (sensor.signal && parseInt(sensor.signal) <= -115) ? 'warning' : '';
+                        const signalHighlight = (sensor.signal && parseInt(sensor.signal) <= -115) ? 'warning-value' : '';
                         const batteryVal = parseInt(sensor.battery);
-                        const batteryHighlight = (batteryVal === 0) ? 'alarm' : (batteryVal === 1) ? 'warning' : '';
+                        const batteryHighlight = (batteryVal === 0) ? 'error-value' : (batteryVal === 1) ? 'warning-value' : '';
 
                         // Process state information
                         let displayState = "Unknown";
@@ -1091,7 +1096,7 @@
                             if (alarms.sLowBattery) activeAlarms.push("Low Battery");
                             if (alarms.silence) activeAlarms.push("Silenced");
                             displayState = activeAlarms.length > 0 ? activeAlarms.join(", ") : "Normal";
-                            stateClass = activeAlarms.length > 0 ? "alarm" : "";
+                            stateClass = activeAlarms.length > 0 ? "error-value" : "";
                         } else if (sensor.type === "LockV2" && typeof sensor.state === 'object') {
                             // Handle lock device with door and lock states
                             const lockState = sensor.state.lock ? sensor.state.lock.charAt(0).toUpperCase() + sensor.state.lock.slice(1) : "Unknown";
@@ -1100,11 +1105,11 @@
                         } else if (sensor.type === "VibrationSensor") {
                             // Highlight alert state for vibration sensors
                             displayState = sensor.state.charAt(0).toUpperCase() + sensor.state.slice(1);
-                            stateClass = (sensor.state === "alert") ? "alarm" : "";
+                            stateClass = (sensor.state === "alert") ? "error-value" : "";
                         } else if (sensor.type === "MotionSensor") {
                             // Highlight alert state for motion sensors
                             displayState = sensor.state.charAt(0).toUpperCase() + sensor.state.slice(1);
-                            stateClass = (sensor.state === "alert") ? "alarm" : "";
+                            stateClass = (sensor.state === "alert") ? "error-value" : "";
                         } else if (sensor.type === "Switch") {
                             displayState = (sensor.state === "open") ? "On" : (sensor.state === "closed") ? "Off" : sensor.state;
                         } else if (sensor.state) {
@@ -1115,41 +1120,39 @@
                         const hasTempHumidity = tempHumidityDeviceTypes.includes(sensor.type);
 
                         const sensorHTML = `
-                            <div class="sensor ${borderClass}" data-device-id="${sensor.deviceId}">
-                                <div class="device-type-badge">
-                                    <i class="fas ${typeIcon}"></i> ${typeLabel}
+                            <div class="sensor-card ${borderClass}" data-device-id="${sensor.deviceId}">
+                                <div class="sensor-header">
+                                    <h3 class="sensor-title">${sensor.name || 'Unknown Device'}</h3>
+                                    <span class="sensor-badge">
+                                        <i class="fas ${typeIcon}"></i> ${typeLabel}
+                                    </span>
                                 </div>
-                                <div class="sensor-name">${sensor.name || 'Unknown Device'}</div>
 
                                 <!-- Integration Settings -->
-                                <div class="integration-settings">
-                                    <div class="integration-settings-header">Integration Settings</div>
-                                    <div class="settings-divider"></div>
+                                <div class="integration-section">
+                                    <h4 class="integration-title">Integration Settings</h4>
 
-                                    <!-- CHEKT Zone -->
                                     <div class="integration-row">
                                         <span class="integration-label">CHEKT Zone:</span>
-                                        <span class="chekt-zone" onclick="makeZoneEditable(this, '${sensor.deviceId}')">${chektZone}</span>
+                                        <span class="integration-value" onclick="makeZoneEditable(this, '${sensor.deviceId}')">${chektZone}</span>
                                     </div>
 
-                                    <!-- Relay Channel -->
                                     <div class="integration-row">
                                         <span class="integration-label">Relay Channel:</span>
-                                        <span class="relay-channel" onclick="makeRelayChannelEditable(this, '${sensor.deviceId}')">${relayChannel}</span>
+                                        <span class="integration-value" onclick="makeRelayChannelEditable(this, '${sensor.deviceId}')">${relayChannel}</span>
                                     </div>
 
-                                    <!-- Door Prop Alarm (for door sensors only) -->
                                     ${
                                         sensor.type === 'DoorSensor'
-                                        ? `<label for="door-prop-${sensor.deviceId}" class="door-prop-toggle" style="margin-top: 0.5rem;">
-                                             <i class="fas fa-bell"></i> Door Prop Alarm:
-                                             <input type="checkbox" id="door-prop-${sensor.deviceId}" class="door-prop-input"
+                                        ? `<label class="door-prop-toggle">
+                                             <i class="fas fa-bell"></i> Door Prop Alarm
+                                             <input type="checkbox" class="door-prop-input"
                                                     ${sensor.door_prop_alarm ? "checked" : ""}
                                                     onchange="toggleDoorPropAlarm('${sensor.deviceId}', this.checked)">
                                            </label>
-                                           <small style="color: var(--text-secondary); display: block; margin-top: 0.2rem; font-size: 0.8rem;">
-                                            (Alerts if door is left open)
-                                           </small>`
+                                           <div class="door-prop-note">
+                                            Alerts if door is left open
+                                           </div>`
                                         : ''
                                     }
                                 </div>
@@ -1157,58 +1160,58 @@
                                 <!-- Sensor Status -->
                                 ${
                                     displayState !== "Unknown"
-                                    ? `<div class="sensor-data-item ${stateClass || (displayState.includes('Sensor Error!') ? 'alarm' : '')}">
-                                         <span><i class="fas fa-info-circle"></i> State</span>
-                                         <span>${displayState}</span>
+                                    ? `<div class="sensor-detail">
+                                         <span class="sensor-detail-label"><i class="fas fa-info-circle"></i> State</span>
+                                         <span class="sensor-detail-value ${stateClass}">${displayState}</span>
                                        </div>`
                                     : ''
                                 }
                                 ${
                                     hasBattery
-                                    ? `<div class="sensor-data-item ${batteryHighlight}">
-                                         <span><i class="fas ${batteryInfo.iconClass} battery-icon"></i> Battery</span>
-                                         <span>${batteryInfo.percentage}</span>
+                                    ? `<div class="sensor-detail">
+                                         <span class="sensor-detail-label"><i class="fas ${batteryInfo.iconClass}"></i> Battery</span>
+                                         <span class="sensor-detail-value ${batteryHighlight}">${batteryInfo.percentage}</span>
                                        </div>`
                                     : ''
                                 }
                                 ${
                                     sensor.signal && sensor.signal !== "unknown"
-                                    ? `<div class="sensor-data-item ${signalHighlight}">
-                                         <span><i class="fas fa-signal"></i> Signal</span>
-                                         <span>${sensor.signal} dBm (${signalQuality})</span>
+                                    ? `<div class="sensor-detail">
+                                         <span class="sensor-detail-label"><i class="fas fa-signal"></i> Signal</span>
+                                         <span class="sensor-detail-value ${signalHighlight}">${sensor.signal} dBm (${signalQuality})</span>
                                        </div>`
                                     : ''
                                 }
                                 ${
                                     hasTempHumidity && sensor.temperature && sensor.temperature !== "unknown"
-                                    ? `<div class="sensor-data-item">
-                                         <span><i class="fas fa-thermometer-half"></i> Temperature</span>
-                                         <span>${sensor.temperature}°${sensor.temperatureUnit || 'F'}</span>
+                                    ? `<div class="sensor-detail">
+                                         <span class="sensor-detail-label"><i class="fas fa-thermometer-half"></i> Temperature</span>
+                                         <span class="sensor-detail-value">${sensor.temperature}°${sensor.temperatureUnit || 'F'}</span>
                                        </div>`
                                     : ''
                                 }
                                 ${
                                     hasTempHumidity && sensor.humidity && sensor.humidity !== "unknown"
-                                    ? `<div class="sensor-data-item">
-                                         <span><i class="fas fa-droplet"></i> Humidity</span>
-                                         <span>${sensor.humidity}%</span>
+                                    ? `<div class="sensor-detail">
+                                         <span class="sensor-detail-label"><i class="fas fa-droplet"></i> Humidity</span>
+                                         <span class="sensor-detail-value">${sensor.humidity}%</span>
                                        </div>`
                                     : ''
                                 }
                                 ${
                                     sensor.last_seen && sensor.last_seen !== 'never'
-                                    ? `<div class="sensor-data-item">
-                                         <span><i class="fas fa-clock"></i> Last Seen</span>
-                                         <span>${lastSeenLocal}</span>
+                                    ? `<div class="sensor-detail">
+                                         <span class="sensor-detail-label"><i class="fas fa-clock"></i> Last Seen</span>
+                                         <span class="sensor-detail-value">${lastSeenLocal}</span>
                                        </div>`
                                     : ''
                                 }
                                 ${
                                     sensor.alarms && sensor.alarms.state && typeof sensor.alarms.state === 'object' &&
                                     Object.values(sensor.alarms.state).some(v => v === true)
-                                    ? `<div class="sensor-data-item alarm">
-                                         <span><i class="fas fa-exclamation-triangle"></i> Alarm</span>
-                                         <span>${JSON.stringify(sensor.alarms.state)}</span>
+                                    ? `<div class="sensor-detail">
+                                         <span class="sensor-detail-label"><i class="fas fa-exclamation-triangle"></i> Alarm</span>
+                                         <span class="sensor-detail-value error-value">${JSON.stringify(sensor.alarms.state)}</span>
                                        </div>`
                                     : ''
                                 }
@@ -1221,19 +1224,21 @@
                     } catch (e) {
                         console.error("Error rendering sensor:", sensor, e);
                         debugLog("Error rendering sensor", { sensor, error: e.toString() });
-                        sensorList.append(`<div class="sensor alarm">
-                            <p class="sensor-name">${sensor.name || 'Error rendering sensor'}</p>
-                            <p class="sensor-data-item alarm">
-                                <span><i class="fas fa-exclamation-circle"></i> Error</span>
-                                <span>Failed to render sensor data</span>
-                            </p>
+                        sensorList.append(`<div class="sensor-card alarm">
+                            <div class="sensor-header">
+                                <h3 class="sensor-title">${sensor.name || 'Error rendering sensor'}</h3>
+                            </div>
+                            <div class="sensor-detail">
+                                <span class="sensor-detail-label"><i class="fas fa-exclamation-circle"></i> Error</span>
+                                <span class="sensor-detail-value error-value">Failed to render sensor data</span>
+                            </div>
                         </div>`);
                     }
                 });
             } catch (e) {
                 console.error("Error rendering sensors:", e);
                 debugLog("Error rendering sensors", { error: e.toString() });
-                sensorList.html('<div class="sensor alarm"><p class="sensor-name">Error rendering sensors</p><p>' + e.toString() + '</p></div>');
+                sensorList.html('<div class="sensor-card alarm"><div class="sensor-header"><h3 class="sensor-title">Error rendering sensors</h3></div><p>' + e.toString() + '</p></div>');
                 showToast("Rendering Error", "Failed to display sensors. Check the debug info for details.");
             }
         }
@@ -1246,8 +1251,9 @@
             input.type = 'text';
             input.value = currentZone;
             input.classList.add('chekt-zone-input');
+            input.style.cssText = 'width: 100%; padding: 5px; border-radius: 4px; margin-top: 5px; background-color: rgba(0, 122, 255, 0.1); border: 1px solid var(--accent-primary); color: var(--text-primary);';
 
-            zoneSpan.parentNode.insertBefore(input, zoneSpan);
+            zoneSpan.parentNode.insertBefore(input, zoneSpan.nextSibling);
             zoneSpan.style.display = 'none';
             input.focus();
 
@@ -1273,8 +1279,9 @@
             input.type = 'text';
             input.value = currentChannel;
             input.classList.add('relay-channel-input');
+            input.style.cssText = 'width: 100%; padding: 5px; border-radius: 4px; margin-top: 5px; background-color: rgba(0, 122, 255, 0.1); border: 1px solid var(--accent-primary); color: var(--text-primary);';
 
-            channelSpan.parentNode.insertBefore(input, channelSpan);
+            channelSpan.parentNode.insertBefore(input, channelSpan.nextSibling);
             channelSpan.style.display = 'none';
             input.focus();
 
@@ -1375,7 +1382,7 @@
                 showToast("Save Error", "Failed to save door prop alarm. Please try again.");
 
                 // Revert the checkbox
-                const checkbox = document.getElementById(`door-prop-${deviceId}`);
+                const checkbox = event.target;
                 if (checkbox) {
                     checkbox.checked = !enabled;
                 }
