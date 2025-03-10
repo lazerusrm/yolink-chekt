@@ -126,13 +126,17 @@ async def run_monitor_mqtt() -> None:
                 while not shutdown_event.is_set():
                     # Keep connection alive
                     try:
-                        # Periodically ping to verify connection
-                        await client.ping()
-                        # Short wait between pings
+                        # Sleep first, then check connection via publishing
                         await asyncio.sleep(30)
+                        status_topic = f"monitor/status/{client_id}"
+                        await client.publish(status_topic, payload="", qos=0, retain=False)
+                        logger.debug("Connection verified via status publish")
                     except MqttError as e:
-                        logger.error(f"Error during Monitor MQTT ping: {e}")
+                        logger.error(f"Error during Monitor MQTT connection check: {e}")
                         break  # Break inner loop to trigger reconnection
+                    except Exception as e:
+                        logger.error(f"Unexpected error in Monitor MQTT loop: {e}")
+                        # Continue the loop rather than breaking on non-MQTT errors
 
                 logger.info("Monitor MQTT client disconnecting")
 
