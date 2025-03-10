@@ -178,9 +178,8 @@ async def process_message(payload: dict) -> None:
     Process an incoming MQTT message from a YoLink device asynchronously.
 
     This function extracts device data from the payload, updates the device's state in Redis,
-    and triggers alerts based on state changes or specific alert conditions. In follower mode,
-    it ensures alerts are triggered for all relevant states; in pulse mode, it triggers pulses
-    on alert conditions and resets relays on startup if needed.
+    and triggers alerts based on state changes. In follower mode, it tracks all relevant states;
+    in pulse mode, it pulses the relay on alert conditions and resets on mode switch or restart.
 
     Args:
         payload (dict): The MQTT message payload containing device data.
@@ -194,10 +193,10 @@ async def process_message(payload: dict) -> None:
             logger.warning("Received MQTT payload without deviceId, skipping processing")
             return
 
-        logger.debug(f"Processing MQTT message for device {device_id}: {json.dumps(payload, indent=2)}")
+        logger.debug(f"Received MQTT payload for {device_id}: {json.dumps(payload, indent=2)}")
         device = await get_device_data(device_id)
         if not device or "deviceId" not in device:
-            logger.info(f"Device {device_id} not found in Redis, creating new device entry")
+            logger.info(f"Initializing new device {device_id}")
             device = {
                 "deviceId": device_id,
                 "name": f"Device {device_id[-4:]}",
@@ -221,19 +220,16 @@ async def process_message(payload: dict) -> None:
             new_state = data["state"]
             device["previous_state"] = current_state
             device["state"] = new_state
-            logger.debug(f"Device {device_id} state changed from '{current_state}' to '{new_state}'")
+            logger.info(f"State update for {device_id}: '{current_state}' -> '{new_state}'")
+        else:
+            logger.debug(f"No state change in payload for {device_id}, current state: {current_state}")
 
         if "battery" in data:
             battery_value = data["battery"]
-            logger.debug(f"Raw battery value for {device_id}: {battery_value} (type: {type(battery_value)})")
             if device["type"] in ["Hub", "Outlet", "Switch"] and battery_value is None:
                 device["battery"] = "Powered"
-                logger.debug(f"Device {device_id} identified as mains-powered, battery set to 'Powered'")
             else:
-                mapped_battery = map_battery_value(battery_value)
-                device["battery"] = mapped_battery
-                logger.debug(f"Battery for {device_id} mapped: {battery_value} -> {mapped_battery}")
-
+                device["battery"] = map_battery_value(battery_value)
         if "signal" in data:
             device["signal"] = data["signal"]
         elif "loraInfo" in data and "signal" in data["loraInfo"]:
@@ -248,52 +244,54 @@ async def process_message(payload: dict) -> None:
         device["last_seen"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         if not await save_device_data(device_id, device):
-            logger.error(f"Failed to save updated data for device {device_id}: state={device.get('state')}, "
-                         f"previous_state={device.get('previous_state')}, battery={device.get('battery')}")
+            logger.error(f"Failed to save data for {device_id}: state={device.get('state')}")
 
         state = device.get("state", "unknown")
         config = await load_config()
         modbus_config = config.get("modbus", {})
         is_follower_mode = modbus_config.get("follower_mode", False)
-        logger.debug(f"Mode: {'follower' if is_follower_mode else 'pulse'}, State: {state}, Previous: {current_state}")
+        logger.debug(f"Processing {device_id} in {'follower' if is_follower_mode else 'pulse'} mode, state={state}")
 
-        # Reset relay state on first message after restart if in pulse mode
+        # Reset relay in pulse mode on first message after restart
         redis_client = await get_redis()
-        has_reset = await redis_client.get(f"pulse_reset:{device_id}")
-        if not has_reset and not is_follower_mode:
-            logger.info(f"Resetting relay for {device_id} to OFF on pulse mode startup")
+        reset_key = f"pulse_reset:{device_id}"
+        if not is_follower_mode and not await redis_client.get(reset_key):
+            logger.info(f"Resetting relay for {device_id} to OFF on pulse mode start")
             from alerts import trigger_modbus_relay
             mapping = await get_mapping(device_id)
             if mapping and mapping.get("use_relay", False):
                 relay_channel = int(mapping.get("relay_channel", "1"))
                 await trigger_modbus_relay(device_id, relay_channel, "closed")
-                await redis_client.set(f"pulse_reset:{device_id}", "done")
+                await redis_client.set(reset_key, "done", ex=3600)  # Expire in 1 hour
 
         # Trigger logic
         should_trigger = False
         if is_follower_mode:
             if state in ["open", "closed", "alert", "normal"]:
                 should_trigger = True
-                logger.debug(f"Follower mode: Triggering for state '{state}' on {device_id}")
+                logger.debug(f"Follower mode: Triggering for {device_id}, state={state}")
         else:  # Pulse mode
             if state in ["open", "alert"] and current_state not in ["open", "alert"]:
                 should_trigger = True
-                logger.info(f"Pulse mode: Triggering pulse for {device_id} on state change to {state}")
+                logger.info(f"Pulse mode: Triggering pulse for {device_id} on transition to {state}")
+            elif state in ["closed", "normal"]:
+                logger.debug(f"Pulse mode: No action for {device_id} on {state}")
 
         if should_trigger:
             mapping = await get_mapping(device_id)
-            if not mapping:
-                logger.warning(f"No mapping for {device_id}, skipping alert")
+            if not mapping or not mapping.get("use_relay", False):
+                logger.warning(f"No valid relay mapping for {device_id}")
                 return
             device_type = {"DoorSensor": "door_contact", "MotionSensor": "motion", "LeakSensor": "leak_sensor"}.get(device["type"], "generic")
+            relay_channel = int(mapping.get("relay_channel", "1"))
             try:
                 from alerts import trigger_alert
-                logger.info(f"Triggering alert for {device_id}: state={state}, type={device_type}")
+                logger.info(f"Triggering alert for {device_id}: state={state}, type={device_type}, channel={relay_channel}")
                 await trigger_alert(device_id, state, device_type)
             except Exception as e:
-                logger.error(f"Alert trigger failed for {device_id}: {e}", exc_info=True)
+                logger.error(f"Failed to trigger alert for {device_id}: {e}", exc_info=True)
         else:
-            logger.debug(f"No trigger for {device_id}: state={state}, previous={current_state}")
+            logger.debug(f"No trigger needed for {device_id}: state={state}, previous={current_state}")
 
         try:
             from monitor_mqtt import publish_update
@@ -308,7 +306,7 @@ async def process_message(payload: dict) -> None:
             logger.error(f"Monitor update failed for {device_id}: {e}")
 
     except json.JSONDecodeError as e:
-        logger.error(f"Invalid JSON in payload: {e}")
+        logger.error(f"Invalid JSON payload: {e}")
     except Exception as e:
         logger.error(f"Error processing message for {device_id if 'device_id' in locals() else 'unknown'}: {e}", exc_info=True)
 
