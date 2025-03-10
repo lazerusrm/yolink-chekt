@@ -427,88 +427,107 @@ generate_nginx_conf() {
     cat > "$nginx_conf" << EOF
 server {
     listen 80;
-    server_name localhost $clean_ip;
+    server_name localhost $HOST_IP;
 
-    # ONVIF endpoints - direct proxy, no redirect
+    # ONVIF endpoints - MUST proxy directly without redirect
     location ~ ^/onvif/ {
         proxy_pass http://yolink-rtsp-streamer:8000;
         proxy_http_version 1.1;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
 
-        # Disable buffering for immediate response
+        # Important: Disable buffering for SOAP responses
         proxy_buffering off;
+
+        # Important: Increase timeouts for ONVIF operations
+        proxy_connect_timeout 90s;
+        proxy_send_timeout 90s;
+        proxy_read_timeout 90s;
     }
 
-    # Common ONVIF shorthand endpoints
+    # WSDL and other ONVIF discovery endpoints
+    location ~ \.(wsdl|xsd)$ {
+        proxy_pass http://yolink-rtsp-streamer:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+    }
+
+    # Support for common ONVIF endpoint variations
     location = /device_service {
         proxy_pass http://yolink-rtsp-streamer:8000/onvif/device_service;
         proxy_http_version 1.1;
-        proxy_set_header Host \$host;
+        proxy_set_header Host $host;
     }
 
     location = /media_service {
         proxy_pass http://yolink-rtsp-streamer:8000/onvif/media_service;
         proxy_http_version 1.1;
-        proxy_set_header Host \$host;
+        proxy_set_header Host $host;
+    }
+
+    location = /events_service {
+        proxy_pass http://yolink-rtsp-streamer:8000/onvif/events_service;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
     }
 
     # Redirect all other HTTP to HTTPS
     location / {
-        return 301 https://\$host\$request_uri;
+        return 301 https://$host$request_uri;
     }
 }
 
 server {
     listen 443 ssl;
-    server_name localhost $clean_ip;
+    server_name localhost $HOST_IP;
 
     ssl_certificate /etc/nginx/certs/cert.pem;
     ssl_certificate_key /etc/nginx/certs/key.pem;
 
-    # Improved SSL configuration
+    # SSL configuration
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_prefer_server_ciphers on;
     ssl_ciphers 'ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305';
-
-    # Add SSL session cache for better performance
     ssl_session_cache shared:SSL:10m;
     ssl_session_timeout 10m;
 
-    # Main application
+    # ONVIF endpoints - also available on HTTPS but not required by most VMS
+    location ~ ^/onvif/ {
+        proxy_pass http://yolink-rtsp-streamer:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Main application proxy
     location / {
         proxy_pass http://yolink_chekt:5000;
-
-        # Standard proxy headers
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-
-        # Additional headers to help with redirection
-        proxy_set_header X-Forwarded-Host \$host;
-        proxy_set_header X-Forwarded-Server \$host;
-
-        # Websocket support
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-
-        # Timeouts
-        proxy_connect_timeout 60s;
-        proxy_send_timeout 60s;
-        proxy_read_timeout 60s;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Server $host;
+        proxy_connect_timeout 120s;
+        proxy_send_timeout 120s;
+        proxy_read_timeout 120s;
     }
 
-    # Proxy RTSP HTTP API requests
-    location /rtsp/ {
-        proxy_pass http://yolink-rtsp-streamer:$rtsp_http_port/;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
+    # RTSP API
+    location /rtsp-api/ {
+        proxy_pass http://yolink-rtsp-streamer:8080/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
+
+    access_log /var/log/nginx/access.log combined;
+    error_log /var/log/nginx/error.log warn;
 }
 EOF
 
@@ -531,7 +550,7 @@ generate_docker_compose() {
     if [ -z "$clean_ip" ]; then
         log_warning "Invalid IP format detected. Getting clean IP address."
         clean_ip=$(get_clean_ip)
-    }
+    fi
 
     log_info "Using clean IP for docker-compose.yml: $clean_ip"
 
