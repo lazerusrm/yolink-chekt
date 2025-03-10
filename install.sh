@@ -2,7 +2,7 @@
 
 # YoLink CHEKT Integration - Unified Robust Installation and Update Script
 # This script handles both first-time installation and updates with zero manual edits required
-VERSION="1.2.1"
+VERSION="1.2.2"
 
 # Ensure the script is run with bash
 if [ -z "$BASH_VERSION" ]; then
@@ -186,6 +186,30 @@ get_host_ip_for_config() {
     get_host_ip_silent
 }
 
+# Get clean IP without any logging - for use in config files
+get_clean_ip() {
+    # Try multiple methods to get the IP address - NO LOGGING!
+    local host_ip=""
+
+    # Method 1: Using ip route (most common)
+    if command -v ip >/dev/null 2>&1; then
+        host_ip=$(ip route get 8.8.8.8 2>/dev/null | grep -o 'src [0-9.]*' | awk '{print $2}')
+    fi
+
+    # Method 2: Using hostname (fallback)
+    if [ -z "$host_ip" ] && command -v hostname >/dev/null 2>&1; then
+        host_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+    fi
+
+    # Method 3: Using ifconfig (older systems)
+    if [ -z "$host_ip" ] && command -v ifconfig >/dev/null 2>&1; then
+        host_ip=$(ifconfig | grep -Eo 'inet (addr:)?([0-9]*\.){3}[0-9]*' | grep -Eo '([0-9]*\.){3}[0-9]*' | grep -v '127.0.0.1' | head -n 1)
+    fi
+
+    # Just return the IP - nothing else
+    echo "$host_ip"
+}
+
 # Function to get the IP address with logging and fallback mechanisms
 get_host_ip() {
     local host_ip
@@ -285,30 +309,6 @@ generate_basic_certificate() {
     return 0
 }
 
-get_clean_ip() {
-    # Try multiple methods to get the IP address - NO LOGGING!
-    local host_ip=""
-
-    # Method 1: Using ip route (most common)
-    if command -v ip >/dev/null 2>&1; then
-        host_ip=$(ip route get 8.8.8.8 2>/dev/null | grep -o 'src [0-9.]*' | awk '{print $2}')
-    fi
-
-    # Method 2: Using hostname (fallback)
-    if [ -z "$host_ip" ] && command -v hostname >/dev/null 2>&1; then
-        host_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
-    fi
-
-    # Method 3: Using ifconfig (older systems)
-    if [ -z "$host_ip" ] && command -v ifconfig >/dev/null 2>&1; then
-        host_ip=$(ifconfig | grep -Eo 'inet (addr:)?([0-9]*\.){3}[0-9]*' | grep -Eo '([0-9]*\.){3}[0-9]*' | grep -v '127.0.0.1' | head -n 1)
-    fi
-
-    # Just return the IP - nothing else
-    echo "$host_ip"
-}
-
-# Function to generate SSL certificates with proper error handling
 # Function to generate SSL certificates with proper error handling - completely revised
 generate_ssl_certificates() {
     local host_ip="$1"
@@ -398,8 +398,7 @@ EOF
 # CONFIGURATION GENERATION
 #===================================
 
-# Function to generate nginx.conf
-# Function to generate nginx.conf
+# Function to generate nginx.conf - FIXED to use clean IP
 generate_nginx_conf() {
     local host_ip="$1"
     local nginx_conf="$APP_DIR/nginx.conf"
@@ -407,17 +406,28 @@ generate_nginx_conf() {
 
     log_info "Generating nginx.conf with IP $host_ip..."
 
+    # Ensure we have a clean IP with no logging output
+    local clean_ip
+    clean_ip=$(echo "$host_ip" | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+
+    if [ -z "$clean_ip" ]; then
+        log_warning "Could not extract a valid IP address, using fallback method"
+        clean_ip=$(get_clean_ip)
+    fi
+
+    log_info "Using clean IP for nginx.conf: $clean_ip"
+
     # Backup existing file if it exists
     if [ -f "$nginx_conf" ]; then
         cp "$nginx_conf" "${nginx_conf}.bak.$(date +%Y%m%d%H%M%S)" 2>/dev/null
         verify_success "Failed to backup existing nginx.conf" false
     fi
 
-    # Generate the nginx configuration
+    # Generate the nginx configuration with clean IP
     cat > "$nginx_conf" << EOF
 server {
     listen 80;
-    server_name localhost $host_ip;
+    server_name localhost $clean_ip;
 
     # ONVIF endpoints - direct proxy, no redirect
     location ~ ^/onvif/ {
@@ -452,7 +462,7 @@ server {
 
 server {
     listen 443 ssl;
-    server_name localhost $host_ip;
+    server_name localhost $clean_ip;
 
     ssl_certificate /etc/nginx/certs/cert.pem;
     ssl_certificate_key /etc/nginx/certs/key.pem;
@@ -503,7 +513,7 @@ server {
 EOF
 
     verify_success "Failed to generate nginx.conf" true
-    log_success "nginx.conf generated successfully with server_name: localhost $host_ip"
+    log_success "nginx.conf generated successfully with server_name: localhost $clean_ip"
 }
 
 # Function to generate or update docker-compose.yml
@@ -515,10 +525,15 @@ generate_docker_compose() {
     log_info "Generating docker-compose.yml with IP $host_ip..."
 
     # Make sure we have a clean IP address without any log messages
-    if [[ ! "$host_ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    local clean_ip
+    clean_ip=$(echo "$host_ip" | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+
+    if [ -z "$clean_ip" ]; then
         log_warning "Invalid IP format detected. Getting clean IP address."
-        host_ip=$(get_host_ip_for_config)
-    fi
+        clean_ip=$(get_clean_ip)
+    }
+
+    log_info "Using clean IP for docker-compose.yml: $clean_ip"
 
     # Backup existing file if it exists
     if [ -f "$docker_compose_file" ]; then
@@ -526,8 +541,7 @@ generate_docker_compose() {
         verify_success "Failed to backup existing docker-compose.yml" false
     fi
 
-    # Generate the docker-compose.yml file
-    log_info "Writing docker-compose.yml with clean IP: $host_ip"
+    # Generate the docker-compose.yml file with clean IP
     cat > "$docker_compose_file" << EOD
 version: '3'
 
@@ -576,7 +590,7 @@ services:
       - "1502:1502"
       - "5001:5000"
     environment:
-      - TARGET_IP=$host_ip
+      - TARGET_IP=$clean_ip
       - TARGET_PORT=502
       - LISTEN_PORT=1502
       - API_PORT=5000
@@ -635,7 +649,7 @@ services:
       - ONVIF_PORT=8000
       - ONVIF_TEST_MODE=true
       - SERVER_IP=0.0.0.0
-      - ANNOUNCE_IP=$host_ip
+      - ANNOUNCE_IP=$clean_ip
       - RTSP_API_PORT=$rtsp_http_port
       - WS_PORT=9999
       - LOW_RES_SENSORS_PER_PAGE=6
@@ -673,7 +687,7 @@ EOD
 
     # Verify the file was created properly
     if [ -s "$docker_compose_file" ]; then
-        log_success "docker-compose.yml generated successfully with TARGET_IP=$host_ip"
+        log_success "docker-compose.yml generated successfully with TARGET_IP=$clean_ip"
     else
         handle_error "Failed to generate docker-compose.yml" true
     fi
@@ -975,7 +989,7 @@ restart_containers() {
 # IP MONITORING SETUP
 #===================================
 
-# Create IP monitor script
+# Create IP monitor script - FIXED to use clean IP
 create_ip_monitor_script() {
     log_info "Creating IP monitor script..."
     cat > "$APP_DIR/monitor-ip.sh" << 'EOT'
@@ -1026,8 +1040,8 @@ touch "$LOCK_FILE"
 # Clean up lock file on exit
 trap 'rm -f "$LOCK_FILE"; echo "Lock file removed."' EXIT
 
-# Function to get the IP address
-get_host_ip() {
+# Function to get the IP address without any logging
+get_clean_ip() {
     # Try multiple methods to get IP
     local host_ip=""
 
@@ -1057,7 +1071,7 @@ get_host_ip() {
 
 # Function to check if IP has changed
 check_ip_changed() {
-    local current_ip=$(get_host_ip)
+    local current_ip=$(get_clean_ip)
     local stored_ip=""
 
     if [ -f "$CURRENT_IP_FILE" ]; then
@@ -1080,17 +1094,17 @@ generate_nginx_conf() {
     local rtsp_http_port=8080
 
     echo "Generating nginx.conf with IP $host_ip..."
-    cat > /opt/yolink-chekt/nginx.conf << 'EOF'
+    cat > "$nginx_conf" << EOF
 server {
     listen 80;
-    server_name localhost;
+    server_name localhost $host_ip;
 
     # ONVIF endpoints - direct proxy, no redirect
     location ~ ^/onvif/ {
         proxy_pass http://yolink-rtsp-streamer:8000;
         proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
         proxy_buffering off;
     }
 
@@ -1098,24 +1112,24 @@ server {
     location = /device_service {
         proxy_pass http://yolink-rtsp-streamer:8000/onvif/device_service;
         proxy_http_version 1.1;
-        proxy_set_header Host $host;
+        proxy_set_header Host \$host;
     }
 
     location = /media_service {
         proxy_pass http://yolink-rtsp-streamer:8000/onvif/media_service;
         proxy_http_version 1.1;
-        proxy_set_header Host $host;
+        proxy_set_header Host \$host;
     }
 
     # Redirect all other HTTP to HTTPS
     location / {
-        return 301 https://$host$request_uri;
+        return 301 https://\$host\$request_uri;
     }
 }
 
 server {
     listen 443 ssl;
-    server_name localhost;
+    server_name localhost $host_ip;
     ssl_certificate /etc/nginx/certs/cert.pem;
     ssl_certificate_key /etc/nginx/certs/key.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
@@ -1126,17 +1140,17 @@ server {
 
     location / {
         proxy_pass http://yolink_chekt:5000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
     }
 
     location /rtsp/ {
         proxy_pass http://yolink-rtsp-streamer:8080/;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
     }
 }
 EOF
@@ -1402,7 +1416,7 @@ main() {
     fi
 
     # Get the new IP
-    HOST_IP=$(get_host_ip)
+    HOST_IP=$(get_clean_ip)
 
     # Store the new IP
     echo "$HOST_IP" > "$CURRENT_IP_FILE"
@@ -1520,9 +1534,15 @@ fi
 track_progress "Checking system dependencies"
 check_dependencies
 
-# Step 2: Get Host IP
+# Step 2: Get Host IP - ENSURE WE GET A CLEAN IP
 track_progress "Detecting host IP"
-HOST_IP=${HOST_IP_OVERRIDE:-$(get_host_ip)}
+if [ -n "$HOST_IP_OVERRIDE" ]; then
+    HOST_IP="$HOST_IP_OVERRIDE"
+    log_info "Using override IP: $HOST_IP"
+else
+    HOST_IP=$(get_clean_ip)
+    log_info "Using detected IP: $HOST_IP"
+fi
 
 # Step 3: Installation-specific operations
 if [ "$OPERATION_MODE" = "install" ]; then
