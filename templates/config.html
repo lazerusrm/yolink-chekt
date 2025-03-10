@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Configuration - YoLink Integration</title>
+    <title>Configuration - ICS Sensor Dashboard</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
@@ -22,6 +22,7 @@
             --card-border-radius: 12px;
             --input-border-radius: 8px;
             --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+            --transition-speed: 0.3s;
         }
 
         body {
@@ -68,23 +69,55 @@
             background-color: rgba(255, 255, 255, 0.05);
         }
 
-        /* Status section */
-        .status {
+        /* Status indicators */
+        .status-container {
             display: flex;
-            align-items: center;
-            margin: 0.5rem 0;
-            background-color: var(--bg-card);
-            padding: 1rem;
-            border-radius: var(--card-border-radius);
-            transition: all 0.3s ease;
-            border: 1px solid rgba(255, 255, 255, 0.05);
+            flex-wrap: wrap;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
         }
 
-        .status img {
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            padding: 0.75rem 1rem;
+            border-radius: var(--card-border-radius);
+            background-color: var(--bg-card);
+            flex: 1;
+            min-width: 220px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+        }
+
+        .status-icon {
+            display: flex;
+            justify-content: center;
+            align-items: center;
             width: 24px;
             height: 24px;
-            margin-right: 1rem;
-            transition: all 0.3s ease;
+            margin-right: 12px;
+            border-radius: 50%;
+            background-color: var(--success-color);
+            color: var(--bg-card);
+        }
+
+        .status-icon.error {
+            background-color: var(--error-color);
+        }
+
+        .status-icon i {
+            font-size: 12px;
+        }
+
+        .status-text {
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+
+        .action-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            margin-bottom: 1.5rem;
         }
 
         /* Form sections */
@@ -96,19 +129,30 @@
         }
 
         h1 {
-            font-size: 2rem;
-            margin-bottom: 2rem;
+            font-size: 1.8rem;
+            margin-bottom: 1.5rem;
         }
 
         h2 {
-            font-size: 1.5rem;
-            margin-top: 2rem;
+            font-size: 1.4rem;
+            margin-top: 1.5rem;
             display: flex;
             align-items: center;
         }
 
-        h4 {
+        h2 i {
+            margin-right: 0.75rem;
+            color: var(--accent-primary);
+        }
+
+        h3 {
             font-size: 1.2rem;
+            margin-top: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        h4 {
+            font-size: 1.1rem;
             color: var(--accent-primary);
             margin-top: 0;
             margin-bottom: 1rem;
@@ -123,9 +167,9 @@
 
         .form-section {
             background-color: var(--bg-card);
-            padding: 2rem;
+            padding: 1.5rem;
             border-radius: var(--card-border-radius);
-            margin-bottom: 2rem;
+            margin-bottom: 1.5rem;
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
             border: 1px solid rgba(255, 255, 255, 0.05);
         }
@@ -135,7 +179,7 @@
         }
 
         .form-group {
-            margin-bottom: 1.5rem;
+            margin-bottom: 1.25rem;
         }
 
         .form-group label {
@@ -151,8 +195,8 @@
             color: var(--text-primary);
             border: 1px solid rgba(255, 255, 255, 0.1);
             border-radius: var(--input-border-radius);
-            padding: 0.75rem 1rem;
-            font-size: 1rem;
+            padding: 0.65rem 0.85rem;
+            font-size: 0.95rem;
             transition: all 0.2s ease;
             box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1);
         }
@@ -177,11 +221,17 @@
             background-position: right 1rem center;
             background-size: 16px;
             padding-right: 2.5rem;
+            color: var(--text-primary);
+        }
+
+        select.form-control option {
+            background-color: var(--bg-elevated);
+            color: var(--text-primary);
         }
 
         .btn {
             font-weight: 600;
-            padding: 0.75rem 1.5rem;
+            padding: 0.65rem 1.25rem;
             border-radius: var(--input-border-radius);
             transition: all 0.3s ease;
         }
@@ -198,54 +248,29 @@
             box-shadow: 0 6px 10px rgba(0, 0, 0, 0.2);
         }
 
-        .btn-primary:active {
-            transform: translateY(0);
-            box-shadow: 0 3px 5px rgba(0, 0, 0, 0.1);
-        }
-
-        .btn-secondary, .btn-success {
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        }
-
-        .btn-secondary:hover, .btn-success:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 10px rgba(0, 0, 0, 0.2);
-        }
-
-        .btn-secondary:active, .btn-success:active {
-            transform: translateY(0);
-            box-shadow: 0 3px 5px rgba(0, 0, 0, 0.1);
-        }
-
         .btn-success {
             background: linear-gradient(to right, #34c759, #30d158);
             border: none;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
         }
 
         .btn-success:hover {
             background: linear-gradient(to right, #30d158, #34c759);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 10px rgba(0, 0, 0, 0.2);
         }
 
-        /* Log section */
-        .log {
-            background-color: var(--bg-card);
-            padding: 1.5rem;
-            margin-top: 2rem;
-            border-radius: var(--card-border-radius);
-            height: 500px;
-            overflow-y: auto;
-            color: #28a745;
-            font-family: "SF Mono", "Menlo", "Monaco", "Courier New", monospace;
-            font-size: 0.85rem;
-            line-height: 1.5;
-            border: 1px solid rgba(255, 255, 255, 0.05);
-            box-shadow: inset 0 1px 5px rgba(0, 0, 0, 0.2);
+        .btn-secondary {
+            background-color: var(--bg-elevated);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: var(--text-primary);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
         }
 
-        #log-content {
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            color: inherit;
+        .btn-secondary:hover {
+            background-color: var(--bg-elevated);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 10px rgba(0, 0, 0, 0.2);
         }
 
         /* Spinner animation */
@@ -285,7 +310,7 @@
         .section-divider {
             height: 1px;
             background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.1), transparent);
-            margin: 2rem 0;
+            margin: 1.5rem 0;
         }
 
         /* Badge styles */
@@ -346,7 +371,7 @@
         }
 
         /* Receiver section styles */
-        #chekt-section, #sia-section, #modbus-section {
+        .receiver-section {
             padding: 1rem;
             background-color: var(--bg-elevated);
             border-radius: var(--card-border-radius);
@@ -356,20 +381,19 @@
 
         .primary-receiver {
             border-left: 4px solid var(--accent-primary);
-            padding-left: 1rem;
             position: relative;
         }
 
         .primary-receiver::before {
             content: "Primary";
             position: absolute;
-            top: 0;
-            right: 1rem;
+            top: 0.5rem;
+            right: 0.5rem;
             background-color: var(--accent-primary);
             color: white;
-            padding: 0.2rem 0.5rem;
+            padding: 0.15rem 0.4rem;
             border-radius: 4px;
-            font-size: 0.8rem;
+            font-size: 0.7rem;
             font-weight: bold;
         }
 
@@ -497,7 +521,7 @@
 
         /* User Management Section */
         .user-management {
-            margin-top: 2rem;
+            margin-top: 1.5rem;
             padding: 1.5rem;
             background-color: var(--bg-card);
             border-radius: var(--card-border-radius);
@@ -505,8 +529,15 @@
         }
 
         .user-management h3 {
+            display: flex;
+            align-items: center;
+            font-size: 1.3rem;
+            margin-bottom: 1.25rem;
+        }
+
+        .user-management h3 i {
+            margin-right: 0.75rem;
             color: var(--accent-primary);
-            margin-bottom: 1.5rem;
         }
 
         /* Validation styles */
@@ -525,12 +556,88 @@
         .was-validated .form-control:invalid ~ .invalid-feedback {
             display: block;
         }
+
+        /* Accordion styling */
+        .config-accordion {
+            margin-bottom: 1.5rem;
+        }
+
+        .accordion-header {
+            background-color: var(--bg-card);
+            padding: 1rem 1.25rem;
+            border-radius: var(--card-border-radius);
+            margin-bottom: 0.5rem;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        .accordion-header:hover {
+            background-color: rgba(255, 255, 255, 0.05);
+        }
+
+        .accordion-header h3 {
+            margin: 0;
+            font-size: 1.1rem;
+            display: flex;
+            align-items: center;
+        }
+
+        .accordion-header h3 i {
+            margin-right: 0.75rem;
+            color: var(--accent-primary);
+            width: 20px;
+            text-align: center;
+        }
+
+        .accordion-header .toggle-icon {
+            transition: transform 0.3s ease;
+        }
+
+        .accordion-header.active .toggle-icon {
+            transform: rotate(180deg);
+        }
+
+        .accordion-content {
+            background-color: var(--bg-card);
+            padding: 1.25rem;
+            border-radius: var(--card-border-radius);
+            margin-bottom: 1rem;
+            display: none;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .accordion-content.active {
+            display: block;
+        }
+
+        /* Responsive styles */
+        @media (max-width: 768px) {
+            .status-container {
+                flex-direction: column;
+            }
+
+            .action-buttons {
+                flex-direction: column;
+            }
+
+            .action-buttons .btn {
+                width: 100%;
+            }
+        }
+
+        .hidden {
+            display: none !important;
+        }
     </style>
 </head>
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
         <div class="container">
-            <a class="navbar-brand" href="#">YoLink Integration</a>
+            <a class="navbar-brand" href="#">ICS Sensor Dashboard</a>
             <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
                 <span class="navbar-toggler-icon"></span>
             </button>
@@ -556,209 +663,331 @@
         <!-- Toast container for notifications -->
         <div class="toast-container" id="toast-container"></div>
 
-        <!-- Status Section -->
-        <div class="mb-4">
-            <h2>Connection Status</h2>
-            <div id="yolink-mqtt-status" class="status mb-2">
-                <img src="" alt="YoLink MQTT Status" id="yolink-mqtt-icon" class="hidden">
-                <span id="yolink-mqtt-message">Checking YoLink MQTT...</span><span class="spinner hidden" id="yolink-spinner"></span>
+        <!-- Status Section with Action Buttons -->
+        <div class="form-section">
+            <h2><i class="fas fa-heart-pulse"></i> Connection Status</h2>
+
+            <!-- Status Indicators -->
+            <div class="status-container">
+                <div class="status-indicator">
+                    <div class="status-icon" id="yolink-status-icon">
+                        <i class="fas fa-check"></i>
+                    </div>
+                    <div class="status-text" id="yolink-mqtt-message">YoLink MQTT connection is active.</div>
+                </div>
+
+                <div class="status-indicator">
+                    <div class="status-icon" id="monitor-status-icon">
+                        <i class="fas fa-check"></i>
+                    </div>
+                    <div class="status-text" id="monitor-mqtt-message">Monitor MQTT connection is active.</div>
+                </div>
+
+                <div class="status-indicator">
+                    <div class="status-icon" id="receiver-status-icon">
+                        <i class="fas fa-check"></i>
+                    </div>
+                    <div class="status-text" id="receiver-message">MODBUS Receiver Connected</div>
+                </div>
+
+                <div class="status-indicator">
+                    <div class="status-icon" id="modbus-status-icon">
+                        <i class="fas fa-check"></i>
+                    </div>
+                    <div class="status-text" id="modbus-message">Modbus Relay Connected</div>
+                </div>
             </div>
-            <div id="monitor-mqtt-status" class="status mb-2">
-                <img src="" alt="Monitor MQTT Status" id="monitor-mqtt-icon" class="hidden">
-                <span id="monitor-mqtt-message">Checking Monitor MQTT...</span><span class="spinner hidden" id="monitor-spinner"></span>
+
+            <!-- Action Buttons -->
+            <div class="action-buttons">
+                <button id="refresh-devices-btn" class="btn btn-success">
+                    <i class="fas fa-sync-alt"></i> Refresh YoLink Devices
+                </button>
+                <button id="restart-services-btn" class="btn btn-secondary">
+                    <i class="fas fa-redo"></i> Restart Services
+                </button>
             </div>
-            <div id="receiver-status" class="status mb-2">
-                <img src="" alt="Receiver Status" id="receiver-icon" class="hidden">
-                <span id="receiver-message">Checking Receiver...</span><span class="spinner hidden" id="receiver-spinner"></span>
-            </div>
-            <div id="modbus-status" class="status mb-2">
-                <img src="" alt="Modbus Relay Status" id="modbus-icon" class="hidden">
-                <span id="modbus-message">Checking Modbus Relay...</span><span class="spinner hidden" id="modbus-spinner"></span>
+
+            <div id="refresh-status" class="mt-2 mb-0 text-center" style="min-height: 24px;">
+                <span id="refresh-message"></span>
+                <span id="refresh-spinner" class="spinner hidden"></span>
             </div>
         </div>
 
         <!-- Configuration Form -->
-        <form id="config-form" class="form-section needs-validation" method="POST" action="{{ url_for('config') }}" novalidate>
-            <h2><i class="fas fa-link"></i> YoLink Configuration</h2>
-            <div class="form-group">
-                <label for="yolink_uaid">YoLink UAID</label>
-                <input type="text" id="yolink_uaid" name="yolink_uaid" class="form-control" value="{{ config.yolink.uaid|default('') }}" required>
-                <div class="invalid-feedback">YoLink UAID is required</div>
-            </div>
-            <div class="form-group">
-                <label for="yolink_secret_key">YoLink Secret Key</label>
-                <input type="password" id="yolink_secret_key" name="yolink_secret_key" class="form-control" value="{{ config.yolink.secret_key|default('') }}" required>
-                <div class="invalid-feedback">YoLink Secret Key is required</div>
-            </div>
-            <div class="form-group">
-                <label for="yolink_url">YoLink MQTT URL</label>
-                <input type="text" id="yolink_url" name="yolink_url" class="form-control" value="{{ config.mqtt.url|default('mqtt://api.yosmart.com') }}" required>
-                <div class="invalid-feedback">YoLink MQTT URL is required</div>
-            </div>
-            <div class="form-group">
-                <label for="yolink_port">YoLink MQTT Port</label>
-                <input type="number" id="yolink_port" name="yolink_port" class="form-control" value="{{ config.mqtt.port|default(8003) }}" min="1" max="65535" required>
-                <div class="invalid-feedback">YoLink MQTT Port must be between 1 and 65535</div>
-            </div>
-            <div class="form-group">
-                <label for="yolink_topic">YoLink MQTT Topic</label>
-                <input type="text" id="yolink_topic" name="yolink_topic" class="form-control" value="{{ config.mqtt.topic|default('yl-home/${Home ID}/+/report') }}" required>
-                <div class="invalid-feedback">YoLink MQTT Topic is required</div>
-            </div>
-
-            <div class="section-divider"></div>
-
-            <h2><i class="fas fa-broadcast-tower"></i> Monitor MQTT Configuration</h2>
-            <div class="form-group">
-                <label for="monitor_mqtt_url">Monitor MQTT URL</label>
-                <input type="text" id="monitor_mqtt_url" name="monitor_mqtt_url" class="form-control" value="{{ config.mqtt_monitor.url|default('mqtt://monitor.industrialcamera.com') }}" required>
-                <div class="invalid-feedback">Monitor MQTT URL is required</div>
-            </div>
-            <div class="form-group">
-                <label for="monitor_mqtt_port">Monitor MQTT Port</label>
-                <input type="number" id="monitor_mqtt_port" name="monitor_mqtt_port" class="form-control" value="{{ config.mqtt_monitor.port|default(1883) }}" min="1" max="65535" required>
-                <div class="invalid-feedback">Monitor MQTT Port must be between 1 and 65535</div>
-            </div>
-            <div class="form-group">
-                <label for="monitor_mqtt_username">Monitor MQTT Username</label>
-                <input type="text" id="monitor_mqtt_username" name="monitor_mqtt_username" class="form-control" value="{{ config.mqtt_monitor.username|default('') }}">
-            </div>
-            <div class="form-group">
-                <label for="monitor_mqtt_password">Monitor MQTT Password</label>
-                <input type="password" id="monitor_mqtt_password" name="monitor_mqtt_password" class="form-control" value="{{ config.mqtt_monitor.password|default('') }}">
-            </div>
-
-            <div class="section-divider"></div>
-
-            <h2><i class="fas fa-radio"></i> Receiver Configuration</h2>
-            <div class="form-group">
-                <label for="receiver_type">Primary Receiver Type</label>
-                <select id="receiver_type" name="receiver_type" class="form-control" required>
-                    <option value="CHEKT" {% if config.receiver_type == 'CHEKT' %}selected{% endif %}>CHEKT</option>
-                    <option value="SIA" {% if config.receiver_type == 'SIA' %}selected{% endif %}>SIA</option>
-                    <option value="MODBUS" {% if config.receiver_type == 'MODBUS' %}selected{% endif %}>Modbus Relay</option>
-                </select>
-                <small><i class="fas fa-info-circle"></i> Select your primary receiver type. This determines which receiver gets events by default.</small>
-                <small><i class="fas fa-info-circle"></i> You can still use other receivers by enabling them below and configuring them for specific devices.</small>
-            </div>
-
-            <!-- CHEKT Configuration -->
-            <div id="chekt-section" class="mt-4">
-                <h4>CHEKT Receiver Configuration</h4>
-                <div class="custom-control custom-switch mb-3">
-                    <input type="checkbox" class="custom-control-input" id="chekt_enabled" name="chekt_enabled" {% if config.chekt.get('enabled', True) %}checked{% endif %}>
-                    <label class="custom-control-label" for="chekt_enabled">Enable CHEKT Receiver</label>
+        <form id="config-form" class="needs-validation" method="POST" action="{{ url_for('config') }}" novalidate>
+            <!-- Configuration Accordion -->
+            <div class="config-accordion">
+                <!-- YoLink Configuration -->
+                <div class="accordion-header" data-target="yolink-config">
+                    <h3><i class="fas fa-link"></i> YoLink Configuration</h3>
+                    <i class="fas fa-chevron-down toggle-icon"></i>
                 </div>
-                <div id="chekt-config" class="form-group">
-                    <label for="chekt_api_token">CHEKT API Token</label>
-                    <input type="text" id="chekt_api_token" name="chekt_api_token" class="form-control" value="{{ config.chekt.api_token|default('') }}">
-                    <label for="chekt_ip" class="mt-3">CHEKT Receiver IP</label>
-                    <input type="text" id="chekt_ip" name="chekt_ip" class="form-control" value="{{ config.chekt.ip|default('') }}">
-                    <label for="chekt_port" class="mt-3">CHEKT Receiver Port</label>
-                    <input type="number" id="chekt_port" name="chekt_port" class="form-control" value="{{ config.chekt.port|default(30003) }}" min="1" max="65535">
-                </div>
-            </div>
-
-            <!-- SIA Configuration -->
-            <div id="sia-section" class="mt-4">
-                <h4>SIA Receiver Configuration</h4>
-                <div class="custom-control custom-switch mb-3">
-                    <input type="checkbox" class="custom-control-input" id="sia_enabled" name="sia_enabled" {% if config.sia.get('enabled', False) %}checked{% endif %}>
-                    <label class="custom-control-label" for="sia_enabled">Enable SIA Receiver</label>
-                </div>
-                <div id="sia-config" class="form-group" {% if not config.sia.get('enabled', False) %}style="opacity: 0.5;"{% endif %}>
-                    <label for="sia_ip">SIA IP</label>
-                    <input type="text" id="sia_ip" name="sia_ip" class="form-control" value="{{ config.sia.ip|default('') }}" {% if not config.sia.get('enabled', False) %}disabled{% endif %}>
-                    <label for="sia_port" class="mt-3">SIA Port</label>
-                    <input type="number" id="sia_port" name="sia_port" class="form-control" value="{{ config.sia.port|default('') }}" min="1" max="65535" {% if not config.sia.get('enabled', False) %}disabled{% endif %}>
-                    <label for="sia_account_id" class="mt-3">SIA Account ID</label>
-                    <input type="text" id="sia_account_id" name="sia_account_id" class="form-control" value="{{ config.sia.account_id|default('') }}" {% if not config.sia.get('enabled', False) %}disabled{% endif %}>
-                    <label for="sia_transmitter_id" class="mt-3">SIA Transmitter ID</label>
-                    <input type="text" id="sia_transmitter_id" name="sia_transmitter_id" class="form-control" value="{{ config.sia.transmitter_id|default('') }}" {% if not config.sia.get('enabled', False) %}disabled{% endif %}>
-                    <label for="sia_encryption_key" class="mt-3">SIA Encryption Key</label>
-                    <input type="text" id="sia_encryption_key" name="sia_encryption_key" class="form-control" value="{{ config.sia.encryption_key|default('') }}" {% if not config.sia.get('enabled', False) %}disabled{% endif %}>
-                </div>
-            </div>
-
-            <!-- Modbus Relay Configuration -->
-            <div id="modbus-section" class="mt-4">
-                <h4>Modbus Relay Configuration</h4>
-                <div class="custom-control custom-switch mb-3">
-                    <input type="checkbox" class="custom-control-input" id="modbus_enabled" name="modbus_enabled" {% if config.modbus.enabled %}checked{% endif %}>
-                    <label class="custom-control-label" for="modbus_enabled">Enable Modbus Relay</label>
-                </div>
-                <div id="modbus-config" class="form-group" {% if not config.modbus.enabled %}style="opacity: 0.5;"{% endif %}>
-                    <label for="modbus_ip">Modbus Relay IP Address</label>
-                    <input type="text" id="modbus_ip" name="modbus_ip" class="form-control" value="{{ config.modbus.ip|default('') }}" placeholder="192.168.1.100" {% if not config.modbus.enabled %}disabled{% endif %}>
-
-                    <label for="modbus_port" class="mt-3">Modbus Relay Port</label>
-                    <input type="number" id="modbus_port" name="modbus_port" class="form-control" value="{{ config.modbus.port|default(502) }}" min="1" max="65535" {% if not config.modbus.enabled %}disabled{% endif %}>
-                    <small><i class="fas fa-info-circle"></i> Default Modbus TCP port is 502</small>
-
-                    <label for="modbus_unit_id" class="mt-3">Unit ID/Slave Address</label>
-                    <input type="number" id="modbus_unit_id" name="modbus_unit_id" class="form-control" value="{{ config.modbus.unit_id|default(1) }}" min="1" max="255" {% if not config.modbus.enabled %}disabled{% endif %}>
-                    <small><i class="fas fa-info-circle"></i> Default is 1 for most Modbus devices</small>
-
-                    <label for="modbus_max_channels" class="mt-3">Number of Relay Channels</label>
-                    <select id="modbus_max_channels" name="modbus_max_channels" class="form-control" {% if not config.modbus.enabled %}disabled{% endif %}>
-                        <option value="8" {% if config.modbus.max_channels == 8 %}selected{% endif %}>8 Channels</option>
-                        <option value="16" {% if config.modbus.max_channels == 16 or not config.modbus.max_channels %}selected{% endif %}>16 Channels</option>
-                    </select>
-
-                    <div class="custom-control custom-switch mt-4 mb-3">
-                        <input type="checkbox" class="custom-control-input" id="modbus_follower_mode" name="modbus_follower_mode" {% if config.modbus.follower_mode %}checked{% endif %} {% if not config.modbus.enabled %}disabled{% endif %}>
-                        <label class="custom-control-label" for="modbus_follower_mode">Enable Follower Mode</label>
-                        <small class="d-block mt-1"><i class="fas fa-info-circle"></i> In follower mode, relay state directly follows sensor state (ON when open/alert, OFF when closed/normal)</small>
+                <div class="accordion-content active" id="yolink-config">
+                    <div class="form-group">
+                        <label for="yolink_uaid">YoLink UAID</label>
+                        <input type="text" id="yolink_uaid" name="yolink_uaid" class="form-control" value="{{ config.yolink.uaid|default('') }}" required>
+                        <div class="invalid-feedback">YoLink UAID is required</div>
                     </div>
-
-                    <div id="pulse-duration-section" {% if config.modbus.follower_mode or not config.modbus.enabled %}style="opacity: 0.5;"{% endif %}>
-                        <label for="modbus_pulse_seconds" class="mt-3">Pulse Duration (seconds)</label>
-                        <input type="number" id="modbus_pulse_seconds" name="modbus_pulse_seconds" class="form-control" value="{{ config.modbus.pulse_seconds|default(1) }}" min="0.1" max="10" step="0.1" {% if config.modbus.follower_mode or not config.modbus.enabled %}disabled{% endif %}>
-                        <small><i class="fas fa-info-circle"></i> Time in seconds that the relay will be activated when triggered (0.1 to 10 seconds)</small>
-                        <small class="text-warning mt-2" {% if not config.modbus.follower_mode %}style="display: none;"{% endif %}><i class="fas fa-exclamation-triangle"></i> Pulse duration is disabled when follower mode is active</small>
+                    <div class="form-group">
+                        <label for="yolink_secret_key">YoLink Secret Key</label>
+                        <input type="password" id="yolink_secret_key" name="yolink_secret_key" class="form-control" value="{{ config.yolink.secret_key|default('') }}" required>
+                        <div class="invalid-feedback">YoLink Secret Key is required</div>
                     </div>
-
-                    <div class="card mt-4">
-                        <h5>Test Relay Channels</h5>
-                        <p class="text-muted small">Click a button to test a specific relay channel.</p>
-                        <div id="relay-test-buttons" class="mb-3 text-center">
-                            <!-- Relay test buttons will be generated here -->
+                    <div class="form-group">
+                        <label for="yolink_url">YoLink MQTT URL</label>
+                        <input type="text" id="yolink_url" name="yolink_url" class="form-control" value="{{ config.mqtt.url|default('mqtt://api.yosmart.com') }}" required>
+                        <div class="invalid-feedback">YoLink MQTT URL is required</div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="yolink_port">YoLink MQTT Port</label>
+                                <input type="number" id="yolink_port" name="yolink_port" class="form-control" value="{{ config.mqtt.port|default(8003) }}" min="1" max="65535" required>
+                                <div class="invalid-feedback">Port must be between 1-65535</div>
+                            </div>
                         </div>
-                        <div id="relay-test-status" class="mt-2 text-center"></div>
-                    </div>
-
-                    <!-- Modbus Test Button -->
-                    <div class="mt-4 text-center">
-                        <button type="button" class="btn btn-secondary" id="test-modbus-btn">
-                            <i class="fas fa-vial"></i> Run Modbus Tests
-                        </button>
-                        <span id="modbus-test-spinner" class="spinner hidden"></span>
-                    </div>
-
-                    <!-- Test Results will appear here -->
-                    <div id="modbus-test-results" class="test-result-container mt-3" style="display: none;">
-                        <h5 class="mb-3">Modbus Test Results</h5>
-                        <div id="modbus-test-results-content"></div>
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="yolink_topic">YoLink MQTT Topic</label>
+                                <input type="text" id="yolink_topic" name="yolink_topic" class="form-control" value="{{ config.mqtt.topic|default('yl-home/${Home ID}/+/report') }}" required>
+                                <div class="invalid-feedback">MQTT Topic is required</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
-            </div>
 
-            <div class="section-divider"></div>
+                <!-- Monitor MQTT Configuration -->
+                <div class="accordion-header" data-target="monitor-config">
+                    <h3><i class="fas fa-broadcast-tower"></i> Monitor MQTT Configuration</h3>
+                    <i class="fas fa-chevron-down toggle-icon"></i>
+                </div>
+                <div class="accordion-content" id="monitor-config">
+                    <div class="form-group">
+                        <label for="monitor_mqtt_url">Monitor MQTT URL</label>
+                        <input type="text" id="monitor_mqtt_url" name="monitor_mqtt_url" class="form-control" value="{{ config.mqtt_monitor.url|default('mqtt://monitor.industrialcamera.com') }}" required>
+                        <div class="invalid-feedback">Monitor MQTT URL is required</div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="form-group">
+                                <label for="monitor_mqtt_port">Monitor MQTT Port</label>
+                                <input type="number" id="monitor_mqtt_port" name="monitor_mqtt_port" class="form-control" value="{{ config.mqtt_monitor.port|default(1883) }}" min="1" max="65535" required>
+                                <div class="invalid-feedback">Port must be between 1-65535</div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-group">
+                                <label for="monitor_mqtt_username">Username</label>
+                                <input type="text" id="monitor_mqtt_username" name="monitor_mqtt_username" class="form-control" value="{{ config.mqtt_monitor.username|default('') }}">
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-group">
+                                <label for="monitor_mqtt_password">Password</label>
+                                <input type="password" id="monitor_mqtt_password" name="monitor_mqtt_password" class="form-control" value="{{ config.mqtt_monitor.password|default('') }}">
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
-            <h2><i class="fas fa-sliders"></i> Monitor Configuration</h2>
-            <div class="form-group">
-                <label for="monitor_api_key">Monitor API Key</label>
-                <input type="text" id="monitor_api_key" name="monitor_api_key" class="form-control" value="{{ config.monitor.api_key|default('') }}">
-            </div>
+                <!-- Receiver Configuration -->
+                <div class="accordion-header" data-target="receiver-config">
+                    <h3><i class="fas fa-radio"></i> Receiver Configuration</h3>
+                    <i class="fas fa-chevron-down toggle-icon"></i>
+                </div>
+                <div class="accordion-content" id="receiver-config">
+                    <div class="form-group">
+                        <label for="receiver_type">Primary Receiver Type</label>
+                        <select id="receiver_type" name="receiver_type" class="form-control" required>
+                            <option value="CHEKT" {% if config.receiver_type == 'CHEKT' %}selected{% endif %}>CHEKT</option>
+                            <option value="SIA" {% if config.receiver_type == 'SIA' %}selected{% endif %}>SIA</option>
+                            <option value="MODBUS" {% if config.receiver_type == 'MODBUS' %}selected{% endif %}>Modbus Relay</option>
+                        </select>
+                        <small><i class="fas fa-info-circle"></i> Select your primary receiver type. This determines which receiver gets events by default.</small>
+                    </div>
 
-            <div class="section-divider"></div>
+                    <!-- CHEKT Configuration -->
+                    <div class="receiver-section mt-4" id="chekt-section">
+                        <h4>CHEKT Receiver</h4>
+                        <div class="custom-control custom-switch mb-3">
+                            <input type="checkbox" class="custom-control-input" id="chekt_enabled" name="chekt_enabled" {% if config.chekt.get('enabled', True) %}checked{% endif %}>
+                            <label class="custom-control-label" for="chekt_enabled">Enable CHEKT Receiver</label>
+                        </div>
+                        <div id="chekt-config" class="mt-3">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="form-group mb-md-0">
+                                        <label for="chekt_api_token">CHEKT API Token</label>
+                                        <input type="text" id="chekt_api_token" name="chekt_api_token" class="form-control" value="{{ config.chekt.api_token|default('') }}">
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="form-group mb-md-0">
+                                        <label for="chekt_ip">Receiver IP</label>
+                                        <input type="text" id="chekt_ip" name="chekt_ip" class="form-control" value="{{ config.chekt.ip|default('') }}">
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="form-group mb-0">
+                                        <label for="chekt_port">Port</label>
+                                        <input type="number" id="chekt_port" name="chekt_port" class="form-control" value="{{ config.chekt.port|default(30003) }}" min="1" max="65535">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
 
-            <h2><i class="fas fa-cog"></i> General Settings</h2>
-            <div class="form-group">
-                <label for="door_open_timeout">Door Open Timeout (seconds)</label>
-                <input type="number" id="door_open_timeout" name="door_open_timeout" class="form-control" value="{{ config.door_open_timeout|default(30) }}" min="1" required>
-                <small><i class="fas fa-info-circle"></i> Time in seconds before triggering an alert for a door left open</small>
-                <div class="invalid-feedback">Door open timeout must be at least 1 second</div>
+                    <!-- SIA Configuration -->
+                    <div class="receiver-section mt-3" id="sia-section">
+                        <h4>SIA Receiver</h4>
+                        <div class="custom-control custom-switch mb-3">
+                            <input type="checkbox" class="custom-control-input" id="sia_enabled" name="sia_enabled" {% if config.sia.get('enabled', False) %}checked{% endif %}>
+                            <label class="custom-control-label" for="sia_enabled">Enable SIA Receiver</label>
+                        </div>
+                        <div id="sia-config" class="mt-3" {% if not config.sia.get('enabled', False) %}style="opacity: 0.5;"{% endif %}>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label for="sia_ip">SIA IP</label>
+                                        <input type="text" id="sia_ip" name="sia_ip" class="form-control" value="{{ config.sia.ip|default('') }}" {% if not config.sia.get('enabled', False) %}disabled{% endif %}>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label for="sia_port">SIA Port</label>
+                                        <input type="number" id="sia_port" name="sia_port" class="form-control" value="{{ config.sia.port|default('') }}" min="1" max="65535" {% if not config.sia.get('enabled', False) %}disabled{% endif %}>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <div class="form-group">
+                                        <label for="sia_account_id">Account ID</label>
+                                        <input type="text" id="sia_account_id" name="sia_account_id" class="form-control" value="{{ config.sia.account_id|default('') }}" {% if not config.sia.get('enabled', False) %}disabled{% endif %}>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="form-group">
+                                        <label for="sia_transmitter_id">Transmitter ID</label>
+                                        <input type="text" id="sia_transmitter_id" name="sia_transmitter_id" class="form-control" value="{{ config.sia.transmitter_id|default('') }}" {% if not config.sia.get('enabled', False) %}disabled{% endif %}>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="form-group mb-0">
+                                        <label for="sia_encryption_key">Encryption Key</label>
+                                        <input type="text" id="sia_encryption_key" name="sia_encryption_key" class="form-control" value="{{ config.sia.encryption_key|default('') }}" {% if not config.sia.get('enabled', False) %}disabled{% endif %}>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Modbus Relay Configuration -->
+                    <div class="receiver-section mt-3" id="modbus-section">
+                        <h4>Modbus Relay</h4>
+                        <div class="custom-control custom-switch mb-3">
+                            <input type="checkbox" class="custom-control-input" id="modbus_enabled" name="modbus_enabled" {% if config.modbus.enabled %}checked{% endif %}>
+                            <label class="custom-control-label" for="modbus_enabled">Enable Modbus Relay</label>
+                        </div>
+                        <div id="modbus-config" class="mt-3" {% if not config.modbus.enabled %}style="opacity: 0.5;"{% endif %}>
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <div class="form-group">
+                                        <label for="modbus_ip">Relay IP Address</label>
+                                        <input type="text" id="modbus_ip" name="modbus_ip" class="form-control" value="{{ config.modbus.ip|default('') }}" placeholder="192.168.1.100" {% if not config.modbus.enabled %}disabled{% endif %}>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="form-group">
+                                        <label for="modbus_port">Relay Port</label>
+                                        <input type="number" id="modbus_port" name="modbus_port" class="form-control" value="{{ config.modbus.port|default(502) }}" min="1" max="65535" {% if not config.modbus.enabled %}disabled{% endif %}>
+                                        <small>Default Modbus TCP port is 502</small>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="form-group">
+                                        <label for="modbus_unit_id">Unit ID/Slave Address</label>
+                                        <input type="number" id="modbus_unit_id" name="modbus_unit_id" class="form-control" value="{{ config.modbus.unit_id|default(1) }}" min="1" max="255" {% if not config.modbus.enabled %}disabled{% endif %}>
+                                        <small>Default is 1 for most devices</small>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label for="modbus_max_channels">Number of Relay Channels</label>
+                                        <select id="modbus_max_channels" name="modbus_max_channels" class="form-control" {% if not config.modbus.enabled %}disabled{% endif %}>
+                                            <option value="8" {% if config.modbus.max_channels == 8 %}selected{% endif %}>8 Channels</option>
+                                            <option value="16" {% if config.modbus.max_channels == 16 or not config.modbus.max_channels %}selected{% endif %}>16 Channels</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label for="modbus_pulse_seconds">Pulse Duration (seconds)</label>
+                                        <input type="number" id="modbus_pulse_seconds" name="modbus_pulse_seconds" class="form-control" value="{{ config.modbus.pulse_seconds|default(1) }}" min="0.1" max="10" step="0.1" {% if config.modbus.follower_mode or not config.modbus.enabled %}disabled{% endif %}>
+                                        <small>Duration of relay activation (0.1-10s)</small>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="custom-control custom-switch mt-2 mb-3">
+                                <input type="checkbox" class="custom-control-input" id="modbus_follower_mode" name="modbus_follower_mode" {% if config.modbus.follower_mode %}checked{% endif %} {% if not config.modbus.enabled %}disabled{% endif %}>
+                                <label class="custom-control-label" for="modbus_follower_mode">Enable Follower Mode</label>
+                                <small class="d-block mt-1">Relay state directly follows sensor state (ON when open/alert, OFF when closed/normal)</small>
+                            </div>
+
+                            <div class="card mt-3">
+                                <div class="card-body p-3">
+                                    <h5 class="card-title mb-2" style="font-size: 1rem;">Test Relay Channels</h5>
+                                    <div id="relay-test-buttons" class="mb-2 text-center">
+                                        <!-- Relay test buttons will be generated here -->
+                                    </div>
+                                    <div id="relay-test-status" class="mt-2 text-center" style="min-height: 24px;"></div>
+
+                                    <div class="mt-3 text-center">
+                                        <button type="button" class="btn btn-secondary btn-sm" id="test-modbus-btn">
+                                            <i class="fas fa-vial"></i> Run Modbus Tests
+                                        </button>
+                                        <span id="modbus-test-spinner" class="spinner hidden"></span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Test Results will appear here -->
+                            <div id="modbus-test-results" class="test-result-container mt-3" style="display: none;">
+                                <h5 class="mb-3">Modbus Test Results</h5>
+                                <div id="modbus-test-results-content"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Monitor & General Settings -->
+                <div class="accordion-header" data-target="general-settings">
+                    <h3><i class="fas fa-sliders"></i> General Settings</h3>
+                    <i class="fas fa-chevron-down toggle-icon"></i>
+                </div>
+                <div class="accordion-content" id="general-settings">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="monitor_api_key">Monitor API Key</label>
+                                <input type="text" id="monitor_api_key" name="monitor_api_key" class="form-control" value="{{ config.monitor.api_key|default('') }}">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="door_open_timeout">Door Open Timeout (seconds)</label>
+                                <input type="number" id="door_open_timeout" name="door_open_timeout" class="form-control" value="{{ config.door_open_timeout|default(30) }}" min="1" required>
+                                <small>Time before triggering an alert for a door left open</small>
+                                <div class="invalid-feedback">Timeout must be at least 1 second</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <div class="text-center mt-4">
@@ -775,14 +1004,14 @@
             <form id="create-user-form" class="needs-validation" method="POST" action="{{ url_for('create_user') }}" novalidate>
                 <div class="row">
                     <div class="col-md-5">
-                        <div class="form-group">
+                        <div class="form-group mb-md-0">
                             <label for="username">Username</label>
                             <input type="text" class="form-control" id="username" name="username" required>
                             <div class="invalid-feedback">Please enter a username</div>
                         </div>
                     </div>
                     <div class="col-md-5">
-                        <div class="form-group">
+                        <div class="form-group mb-md-0">
                             <label for="password">Password</label>
                             <input type="password" class="form-control" id="password" name="password" required minlength="8">
                             <div class="invalid-feedback">Password must be at least 8 characters</div>
@@ -794,32 +1023,8 @@
                         </button>
                     </div>
                 </div>
-                <small><i class="fas fa-info-circle"></i> New users will be required to change their password and set up 2FA on first login</small>
+                <small class="mt-2"><i class="fas fa-info-circle"></i> New users will be required to change their password and set up 2FA on first login</small>
             </form>
-        </div>
-
-        <div class="mb-4 mt-4">
-            <button id="refresh-devices-btn" class="btn btn-success">
-                <i class="fas fa-sync-alt"></i> Refresh YoLink Devices
-            </button>
-            <button id="restart-services-btn" class="btn btn-secondary ml-2">
-                <i class="fas fa-redo"></i> Restart Services
-            </button>
-            <div id="refresh-status" class="status mt-2">
-                <img src="" alt="Refresh Status" id="refresh-icon" class="hidden">
-                <span id="refresh-message"></span>
-            </div>
-        </div>
-
-        <h2><i class="fas fa-terminal"></i> Application Logs</h2>
-        <div class="mb-2">
-            <button id="fetch-logs-btn" class="btn btn-secondary">
-                <i class="fas fa-sync-alt"></i> Refresh Logs
-            </button>
-            <span id="log-loading" class="spinner hidden"></span>
-        </div>
-        <div id="log-area" class="log">
-            <pre id="log-content">Loading logs...</pre>
         </div>
     </div>
 
@@ -905,56 +1110,41 @@
             });
         }
 
-        function updateStatus(elementId, iconId, message, success, spinnerId) {
-            const icon = success ? 'https://img.icons8.com/color/48/000000/checkmark.png' : 'https://img.icons8.com/color/48/000000/cancel.png';
-            $('#' + spinnerId).addClass('hidden');
-            $('#' + iconId).attr('src', icon).removeClass('hidden');
-            $('#' + elementId).text(message);
+        function updateStatus(elementId, iconId, message, success) {
+            const statusIcon = $(`#${iconId}`);
+            statusIcon.removeClass('error');
+            statusIcon.find('i').removeClass('fa-times').removeClass('fa-check');
 
-            // Add/remove success/error class to status container
-            $('#' + elementId).parent().css('border-left', success ? '4px solid var(--success-color)' : '4px solid var(--error-color)');
+            if (success) {
+                statusIcon.addClass('success');
+                statusIcon.find('i').addClass('fa-check');
+            } else {
+                statusIcon.addClass('error');
+                statusIcon.find('i').addClass('fa-times');
+            }
+
+            $(`#${elementId}`).text(message);
         }
 
         function checkAllStatuses() {
-            $('#yolink-spinner, #monitor-spinner, #receiver-spinner, #modbus-spinner').removeClass('hidden');
-
             fetchWithRetry('/check_all_statuses')
                 .then(response => {
-                    updateStatus('yolink-mqtt-message', 'yolink-mqtt-icon', response.yolink.message,
-                                 response.yolink.status === "success", 'yolink-spinner');
-                    updateStatus('monitor-mqtt-message', 'monitor-mqtt-icon', response.monitor.message,
-                                 response.monitor.status === "success", 'monitor-spinner');
-                    updateStatus('receiver-message', 'receiver-icon', response.receiver.message,
-                                 response.receiver.status === "success", 'receiver-spinner');
-                    updateStatus('modbus-message', 'modbus-icon', response.modbus.message,
-                                 response.modbus.status === "success", 'modbus-spinner');
+                    updateStatus('yolink-mqtt-message', 'yolink-status-icon', response.yolink.message,
+                                 response.yolink.status === "success");
+                    updateStatus('monitor-mqtt-message', 'monitor-status-icon', response.monitor.message,
+                                 response.monitor.status === "success");
+                    updateStatus('receiver-message', 'receiver-status-icon', response.receiver.message,
+                                 response.receiver.status === "success");
+                    updateStatus('modbus-message', 'modbus-status-icon', response.modbus.message,
+                                 response.modbus.status === "success");
                 })
                 .catch(error => {
                     console.error("Failed to check statuses:", error);
-                    updateStatus('yolink-mqtt-message', 'yolink-mqtt-icon', 'Failed to check YoLink MQTT', false, 'yolink-spinner');
-                    updateStatus('monitor-mqtt-message', 'monitor-mqtt-icon', 'Failed to check Monitor MQTT', false, 'monitor-spinner');
-                    updateStatus('receiver-message', 'receiver-icon', 'Failed to check Receiver', false, 'receiver-spinner');
-                    updateStatus('modbus-message', 'modbus-icon', 'Failed to check Modbus relay', false, 'modbus-spinner');
+                    updateStatus('yolink-mqtt-message', 'yolink-status-icon', 'Failed to check YoLink MQTT', false);
+                    updateStatus('monitor-mqtt-message', 'monitor-status-icon', 'Failed to check Monitor MQTT', false);
+                    updateStatus('receiver-message', 'receiver-status-icon', 'Failed to check Receiver', false);
+                    updateStatus('modbus-message', 'modbus-status-icon', 'Failed to check Modbus relay', false);
                     showToast("Connection Error", "Failed to check system status", "error");
-                });
-        }
-
-        function fetchLogs() {
-            $('#log-loading').removeClass('hidden');
-            fetchWithRetry('/get_logs')
-                .then(response => {
-                    if (response.status === "success") {
-                        $('#log-content').text(response.logs);
-                        $('#log-area').scrollTop($('#log-area')[0].scrollHeight);
-                    } else {
-                        $('#log-content').text('Failed to load logs: ' + response.message);
-                    }
-                })
-                .catch(error => {
-                    $('#log-content').text('Failed to load logs: ' + error.message);
-                })
-                .finally(() => {
-                    $('#log-loading').addClass('hidden');
                 });
         }
 
@@ -966,7 +1156,7 @@
                 container.append(`
                     <button type="button" class="btn btn-test m-1"
                             onclick="testRelayChannel(${i})">
-                        Test Channel ${i}
+                        ${i}
                     </button>
                 `);
             }
@@ -1109,16 +1299,26 @@
             return true;
         }
 
+        // Accordion functionality
+        function setupAccordion() {
+            $('.accordion-header').click(function() {
+                const target = $(this).data('target');
+                $(this).toggleClass('active');
+                $(`#${target}`).toggleClass('active');
+                $(this).find('.toggle-icon').toggleClass('rotate');
+            });
+        }
+
         $(document).ready(function() {
+            // Initialize accordion
+            setupAccordion();
+
             // Initial status check
             checkAllStatuses();
             startStatusCheck();
 
             // Initial highlight of primary receiver
             highlightPrimaryReceiver();
-
-            // Initial log fetch
-            fetchLogs();
 
             // Generate relay test buttons
             const initialChannelCount = parseInt($('#modbus_max_channels').val()) || 16;
@@ -1155,18 +1355,13 @@
                     $('#modbus_follower_mode').prop('disabled', false);
 
                     if (followerMode) {
-                        $('#pulse-duration-section').css('opacity', '0.5');
                         $('#modbus_pulse_seconds').prop('disabled', true);
-                        $('#pulse-duration-section .text-warning').show();
                     } else {
-                        $('#pulse-duration-section').css('opacity', '1');
                         $('#modbus_pulse_seconds').prop('disabled', false);
-                        $('#pulse-duration-section .text-warning').hide();
                     }
                 } else {
                     $('#modbus-config').css('opacity', '0.5');
                     $('#modbus-config input, #modbus-config select').prop('disabled', true);
-                    $('#pulse-duration-section').css('opacity', '0.5');
                 }
 
                 // If modbus is disabled, we need to regenerate test buttons
@@ -1184,14 +1379,10 @@
                 const followerMode = $(this).is(':checked');
                 if (followerMode) {
                     // Disable pulse duration input in follower mode
-                    $('#pulse-duration-section').css('opacity', '0.5');
                     $('#modbus_pulse_seconds').prop('disabled', true);
-                    $('#pulse-duration-section .text-warning').show();
                 } else {
                     // Enable pulse duration input in pulse mode
-                    $('#pulse-duration-section').css('opacity', '1');
                     $('#modbus_pulse_seconds').prop('disabled', false);
-                    $('#pulse-duration-section .text-warning').hide();
                 }
             });
 
@@ -1203,7 +1394,7 @@
 
             // Refresh devices button
             $('#refresh-devices-btn').click(function() {
-                $('#refresh-icon').addClass('hidden');
+                $('#refresh-spinner').removeClass('hidden');
                 $('#refresh-message').text('Refreshing YoLink devices...');
                 $('#refresh-devices-btn').prop('disabled', true);
                 $('#refresh-devices-btn').html('<i class="fas fa-spinner fa-spin"></i> Refreshing...');
@@ -1215,27 +1406,33 @@
                 .then(response => {
                     $('#refresh-devices-btn').prop('disabled', false);
                     $('#refresh-devices-btn').html('<i class="fas fa-sync-alt"></i> Refresh YoLink Devices');
-
-                    const icon = response.status === "success" ?
-                        'https://img.icons8.com/color/48/000000/checkmark.png' :
-                        'https://img.icons8.com/color/48/000000/cancel.png';
-
-                    $('#refresh-icon').attr('src', icon).removeClass('hidden');
-                    $('#refresh-message').text(response.message || 'Devices refreshed');
+                    $('#refresh-spinner').addClass('hidden');
 
                     if (response.status === "success") {
+                        $('#refresh-message').html(`<span class="text-success"><i class="fas fa-check-circle"></i> ${response.message || 'Devices refreshed successfully'}</span>`);
                         showToast("Success", "Devices refreshed successfully", "success");
                     } else {
+                        $('#refresh-message').html(`<span class="text-warning"><i class="fas fa-exclamation-circle"></i> ${response.message || 'Refresh completed with warnings'}</span>`);
                         showToast("Warning", "Refresh completed with warnings", "warning");
                     }
+
+                    // Clear the message after 5 seconds
+                    setTimeout(() => {
+                        $('#refresh-message').text('');
+                    }, 5000);
                 })
                 .catch(error => {
                     $('#refresh-devices-btn').prop('disabled', false);
                     $('#refresh-devices-btn').html('<i class="fas fa-sync-alt"></i> Refresh YoLink Devices');
+                    $('#refresh-spinner').addClass('hidden');
 
-                    $('#refresh-icon').attr('src', 'https://img.icons8.com/color/48/000000/cancel.png').removeClass('hidden');
-                    $('#refresh-message').text('Failed to refresh devices: ' + error.message);
+                    $('#refresh-message').html(`<span class="text-danger"><i class="fas fa-times-circle"></i> ${error.message}</span>`);
                     showToast("Error", "Failed to refresh devices", "error");
+
+                    // Clear the message after 5 seconds
+                    setTimeout(() => {
+                        $('#refresh-message').text('');
+                    }, 5000);
                 });
             });
 
@@ -1263,11 +1460,6 @@
                     $('#restart-services-btn').prop('disabled', false);
                     $('#restart-services-btn').html('<i class="fas fa-redo"></i> Restart Services');
                 });
-            });
-
-            // Fetch logs button
-            $('#fetch-logs-btn').click(function() {
-                fetchLogs();
             });
 
             // Test Modbus button
@@ -1304,7 +1496,7 @@
                     });
                 })
                 .then(serviceResponse => {
-                    if (serviceResponse.status === "success") {
+                    if (serviceResponse && serviceResponse.status === "success") {
                         $('#save-status').html('<span style="color: var(--success-color);"><i class="fas fa-check-circle"></i> Saved & Services Restarted</span>');
                         // Update status after services restart
                         setTimeout(checkAllStatuses, 5000);
