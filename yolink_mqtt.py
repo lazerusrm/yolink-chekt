@@ -336,7 +336,6 @@ async def run_mqtt_client() -> None:
     while not shutdown_event.is_set() and retry_count < max_retry_count:
         try:
             # 1. Check if credentials are available
-            config = await load_config(use_cache=False)  # Always reload to get latest config
             yolink_config = config.get("yolink", {})
             has_credentials = bool(yolink_config.get("uaid") and yolink_config.get("secret_key"))
 

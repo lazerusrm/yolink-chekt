@@ -64,7 +64,6 @@ async def run_monitor_mqtt() -> None:
     while not shutdown_event.is_set() and retry_count < max_retry_count:
         try:
             # 1. Load configuration (always reload to catch changes)
-            config = await load_config(use_cache=False)
             mqtt_config = config.get("mqtt_monitor", {})
 
             # 2. Check if configuration is valid
