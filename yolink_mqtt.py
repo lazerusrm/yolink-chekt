@@ -310,36 +310,198 @@ async def process_message(payload: dict) -> None:
     except Exception as e:
         logger.error(f"Error processing message for {device_id if 'device_id' in locals() else 'unknown'}: {e}", exc_info=True)
 
+
 async def run_mqtt_client() -> None:
     """
-    Run the YoLink MQTT client asynchronously with reconnection logic
+    Run the YoLink MQTT client asynchronously with robust reconnection logic
     and graceful shutdown.
     """
     global connected, mqtt_client, shutdown_event
 
-    # Check if credentials are available
-    if not await has_valid_credentials():
-        logger.info("YoLink MQTT connection deferred - waiting for credentials")
-        connected = False
+    # Reset shutdown event if needed (in case of restart)
+    if shutdown_event.is_set():
+        shutdown_event = asyncio.Event()
 
-        # Update status in Redis
-        redis_client = await get_redis()
-        await redis_client.set("yolink_mqtt_status", "credentials_missing")
+    # Initialize state tracking
+    redis_client = await get_redis()
+    await redis_client.set("yolink_mqtt_status", "initializing")
+    logger.info("Starting YoLink MQTT client")
 
-        return
+    # Connection retry variables
+    retry_count = 0
+    max_retry_count = 100  # practically infinite, but avoid true infinite loop
+    max_retry_delay = 60  # Maximum backoff in seconds
+    credential_check_delay = 5  # Seconds between credential checks
 
-    # Get access token for authentication
-    token = await get_access_token()
-    if not token:
-        logger.error("Failed to obtain a valid YoLink token. Retrying in 5 seconds...")
+    while not shutdown_event.is_set() and retry_count < max_retry_count:
+        try:
+            # 1. Check if credentials are available
+            config = await load_config(use_cache=False)  # Always reload to get latest config
+            yolink_config = config.get("yolink", {})
+            has_credentials = bool(yolink_config.get("uaid") and yolink_config.get("secret_key"))
 
-        # Update status in Redis
-        redis_client = await get_redis()
-        await redis_client.set("yolink_mqtt_status", "token_error")
+            if not has_credentials:
+                logger.info("YoLink credentials not configured, waiting...")
+                await redis_client.set("yolink_mqtt_status", "credentials_missing")
 
-        await asyncio.sleep(5)
-        await run_mqtt_client()
-        return
+                # Wait for shutdown or retry delay
+                try:
+                    await asyncio.wait_for(shutdown_event.wait(), timeout=credential_check_delay)
+                    if shutdown_event.is_set():
+                        logger.info("Shutdown requested during credential wait")
+                        break
+                except asyncio.TimeoutError:
+                    retry_count += 1
+                    continue
+
+            # 2. Get access token for authentication
+            token = await get_access_token()
+            if not token:
+                logger.error("Failed to obtain YoLink token, retrying...")
+                await redis_client.set("yolink_mqtt_status", "token_error")
+
+                # Calculate retry delay with exponential backoff
+                retry_delay = min(max_retry_delay, 2 * (2 ** min(retry_count, 5)))
+                try:
+                    await asyncio.wait_for(shutdown_event.wait(), timeout=retry_delay)
+                    if shutdown_event.is_set():
+                        logger.info("Shutdown requested during token retry wait")
+                        break
+                except asyncio.TimeoutError:
+                    retry_count += 1
+                    continue
+
+            # 3. Prepare MQTT connection
+            mqtt_config = config.get("mqtt", {})
+            topic = mqtt_config.get("topic", "yl-home/${Home ID}/+/report").replace("${Home ID}",
+                                                                                    config.get("home_id", ""))
+
+            # Log connection attempt (masking token)
+            logger.info(
+                f"Connecting to YoLink MQTT: url={mqtt_config.get('url')}, "
+                f"port={mqtt_config.get('port')}, topic={topic}")
+
+            # Update status in Redis
+            await redis_client.set("yolink_mqtt_status", "connecting")
+
+            # Extract hostname without protocol
+            hostname = mqtt_config.get("url", "mqtt://api.yosmart.com").replace("mqtt://", "").replace("mqtts://", "")
+            port = int(mqtt_config.get("port", 8003))
+
+            # 4. Connect and process messages
+            async with Client(
+                    hostname=hostname,
+                    port=port,
+                    username=token,
+                    keepalive=60
+            ) as client:
+                # Connection successful - update state
+                mqtt_client = client
+                connected = True
+                retry_count = 0  # Reset retry counter on successful connection
+
+                # Update status in Redis
+                await redis_client.set("yolink_mqtt_status", "connected")
+                await redis_client.set("yolink_mqtt_last_connected", asyncio.get_event_loop().time())
+                await redis_client.set("yolink_mqtt_error", "")  # Clear any previous errors
+
+                logger.info(f"Connected to YoLink MQTT, subscribing to {topic}")
+                await client.subscribe(topic)
+
+                # Process messages until shutdown requested
+                async for message in client.messages:
+                    try:
+                        payload_str = message.payload.decode("utf-8")
+                        payload = json.loads(payload_str)
+
+                        # Process message in a separate task to prevent blocking
+                        asyncio.create_task(process_message(payload))
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Invalid JSON in MQTT message: {e}")
+                    except Exception as e:
+                        logger.error(f"Error processing MQTT message: {e}")
+
+                    # Check for shutdown request
+                    if shutdown_event.is_set():
+                        logger.info("Shutdown requested, stopping MQTT processing")
+                        break
+
+                # When we exit the context manager, the client will be disconnected
+                logger.info("MQTT client disconnected")
+
+        except MqttError as e:
+            # MQTT-specific errors (auth, connection, etc.)
+            connected = False
+            mqtt_client = None
+            retry_count += 1
+
+            # Update status in Redis
+            await redis_client.set("yolink_mqtt_status", "disconnected")
+            await redis_client.set("yolink_mqtt_error", str(e))
+
+            # Handle authentication errors by refreshing the token on next attempt
+            if "auth" in str(e).lower():
+                logger.warning(f"Authentication error (attempt {retry_count}): {e}")
+                # Force token refresh on next attempt by clearing from config
+                config = await load_config()
+                if "yolink" in config and "token" in config["yolink"]:
+                    config["yolink"]["token"] = ""
+                    config["yolink"]["issued_at"] = 0
+                    config["yolink"]["expires_in"] = 0
+                    await save_config(config)
+            else:
+                logger.error(f"MQTT connection error (attempt {retry_count}): {e}")
+
+            # Calculate retry delay with exponential backoff and jitter
+            base_delay = min(max_retry_delay, 2 * (2 ** min(retry_count - 1, 5)))
+            jitter = 0.1 * base_delay * (0.9 + 0.2 * (hash(asyncio.get_event_loop().time()) % 10) / 10)
+            retry_delay = base_delay + jitter
+
+            logger.info(f"Retrying in {retry_delay:.1f} seconds (attempt {retry_count})...")
+
+            # Wait for the delay or until shutdown is requested
+            try:
+                await asyncio.wait_for(shutdown_event.wait(), timeout=retry_delay)
+                if shutdown_event.is_set():
+                    logger.info("Shutdown requested during reconnection delay")
+                    break
+            except asyncio.TimeoutError:
+                pass  # Delay completed
+
+        except Exception as e:
+            # Other unexpected errors
+            connected = False
+            mqtt_client = None
+            retry_count += 1
+
+            # Update status in Redis
+            await redis_client.set("yolink_mqtt_status", "error")
+            await redis_client.set("yolink_mqtt_error", str(e))
+
+            logger.error(f"Unexpected error in MQTT client (attempt {retry_count}): {e}", exc_info=True)
+
+            # Shorter retry for unexpected errors
+            retry_delay = min(max_retry_delay, 5)
+
+            # Wait for the delay or until shutdown is requested
+            try:
+                await asyncio.wait_for(shutdown_event.wait(), timeout=retry_delay)
+                if shutdown_event.is_set():
+                    logger.info("Shutdown requested during error reconnection delay")
+                    break
+            except asyncio.TimeoutError:
+                pass  # Delay completed
+
+    # Final cleanup
+    connected = False
+    mqtt_client = None
+
+    if retry_count >= max_retry_count:
+        await redis_client.set("yolink_mqtt_status", "failed_max_retries")
+        logger.error(f"MQTT client giving up after {max_retry_count} attempts")
+    else:
+        await redis_client.set("yolink_mqtt_status", "shutdown")
+        logger.info("Exiting YoLink MQTT client gracefully")
 
     # Prepare to connect
     config = await load_config()
@@ -473,9 +635,10 @@ def shutdown_yolink_mqtt() -> None:
     Signal the YoLink MQTT loop to shutdown gracefully.
     This function can be called externally to stop the MQTT client.
     """
-    global shutdown_event
+    global shutdown_event, connected, mqtt_client
     logger.info("Shutdown requested for YoLink MQTT client")
     shutdown_event.set()
+    connected = False
 
 
 async def get_status() -> Dict[str, Any]:

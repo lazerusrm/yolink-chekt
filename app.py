@@ -753,19 +753,78 @@ async def last_refresh():
         logger.error(f"Error getting last refresh time: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
+
 @app.route('/restart_services', methods=['POST'])
 @login_required
 async def restart_services():
-    """Restart MQTT services."""
+    """Restart MQTT services with proper task management."""
     try:
-        shutdown_yolink_mqtt()
-        shutdown_monitor_mqtt()
-        await asyncio.sleep(2)
-        app.bg_tasks = [asyncio.create_task(run_mqtt_client()), asyncio.create_task(run_monitor_mqtt())]
-        return jsonify({"status": "success", "message": "Services restarted"})
+        # Identify which tasks are MQTT-related and which are not
+        mqtt_tasks = []
+        non_mqtt_tasks = []
+
+        for task in app.bg_tasks:
+            if not task.done():
+                task_str = str(task.get_coro() if hasattr(task, 'get_coro') else task)
+                if 'run_mqtt_client' in task_str or 'run_monitor_mqtt' in task_str:
+                    mqtt_tasks.append(task)
+                else:
+                    non_mqtt_tasks.append(task)
+
+        logger.info(f"Restarting services: Found {len(mqtt_tasks)} MQTT tasks and {len(non_mqtt_tasks)} other tasks")
+
+        # Shut down MQTT clients
+        if app.config.get('shutdown_yolink'):
+            app.config['shutdown_yolink']()
+            logger.info("Shutdown signal sent to YoLink MQTT client")
+        if app.config.get('shutdown_monitor'):
+            app.config['shutdown_monitor']()
+            logger.info("Shutdown signal sent to Monitor MQTT client")
+
+        # Wait for MQTT tasks to complete with timeout
+        if mqtt_tasks:
+            logger.info("Waiting for MQTT tasks to complete...")
+            try:
+                done, pending = await asyncio.wait(mqtt_tasks, timeout=5)
+                if pending:
+                    logger.warning(f"{len(pending)} MQTT tasks did not complete in time, cancelling")
+                    for task in pending:
+                        task.cancel()
+                    await asyncio.wait(pending, timeout=2)
+            except Exception as e:
+                logger.error(f"Error waiting for MQTT tasks: {e}")
+
+        # Check if system is still properly configured
+        if not await is_system_configured():
+            logger.warning("System not fully configured after config change, can't restart MQTT services")
+            return jsonify({
+                "status": "warning",
+                "message": "Configuration saved but MQTT services not started (missing or invalid credentials)"
+            })
+
+        # Start new MQTT tasks and preserve other tasks
+        logger.info("Starting new MQTT tasks")
+
+        # Create new task list with non-MQTT tasks
+        app.bg_tasks = non_mqtt_tasks.copy()
+
+        # Add new MQTT tasks
+        yolink_task = asyncio.create_task(run_mqtt_client())
+        app.bg_tasks.append(yolink_task)
+
+        monitor_task = asyncio.create_task(run_monitor_mqtt())
+        app.bg_tasks.append(monitor_task)
+
+        # Log success
+        logger.info(f"MQTT services restarted, total background tasks: {len(app.bg_tasks)}")
+
+        # Wait a moment for tasks to start
+        await asyncio.sleep(1)
+
+        return jsonify({"status": "success", "message": "MQTT services restarted successfully"})
     except Exception as e:
-        logger.error(f"Error restarting services: {e}")
-        return jsonify({"status": "error", "message": str(e)}), 500
+        logger.error(f"Error restarting MQTT services: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": f"Failed to restart services: {str(e)}"}), 500
 
 @app.route("/save_relay_mapping", methods=["POST"])
 @login_required
