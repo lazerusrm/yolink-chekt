@@ -312,10 +312,6 @@ async def process_message(payload: dict) -> None:
 
 
 async def run_mqtt_client() -> None:
-    """
-    Run the YoLink MQTT client asynchronously with robust reconnection logic
-    and graceful shutdown.
-    """
     global connected, mqtt_client, shutdown_event
 
     # Reset shutdown event if needed (in case of restart)
@@ -335,6 +331,9 @@ async def run_mqtt_client() -> None:
 
     while not shutdown_event.is_set() and retry_count < max_retry_count:
         try:
+            # Load configuration first - ADD THIS LINE
+            config = await load_config()
+
             # 1. Check if credentials are available
             yolink_config = config.get("yolink", {})
             has_credentials = bool(yolink_config.get("uaid") and yolink_config.get("secret_key"))

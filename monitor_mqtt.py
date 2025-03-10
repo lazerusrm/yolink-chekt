@@ -41,9 +41,6 @@ async def load_config() -> Dict[str, Any]:
 
 
 async def run_monitor_mqtt() -> None:
-    """
-    Run the Monitor MQTT client with robust reconnection logic and graceful shutdown.
-    """
     global connected, mqtt_client, shutdown_event
 
     # Reset shutdown event if needed (in case of restart)
@@ -63,6 +60,9 @@ async def run_monitor_mqtt() -> None:
 
     while not shutdown_event.is_set() and retry_count < max_retry_count:
         try:
+            # Load configuration first - ADD THIS LINE
+            config = await load_config()
+
             # 1. Load configuration (always reload to catch changes)
             mqtt_config = config.get("mqtt_monitor", {})
 
