@@ -387,8 +387,19 @@ async def save_device_data(device_id: str, data: Dict[str, Any]) -> bool:
                 device_data["previous_state"] = existing.get("state", "unknown")
 
             # Handle battery value mapping if needed
-            if "battery" in device_data and isinstance(device_data["battery"], int):
-                device_data["battery"] = map_battery_value(device_data["battery"])
+            if "battery" in device_data and device_data["battery"] is not None:
+                # For numeric battery values on scale 0-4
+                if isinstance(device_data["battery"], (int, float)) and 0 <= device_data["battery"] <= 4:
+                    battery_map = {0: 0, 1: 25, 2: 50, 3: 75, 4: 100}
+                    device_data["battery"] = battery_map.get(int(device_data["battery"]))
+                # For direct percentage values (0-100)
+                elif isinstance(device_data["battery"], (int, float)) and 0 <= device_data["battery"] <= 100:
+                    device_data["battery"] = int(device_data["battery"])
+            elif "battery" in device_data and device_data["battery"] is None:
+                # For recognized battery devices, map null to "unknown"
+                if device_data.get("type") in ["DoorSensor", "MotionSensor", "LeakSensor", "THSensor",
+                                               "COSmokeSensor", "VibrationSensor", "SmartRemoter"]:
+                    device_data["battery"] = "unknown"
 
             # Validate data for any null bytes or control characters that would cause Redis issues
             for key, value in dict(device_data).items():

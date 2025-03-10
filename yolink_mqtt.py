@@ -226,10 +226,17 @@ async def process_message(payload: dict) -> None:
 
         if "battery" in data:
             battery_value = data["battery"]
+            logger.debug(
+                f"BEFORE: Raw battery value for {device_id}: {battery_value} (type: {type(battery_value).__name__})")
+
             if device["type"] in ["Hub", "Outlet", "Switch"] and battery_value is None:
                 device["battery"] = "Powered"
             else:
                 device["battery"] = map_battery_value(battery_value)
+
+            logger.debug(
+                f"AFTER: Mapped battery value for {device_id}: {device['battery']} (type: {type(device['battery']).__name__})")
+
         if "signal" in data:
             device["signal"] = data["signal"]
         elif "loraInfo" in data and "signal" in data["loraInfo"]:
