@@ -27,56 +27,115 @@ _lock = asyncio.Lock()
 _initializing = False  # Track initialization state
 
 
-async def get_redis() -> Redis:
+async def get_redis() -> 'Redis':
     """
-    Get or create a Redis client using the shared connection pool.
+    Retrieve or establish an asynchronous Redis client instance using a shared connection pool.
+
+    This function manages a single Redis connection pool globally, creating it if necessary,
+    and returns a Redis client instance. It ensures the client is alive by testing connectivity
+    and reinitializes the pool if the connection is lost or unavailable.
 
     Returns:
-        Redis: An async Redis client instance
+        Redis: An asynchronous Redis client instance configured with the shared connection pool.
 
     Raises:
-        ConnectionError: If connection to Redis fails
+        ConnectionError: If the Redis connection cannot be established or verified after retries.
     """
     global _redis_client, _pool, _initializing
+    from redis.asyncio import Redis, ConnectionPool
+    import asyncio
 
-    async with _lock:
-        if _redis_client is None or not await is_client_alive(_redis_client):
-            if _pool is None or _pool.disconnected:
-                logger.debug(f"Creating new Redis connection pool: host={_config['host']}, port={_config['port']}, max_connections={_config['max_connections']}")
+    # Configuration for Redis connection
+    redis_config = {
+        "host": "redis",
+        "port": 6379,
+        "db": 0,
+        "decode_responses": True,
+        "max_connections": 200
+    }
+
+    async with _lock:  # Ensure thread-safe initialization
+        # Check if the current client is usable
+        if _redis_client is None or not await _is_redis_connected(_redis_client):
+            logger.debug(f"Initializing or reinitializing Redis connection pool: host={redis_config['host']}, "
+                         f"port={redis_config['port']}, max_connections={redis_config['max_connections']}")
+
+            # If the pool doesn't exist or needs recreation, initialize it
+            if _pool is None:
+                logger.debug("Creating new Redis connection pool")
                 _pool = ConnectionPool(
-                    host=_config["host"],
-                    port=_config["port"],
-                    db=_config["db"],
-                    decode_responses=_config["decode_responses"],
-                    max_connections=_config["max_connections"]
+                    host=redis_config["host"],
+                    port=redis_config["port"],
+                    db=redis_config["db"],
+                    decode_responses=redis_config["decode_responses"],
+                    max_connections=redis_config["max_connections"]
                 )
 
+            # Mark initialization in progress to prevent concurrent attempts
             _initializing = True
-            _redis_client = Redis(connection_pool=_pool)
             try:
-                logger.debug("Attempting Redis ping")
-                await _redis_client.ping()
-                logger.info(f"Connected to Redis at {_config['host']}:{_config['port']}, db={_config['db']}")
-                stats = await get_pool_stats()
-                logger.debug(f"Pool stats after connection: {stats}")
-            except Exception as e:
-                logger.error(f"Failed to connect to Redis: {e}", exc_info=True)
+                # Create a new Redis client with the pool
+                new_client = Redis(connection_pool=_pool)
+                logger.debug("Testing Redis connectivity with ping")
+
+                # Attempt to ping Redis with retries
+                max_retries = 3
+                for attempt in range(max_retries):
+                    try:
+                        await new_client.ping()
+                        logger.info(f"Successfully connected to Redis at {redis_config['host']}:{redis_config['port']}, "
+                                    f"db={redis_config['db']}")
+                        _redis_client = new_client
+                        break
+                    except Exception as ping_error:
+                        logger.warning(f"Redis ping failed on attempt {attempt + 1}/{max_retries}: {ping_error}")
+                        if attempt < max_retries - 1:
+                            await asyncio.sleep(1)  # Wait before retrying
+                        else:
+                            logger.error(f"Failed to connect to Redis after {max_retries} attempts: {ping_error}")
+                            _redis_client = None
+                            raise ConnectionError(f"Unable to establish Redis connection: {ping_error}")
+
+                # Log connection pool statistics after successful connection
+                pool_stats = await get_pool_stats()
+                logger.debug(f"Connection pool stats after initialization: {pool_stats}")
+
+            except Exception as error:
+                logger.error(f"Redis initialization failed: {error}", exc_info=True)
                 _redis_client = None
-                _initializing = False
-                raise ConnectionError(f"Redis connection failed: {e}")
+                raise ConnectionError(f"Redis connection setup failed: {error}")
             finally:
                 _initializing = False
         else:
-            logger.debug("Reusing existing Redis client")
-            stats = await get_pool_stats()
-            logger.debug(f"Pool stats before returning client: {stats}")
+            # Reuse existing client if it's alive
+            logger.debug("Using existing Redis client")
+            pool_stats = await get_pool_stats()
+            logger.debug(f"Connection pool stats before reuse: {pool_stats}")
 
-        # Wait if still initializing
+        # Handle case where another task is initializing
         if _initializing:
-            logger.debug("Waiting for Redis initialization to complete")
-            await asyncio.sleep(0.1)  # Small delay to avoid race
+            logger.debug("Another task is initializing Redis, waiting briefly")
+            await asyncio.sleep(0.2)  # Brief delay to avoid race condition
 
     return _redis_client
+
+async def _is_redis_connected(client: 'Redis') -> bool:
+    """
+    Check if the provided Redis client is connected and responsive.
+
+    Args:
+        client (Redis): The Redis client instance to test.
+
+    Returns:
+        bool: True if the client is connected and responsive, False otherwise.
+    """
+    if client is None:
+        return False
+    try:
+        await client.ping()
+        return True
+    except Exception:
+        return False
 
 
 async def is_client_alive(client: Redis) -> bool:

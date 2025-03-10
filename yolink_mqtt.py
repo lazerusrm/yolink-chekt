@@ -173,27 +173,34 @@ def should_trigger_event(current_state: str, previous_state: str, device_type: s
     return False
 
 
-async def process_message(payload):
+async def process_message(payload: dict) -> None:
     """
-    Process incoming MQTT messages asynchronously with comprehensive error handling
-    and proper integration with alert systems.
+    Process an incoming MQTT message from a YoLink device asynchronously.
+
+    This function extracts device data from the payload, updates the device's state in Redis,
+    and triggers alerts based on state changes or specific alert conditions. In follower mode,
+    it ensures alerts are triggered for all relevant states (open, closed, alert, normal).
 
     Args:
-        payload (Dict[str, Any]): MQTT message payload
+        payload (dict): The MQTT message payload containing device data.
+
+    Returns:
+        None
     """
     try:
+        # Extract device ID from payload
         device_id = payload.get("deviceId")
         if not device_id:
-            logger.warning("No deviceId in MQTT payload")
+            logger.warning("Received MQTT payload without deviceId, skipping processing")
             return
 
-        # Log the full payload for debugging
-        logger.debug(f"MQTT payload for {device_id}: {json.dumps(payload, indent=2)}")
+        # Log raw payload for debugging
+        logger.debug(f"Processing MQTT message for device {device_id}: {json.dumps(payload, indent=2)}")
 
-        # Get existing device data or initialize new device
-        device = await get_device_data(device_id) or {}
-        if not device.get("deviceId"):
-            logger.info(f"Device {device_id} not found, initializing new device")
+        # Fetch existing device data from Redis or initialize a new device record
+        device = await get_device_data(device_id)
+        if not device or "deviceId" not in device:
+            logger.info(f"Device {device_id} not found in Redis, creating new device entry")
             device = {
                 "deviceId": device_id,
                 "name": f"Device {device_id[-4:]}",
@@ -211,32 +218,28 @@ async def process_message(payload):
                 "temperatureUnit": "F"
             }
 
-        logger.debug(f"Current device data before update: {json.dumps(device, indent=2)}")
-
+        # Extract data section from payload
         data = payload.get("data", {})
-        previous_state = device.get("state", "unknown")
+        current_state = device.get("state", "unknown")
 
-        # Update state with state change tracking
+        # Update device state and track previous state
         if "state" in data:
-            device["previous_state"] = previous_state
-            device["state"] = data["state"]
-            logger.debug(f"Updated state for device {device_id}: {previous_state} -> {device['state']}")
+            new_state = data["state"]
+            device["previous_state"] = current_state
+            device["state"] = new_state
+            logger.debug(f"Device {device_id} state changed from '{current_state}' to '{new_state}'")
 
-        # Enhanced battery handling with more debug info
+        # Update battery status
         if "battery" in data:
-            raw_battery = data["battery"]
-            logger.debug(f"Raw battery value for device {device_id}: {raw_battery} (type: {type(raw_battery)})")
-
-            # Handle different device types and their battery representation
-            if device.get("type") in ["Hub", "Outlet", "Switch"] and raw_battery is None:
-                # For mains-powered devices
+            battery_value = data["battery"]
+            logger.debug(f"Raw battery value for {device_id}: {battery_value} (type: {type(battery_value)})")
+            if device["type"] in ["Hub", "Outlet", "Switch"] and battery_value is None:
                 device["battery"] = "Powered"
-                logger.debug(f"Device {device_id} is mains powered (battery=Powered)")
+                logger.debug(f"Device {device_id} identified as mains-powered, battery set to 'Powered'")
             else:
-                # Try to map the battery value
-                mapped_battery = map_battery_value(raw_battery)
+                mapped_battery = map_battery_value(battery_value)
                 device["battery"] = mapped_battery
-                logger.debug(f"Mapped battery value for device {device_id}: {raw_battery} -> {mapped_battery}")
+                logger.debug(f"Battery for {device_id} mapped: {battery_value} -> {mapped_battery}")
 
         # Update signal strength
         if "signal" in data:
@@ -244,7 +247,7 @@ async def process_message(payload):
         elif "loraInfo" in data and "signal" in data["loraInfo"]:
             device["signal"] = data["loraInfo"]["signal"]
 
-        # Update other fields
+        # Update additional device attributes
         device["temperature"] = data.get("temperature", device.get("temperature", "unknown"))
         device["humidity"] = data.get("humidity", device.get("humidity", "unknown"))
         device["temperatureUnit"] = data.get("temperatureUnit", device.get("temperatureUnit", "F"))
@@ -254,79 +257,81 @@ async def process_message(payload):
             device["type"] = payload["type"]
         device["last_seen"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        # Save device data before triggering alerts
-        # This ensures the device state is updated even if alert handling fails
-        save_result = await save_device_data(device_id, device)
-        if not save_result:
-            logger.error(f"Failed to save device data for {device_id}. Device state: {device.get('state')}, " +
-                         f"previous state: {device.get('previous_state')}, battery: {device.get('battery')}")
+        # Persist updated device data to Redis
+        if not await save_device_data(device_id, device):
+            logger.error(f"Failed to save updated data for device {device_id}: state={device.get('state')}, "
+                         f"previous_state={device.get('previous_state')}, battery={device.get('battery')}")
             try:
-                logger.debug(f"Device data that failed to save: {json.dumps(device)}")
+                logger.debug(f"Failed device data: {json.dumps(device, indent=2)}")
             except (TypeError, ValueError):
-                logger.error(f"Device data contains non-serializable values: {device}")
+                logger.error(f"Device data for {device_id} contains non-serializable content: {device}")
 
-        # CRITICAL: Check for alerts/alarms that need to be processed
-        # Determine if an alert/event should be triggered based on state changes
+        # Determine if an alert should be triggered
         state = device.get("state", "unknown")
-        trigger_event = False
+        config = await load_config()
+        modbus_config = config.get("modbus", {})
+        is_follower_mode = modbus_config.get("follower_mode", False)
 
-        # Check if this state change should trigger an event
-        if state == "alert":
-            logger.info(f"Alert event detected for device {device_id}")
-            trigger_event = True
-        elif previous_state and state and previous_state != state:
-            logger.info(f"State change event detected for device {device_id}: {previous_state} -> {state}")
-            trigger_event = True
+        # Trigger logic: explicit states for follower mode, state changes or alerts otherwise
+        should_trigger = False
+        if is_follower_mode:
+            if state in ["open", "closed", "alert", "normal"]:
+                should_trigger = True
+                logger.debug(f"Follower mode detected, triggering for state: {state}")
+        else:
+            if state == "alert":
+                should_trigger = True
+                logger.info(f"Alert state detected for device {device_id}")
+            elif current_state != "unknown" and state != current_state:
+                should_trigger = True
+                logger.info(f"State transition detected for {device_id}: {current_state} -> {state}")
 
-        # If we need to trigger an event
-        if trigger_event:
-            # Load configuration and mappings
-            config = await load_config()
+        # Process alert if triggered
+        if should_trigger:
             mapping = await get_mapping(device_id)
             if not mapping:
-                logger.warning(f"No mapping found for device {device_id}, cannot trigger event")
+                logger.warning(f"No mapping defined for device {device_id}, skipping alert")
                 return
 
-            # Import alerts module for event triggering
+            # Determine device type for alert processing
+            device_type_map = {
+                "DoorSensor": "door_contact",
+                "MotionSensor": "motion",
+                "LeakSensor": "leak_sensor"
+            }
+            device_type = device_type_map.get(device["type"], "generic")
+
             try:
                 from alerts import trigger_alert
-
-                # Map state to a generic device type for alert processing
-                if device.get("type") == "DoorSensor":
-                    device_type = "door_contact"
-                elif device.get("type") == "MotionSensor":
-                    device_type = "motion"
-                elif device.get("type") == "LeakSensor":
-                    device_type = "leak_sensor"
-                else:
-                    device_type = "generic"
-
-                # Process the device event/alarm
-                logger.info(f"Triggering alert for device {device_id} with state {state}")
+                logger.info(f"Processing alert for device {device_id}: state={state}, type={device_type}")
                 await trigger_alert(device_id, state, device_type)
-            except ImportError as e:
-                logger.error(f"Error importing alerts module: {e}")
-            except Exception as e:
-                logger.error(f"Error triggering alert for device {device_id}: {e}")
+            except ImportError as error:
+                logger.error(f"Failed to import alerts module for {device_id}: {error}")
+            except Exception as error:
+                logger.error(f"Error executing alert for {device_id}: {error}", exc_info=True)
 
-        # Publish update to monitor system
+        else:
+            logger.debug(f"No alert triggered for {device_id}: state={state}, previous={current_state}")
+
+        # Send update to monitor system
         try:
             from monitor_mqtt import publish_update
-            await publish_update(device_id, {
+            monitor_data = {
                 "state": state,
                 "alarms": device.get("alarms", {}),
                 "signal": device.get("signal", "unknown"),
                 "battery": device.get("battery", "unknown"),
                 "last_seen": device.get("last_seen", "never")
-            })
-        except Exception as e:
-            logger.error(f"Failed to publish update to monitor for device {device_id}: {e}")
+            }
+            await publish_update(device_id, monitor_data)
+        except Exception as error:
+            logger.error(f"Failed to publish monitor update for {device_id}: {error}")
 
-    except json.JSONDecodeError as e:
-        logger.error(f"Invalid JSON in MQTT payload: {e}")
-    except Exception as e:
-        logger.error(f"Error processing message for device {device_id if 'device_id' in locals() else 'unknown'}: {e}")
-        logger.exception("Detailed error information:")
+    except json.JSONDecodeError as error:
+        logger.error(f"Failed to parse MQTT payload as JSON: {error}")
+    except Exception as error:
+        device_id_str = device_id if 'device_id' in locals() else "unknown"
+        logger.error(f"Unexpected error processing message for device {device_id_str}: {error}", exc_info=True)
 
 async def run_mqtt_client() -> None:
     """
