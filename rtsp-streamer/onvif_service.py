@@ -4891,95 +4891,77 @@ Hardware ID: {self.device_info['HardwareId']}
             logger.error(f"Error handling system reboot: {e}", exc_info=True)
             return XMLGenerator.generate_fault_response(f"Error handling system reboot: {str(e)}")
 
-    def _handle_get_stream_uri(self, request: ET.Element) -> str:
+    def _handle_get_stream_uri(self, config: Dict[str, Any], onvif_service, token: str) -> str:
         """
-        Handle GetStreamUri request with support for metadata streams and detailed diagnostics.
-        Returns the RTSP URI for a specific profile.
+        Handle GetStreamUri request.
+        Returns the RTSP URI for a specific profile without exposing credentials.
 
         Args:
-            request: GetStreamUri XML element (already extracted from SOAP Body)
+            config: Application configuration
+            onvif_service: OnvifService instance
+            token: Profile token
 
         Returns:
             str: SOAP response XML
         """
-        logger.info("Processing GetStreamUri request")
+        # First, check the integration layer if available
+        if onvif_service and hasattr(onvif_service, 'get_stream_uri'):
+            uri = onvif_service.get_stream_uri(token)
+            if uri:
+                # Ensure URI doesn't contain credentials
+                if '@' in uri:
+                    # Remove credentials from URI if they exist
+                    uri_parts = uri.split('@')
+                    if len(uri_parts) > 1:
+                        protocol_and_creds = uri_parts[0].split('//')
+                        if len(protocol_and_creds) > 1:
+                            protocol = protocol_and_creds[0] + '//'
+                            uri = protocol + uri_parts[1]
+                            logger.info(f"Removed credentials from stream URI for security")
+                return generate_stream_uri_response(uri)
 
-        try:
-            # The request is already the GetStreamUri element, no need to search for it
-            get_stream_uri = request
+        # Try the integration API
+        if onvif_service and hasattr(onvif_service, 'onvif_integration') and hasattr(onvif_service.onvif_integration,
+                                                                                     'get_stream_uri'):
+            uri = onvif_service.onvif_integration.get_stream_uri(token)
+            if uri:
+                # Ensure URI doesn't contain credentials
+                if '@' in uri:
+                    # Remove credentials from URI if they exist
+                    uri_parts = uri.split('@')
+                    if len(uri_parts) > 1:
+                        protocol_and_creds = uri_parts[0].split('//')
+                        if len(protocol_and_creds) > 1:
+                            protocol = protocol_and_creds[0] + '//'
+                            uri = protocol + uri_parts[1]
+                            logger.info(f"Removed credentials from stream URI for security")
+                return generate_stream_uri_response(uri)
 
-            # Extract profile token
-            profile_token_elem = get_stream_uri.find('.//trt:ProfileToken', NAMESPACES)
-            if profile_token_elem is None or not profile_token_elem.text:
-                logger.error("Missing or empty ProfileToken in request")
-                return generate_fault_response("Missing ProfileToken", "ter:InvalidArgVal")
-            profile_token = profile_token_elem.text
-            logger.info(f"Profile token requested: {profile_token}")
+        # Fallback to building the URI manually without embedding credentials
+        # Use ANNOUNCE_IP if specified, otherwise use server_ip
+        announce_ip = config.get("announce_ip")
+        server_ip = announce_ip if announce_ip else config.get("server_ip", "127.0.0.1")
+        rtsp_port = config.get("rtsp_port", 554)
+        stream_name = config.get("stream_name", "yolink-dashboard")
 
-            # Extract stream setup details
-            stream_setup = get_stream_uri.find('.//trt:StreamSetup', NAMESPACES)
-            if stream_setup is None:
-                logger.error("Missing StreamSetup in request")
-                return generate_fault_response("Missing StreamSetup", "ter:InvalidArgVal")
+        # Add profile-specific suffix
+        if token == "profile1":
+            stream_suffix = "_main"
+        elif token == "profile2":
+            stream_suffix = "_sub"
+        elif token == "profile3":
+            stream_suffix = "_mobile"
+        else:
+            stream_suffix = ""
 
-            # Check stream type
-            stream_type_elem = stream_setup.find('.//tt:Stream', NAMESPACES)
-            stream_type = stream_type_elem.text if stream_type_elem is not None else "RTP-Unicast"
-            is_metadata = stream_type == "Metadata"
-            logger.debug(f"Stream type: {stream_type}, is_metadata: {is_metadata}")
+        # Add the suffix to the stream name
+        stream_name = f"{stream_name}{stream_suffix}"
 
-            # Get transport protocol
-            transport_elem = stream_setup.find('.//tt:Transport/tt:Protocol', NAMESPACES)
-            transport = transport_elem.text if transport_elem is not None else "RTSP"
-            logger.debug(f"Transport protocol: {transport}")
+        # Create the URI without credentials - clients will handle auth separately
+        uri = f"rtsp://{server_ip}:{rtsp_port}/{stream_name}"
+        logger.info(f"Generated secure stream URI: {uri}")
 
-            # Try integration layer
-            if hasattr(self, 'onvif_integration') and self.onvif_integration:
-                uri = self.onvif_integration.get_stream_uri(profile_token)
-                if uri:
-                    logger.info(f"Integration layer returned URI: {uri}")
-                    return self._generate_stream_uri_response(uri, is_metadata)
-                else:
-                    logger.warning(f"Integration layer failed to provide URI for profile {profile_token}")
-
-            # Fallback to manual URI construction
-            server_ip = self.config.get("server_ip", "127.0.0.1")
-            rtsp_port = self.config.get("rtsp_port", 554)
-            stream_name = self.config.get("stream_name", "yolink-dashboard")
-            logger.debug(f"Config values - server_ip: {server_ip}, rtsp_port: {rtsp_port}, stream_name: {stream_name}")
-
-            # Profile token mapping
-            profile_suffix_map = {
-                "profile1": "_main",
-                "profile2": "_sub",
-                "profile3": "_mobile"
-            }
-            stream_suffix = profile_suffix_map.get(profile_token, "")
-            if not stream_suffix:
-                logger.warning(f"Unknown profile token '{profile_token}', using base stream name")
-
-            stream_name = f"{stream_name}{stream_suffix}"
-            if is_metadata:
-                stream_name = f"{stream_name}_metadata"
-
-            # Authentication
-            auth_part = ""
-            if getattr(self, 'authentication_required', False):
-                auth_part = f"{self.username}:{self.password}@"
-                logger.debug(f"Authentication applied: {auth_part}")
-
-            # Construct URI
-            if transport == "HTTP":
-                uri = f"http://{auth_part}{server_ip}:{rtsp_port}/{stream_name}"
-            else:
-                uri = f"rtsp://{auth_part}{server_ip}:{rtsp_port}/{stream_name}"
-            logger.info(f"Constructed URI: {uri}")
-
-            return self._generate_stream_uri_response(uri, is_metadata)
-
-        except Exception as e:
-            logger.error(f"Error in GetStreamUri: {e}", exc_info=True)
-            return generate_fault_response(f"Internal error: {str(e)}", "ter:InternalError")
+        return generate_stream_uri_response(uri)
 
     def _generate_stream_uri_response(self, uri: str, is_metadata: bool = False) -> str:
         """
