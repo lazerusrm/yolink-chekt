@@ -82,40 +82,49 @@ init_websocket(app)
 
 @app.before_request
 async def enforce_https():
-    """Redirect HTTP requests to HTTPS in production, respecting proxy headers."""
-    # Skip redirection for internal container network requests
-    if request.remote_addr.startswith('172.18.'):
+    """Redirect HTTP requests to HTTPS in production unless DISABLE_HTTPS is true, respecting proxy headers."""
+    # Load DISABLE_HTTPS from environment
+    disable_https = os.getenv("DISABLE_HTTPS", "false").lower() == "true"
+
+    # Skip redirection if HTTPS is disabled
+    if disable_https:
         return
 
-    if app.config["ENV"] != "development" and request.scheme != "https" and not request.headers.get(
-            'X-Forwarded-Proto') == 'https':
-        # Get the host from X-Forwarded-Host header if available (set by nginx)
-        host = request.headers.get('X-Forwarded-Host')
+    # Check if the request is from an internal Docker network (172.16.0.0/12 range)
+    remote_addr = request.remote_addr
+    try:
+        # Convert IP to integer for range checking
+        ip_parts = [int(part) for part in remote_addr.split('.')]
+        ip_int = (ip_parts[0] << 24) + (ip_parts[1] << 16) + (ip_parts[2] << 8) + ip_parts[3]
+        docker_range_start = (172 << 24) + (16 << 16)  # 172.16.0.0
+        docker_range_end = (172 << 24) + (31 << 16) + (255 << 8) + 255  # 172.31.255.255
+        if docker_range_start <= ip_int <= docker_range_end:
+            return
+    except (ValueError, IndexError):
+        logger.warning(f"Could not parse remote_addr: {remote_addr}, proceeding with HTTPS check")
 
-        # If X-Forwarded-Host is not available, try X-Forwarded-Server or Host header
-        if not host:
-            host = request.headers.get('X-Forwarded-Server') or request.headers.get('Host')
+    # Redirect to HTTPS only in production and if not already HTTPS
+    if app.config["ENV"] != "development" and request.scheme != "https" and request.headers.get('X-Forwarded-Proto') != 'https':
+        # Prefer proxy headers for host
+        host = (request.headers.get('X-Forwarded-Host') or
+                request.headers.get('X-Forwarded-Server') or
+                request.headers.get('Host'))
 
-        # If still no host found, use the host from the original URL, but only if it's not an internal name
+        # Fallback to local IP if no valid host is found or if it’s an internal name
         if not host or 'yolink_chekt' in host:
-            # Get server's IP address as fallback
             import socket
             try:
-                # Try to get the server's public-facing IP
                 with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-                    # Doesn't actually connect but gets the route
                     s.connect(('8.8.8.8', 80))
                     host = s.getsockname()[0]
             except Exception:
-                # Fallback to localhost if all else fails
                 host = '127.0.0.1'
 
-        # Build the redirect URL with the proper host
+        # Construct redirect URL
         path = request.path
         query_string = request.query_string.decode('utf-8')
         if query_string:
             path = f"{path}?{query_string}"
-
         redirect_url = f"https://{host}{path}"
         logger.debug(f"Redirecting HTTP request to HTTPS: {redirect_url}")
         return redirect(redirect_url, code=301)
