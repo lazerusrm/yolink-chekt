@@ -1423,7 +1423,7 @@ class DashboardRenderer:
             draw.line([(0, y), (width, y)], fill=(r, g, b))
 
         # Draw dashboard title
-        header_text = "YoLink Dashboard"
+        header_text = "ICS Sensor Dashboard"
         draw.text((padding, padding), header_text, font=self.fonts["large"], fill=COLORS["text_primary"])
 
         # Draw pagination info
